@@ -12,7 +12,12 @@ using BuildingModel.Model;
 
 namespace BuildingModel.Sketch
 {
-    /// <summary>The look of the plan: quiet grid, the model in a few strong colours, the selection in amber, issues as markers.</summary>
+    /// <summary>
+    /// The look of the plan: quiet grid, the model in a few strong colours, the selection in cyan, issues as markers.
+    /// Colour rule: structural elements are never drawn in red or green tones (red/green reads as fail/pass and is the
+    /// pair colour-blind users confuse). Vermilion and amber mean an error and a warning only, and every status also has a
+    /// shape (circle, triangle, ✓, ✗, a dashed line), so it reads without colour.
+    /// </summary>
     public partial class SketchCanvas
     {
         public static class Palette
@@ -22,19 +27,20 @@ namespace BuildingModel.Sketch
             public static readonly Color GridMajor = Color.FromRgb(0xDF, 0xE2, 0xE7);
             public static readonly Color Ink = Color.FromRgb(0x24, 0x29, 0x33);
             public static readonly Color Muted = Color.FromRgb(0x6B, 0x72, 0x80);
-            public static readonly Color DiaphragmFill = Color.FromArgb(0x40, 0xD9, 0x5B, 0x5B);
-            public static readonly Color DiaphragmEdge = Color.FromRgb(0x9A, 0x1B, 0x1B);
+            public static readonly Color DiaphragmFill = Color.FromArgb(0x55, 0xD9, 0xC2, 0x8C);   // sand
+            public static readonly Color DiaphragmEdge = Color.FromRgb(0x7A, 0x63, 0x3E);          // brown-gray
             public static readonly Color ShearWall = Color.FromRgb(0x1D, 0x4E, 0xD8);
             public static readonly Color Wall = Color.FromRgb(0x8A, 0x8F, 0x98);
             public static readonly Color Below = Color.FromRgb(0xC9, 0xCD, 0xD3);
             public static readonly Color Above = Color.FromRgb(0x93, 0xA8, 0xD8);
-            public static readonly Color Select = Color.FromRgb(0xF5, 0x9E, 0x0B);
+            public static readonly Color Select = Color.FromRgb(0x08, 0x91, 0xB2);                 // cyan
             public static readonly Color Preview = Color.FromRgb(0x2A, 0x78, 0xD6);
-            public static readonly Color Measure = Color.FromRgb(0xC2, 0x41, 0x0C);
-            public static readonly Color Error = Color.FromRgb(0xDC, 0x26, 0x26);
-            public static readonly Color Warning = Color.FromRgb(0xD9, 0x77, 0x06);
+            public static readonly Color Measure = Color.FromRgb(0x6D, 0x28, 0xD9);                // violet
+            public static readonly Color Error = Color.FromRgb(0xD5, 0x5E, 0x00);                  // vermilion (Okabe-Ito)
+            public static readonly Color Warning = Color.FromRgb(0xE6, 0x9F, 0x00);                // amber (Okabe-Ito)
             public static readonly Color NoteFill = Color.FromRgb(0xFF, 0xF7, 0xC2);
             public static readonly Color NoteEdge = Color.FromRgb(0xB4, 0x8A, 0x00);
+            public static readonly Color Cut = Color.FromRgb(0x6D, 0x28, 0xD9);                    // violet, the area a cut takes away
         }
 
         private static Brush B(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
@@ -51,20 +57,22 @@ namespace BuildingModel.Sketch
         private static readonly Pen GridMajorPen = P(Palette.GridMajor, 1);
         private static readonly Brush DiaphragmBrush = B(Palette.DiaphragmFill);
         private static readonly Pen DiaphragmPen = P(Palette.DiaphragmEdge, 2);
-        private static readonly Pen PiecePen = P(Color.FromArgb(0x70, 0x9A, 0x1B, 0x1B), 1, 3, 3);
+        private static readonly Pen PiecePen = P(Color.FromArgb(0x70, 0x7A, 0x63, 0x3E), 1, 3, 3);
         private static readonly Pen OpeningPen = P(Palette.DiaphragmEdge, 1.5, 5, 3);
         private static readonly Brush OpeningBrush = MakeHatch();
         private static readonly Pen ShearPen = P(Palette.ShearWall, 4);
         private static readonly Pen WallPen = P(Palette.Wall, 2.5);
         private static readonly Pen BelowPen = P(Palette.Below, 3);
         private static readonly Pen AbovePen = P(Palette.Above, 1.2, 4, 3);
-        private static readonly Pen HaloPen = P(Color.FromArgb(0x90, 0xF5, 0x9E, 0x0B), 12);
+        private static readonly Pen HaloPen = P(Color.FromArgb(0x80, 0x08, 0x91, 0xB2), 12);
         private static readonly Pen SelectPen = P(Palette.Select, 2.5);
         private static readonly Pen PreviewPen = P(Palette.Preview, 2, 4, 3);
         private static readonly Pen RubberPen = P(Palette.Muted, 1, 3, 3);
         private static readonly Pen MeasurePen = P(Palette.Measure, 1.5);
         private static readonly Pen CrossPen = P(Color.FromArgb(0x80, 0x52, 0x51, 0x4E), 1);
-        private static readonly Pen SnapPen = P(Color.FromRgb(0xE0, 0x8A, 0x00), 2);
+        private static readonly Pen SnapPen = P(Palette.Select, 2);
+        private static readonly Brush CutBrush = B(Color.FromArgb(0x30, 0x6D, 0x28, 0xD9));
+        private static readonly Pen CutPen = P(Palette.Cut, 2, 4, 3);
         private static readonly Brush NoteBrush = B(Palette.NoteFill);
         private static readonly Pen NotePen = P(Palette.NoteEdge, 1);
         private static readonly Brush InkBrush = B(Palette.Ink);
@@ -78,7 +86,7 @@ namespace BuildingModel.Sketch
         {
             var g = new DrawingGroup();
             g.Children.Add(new GeometryDrawing(Brushes.White, null, new RectangleGeometry(new Rect(0, 0, 8, 8))));
-            g.Children.Add(new GeometryDrawing(null, P(Color.FromArgb(0x90, 0x9A, 0x1B, 0x1B), 1), new LineGeometry(new Point(0, 8), new Point(8, 0))));
+            g.Children.Add(new GeometryDrawing(null, P(Color.FromArgb(0x90, 0x7A, 0x63, 0x3E), 1), new LineGeometry(new Point(0, 8), new Point(8, 0))));
             var brush = new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 8, 8), ViewportUnits = BrushMappingMode.Absolute };
             brush.Freeze();
             return brush;
@@ -321,7 +329,7 @@ namespace BuildingModel.Sketch
                             break;
                         default: ctx.DrawEllipse(null, SnapPen, c, 5, 5); break;
                     }
-                    Label(ctx, SnapResult.Describe(snap.Kind), c + new Vector(9, 7), B(Color.FromRgb(0xB4, 0x6A, 0x00)), 9);
+                    Label(ctx, SnapResult.Describe(snap.Kind), c + new Vector(9, 7), B(Palette.Select), 9);
                 }
             }
         }

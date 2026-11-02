@@ -74,7 +74,7 @@ namespace BuildingModel.Sketch
                 foreach (var l in b.LevelsBottomUp.Where(l => l.Elevation > 0))
                 {
                     bool hi = l.Id == HighlightLevelId;
-                    var mat = Material(hi ? Color.FromArgb(0xE0, 0xD9, 0x5B, 0x5B) : Color.FromArgb(0xB0, 0xD9, 0x8B, 0x8B));
+                    var mat = Material(hi ? Color.FromArgb(0xE8, 0xC9, 0xA8, 0x62) : Color.FromArgb(0xB0, 0xE2, 0xD2, 0xAE));
                     foreach (var c in b.NetDiaphragm(l).Cells())
                         group.Children.Add(Box(c.X0, c.Y0, l.Elevation - SlabThickness, c.X1, c.Y1, l.Elevation, mat));
                 }

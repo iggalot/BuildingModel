@@ -7,6 +7,8 @@ using BuildingModel.ShearWalls;
 using calculator;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ShearWallCalculator;
+using ShearWallCalculator.Design;
+using SheathingMaterials = ShearWallCalculator.NDSProvisions.SheathingMaterials;
 
 namespace BuildingModel.Tests
 {
@@ -179,17 +181,79 @@ namespace BuildingModel.Tests
             Assert.IsFalse(ShearWallAdapter.StoreGeometry(b, s), "already stored");
         }
 
-        /// <summary>A wall drawn after the project's default design was set starts with that design.</summary>
+        /// <summary>A wall drawn after the project's defaults were set starts with the one for where it is: exterior or interior.</summary>
         [TestMethod]
-        public void NewWall_GetsTheProjectDefaultDesign()
+        public void NewWall_GetsTheProjectDefaultDesign_ExteriorOrInterior()
         {
             var b = Box(out var l2, out _);
             var s = ShearWallAdapter.ToCalculators(b);
-            s[0].Calculator.DesignSettings.NewWallDesign = new ShearWallCalculator.Design.WallDesignInputs { EdgeSpacing = 3 };
+            s[0].Calculator.DesignSettings.NewWallDesign = new WallDesignInputs { EdgeSpacing = 3 };
+            s[0].Calculator.DesignSettings.NewInteriorWallDesign = new WallDesignInputs { EdgeSpacing = 2 };
             ShearWallAdapter.StoreDesign(b, s);
-            var added = b.AddWall(b.Ground, l2, 20, 0, 20, 40);
+            var inside = b.AddWall(b.Ground, l2, 20, 0, 20, 40);      // across the building: only its ends touch the outline
+            var edge = b.AddWall(b.Ground, l2, 50, 0, 70, 0);         // half of it on the south edge
             var again = ShearWallAdapter.ToCalculators(b);
-            Assert.AreEqual(3, again[0].Calculator._wall_system._walls[ShearWallAdapter.Number(added.Id).Value].Design.EdgeSpacing);
+            Assert.AreEqual(2, DesignOf(again[0], inside).EdgeSpacing, "interior: the project's interior default");
+            Assert.AreEqual(3, DesignOf(again[0], edge).EdgeSpacing, "any part on the outside edge: exterior");
+        }
+
+        private static WallDesignInputs DesignOf(StoryMap s, Wall w) =>
+            s.Calculator._wall_system._walls[ShearWallAdapter.Number(w.Id).Value].Design;
+
+        /// <summary>The program defaults: Structural I on an exterior wall, 1/2" gypsum wallboard on both faces of an interior one.</summary>
+        [TestMethod]
+        public void NewWall_ProgramDefaults_StructuralIOutside_GypsumInside()
+        {
+            var b = Box(out var l2, out _);
+            var inside = b.AddWall(b.Ground, l2, 30, 0, 30, 40);
+            var s = ShearWallAdapter.ToCalculators(b);
+            var outsideDesign = DesignOf(s[0], b.Walls[0]);
+            Assert.AreEqual(SheathingTable.WoodPanels, outsideDesign.EffectiveFace1().Table);
+            Assert.AreEqual(SheathingMaterials.SHEATH_MAT_STRUCTURAL_1, outsideDesign.EffectiveFace1().Material);
+            Assert.IsNull(outsideDesign.EffectiveFace2(), "one face");
+            var insideDesign = DesignOf(s[0], inside);
+            Assert.AreEqual(SheathingTable.GypsumAndPlaster, insideDesign.EffectiveFace1().Table);
+            Assert.AreEqual(WallDesignInputs.InteriorGypsumRow, insideDesign.EffectiveFace1().Row);
+            Assert.IsTrue(insideDesign.EffectiveFace1().SameConstructionAs(insideDesign.EffectiveFace2()), "both faces");
+        }
+
+        /// <summary>An untouched default follows the wall when it moves onto the outside edge; an edited design never changes.</summary>
+        [TestMethod]
+        public void UntouchedDefault_FollowsTheWall_EditedDesignStays()
+        {
+            var b = Box(out var l2, out _);
+            var a = b.AddWall(b.Ground, l2, 20, 5, 20, 35);
+            var c = b.AddWall(b.Ground, l2, 40, 5, 40, 35);
+            var s = ShearWallAdapter.ToCalculators(b);
+            ShearWallAdapter.StoreDesign(b, s);                                     // stored as given: the interior default
+            DesignOf(s[0], c).Species = WoodTypes.WOODTYPE_SPF_HF;                 // the user edits wall c
+            ShearWallAdapter.StoreDesign(b, s);
+
+            a.Start = new Point2(0, 5); a.End = new Point2(0, 35);                // both move onto the west and east edges
+            c.Start = new Point2(60, 5); c.End = new Point2(60, 35);
+            var again = ShearWallAdapter.ToCalculators(b);
+            Assert.AreEqual(SheathingTable.WoodPanels, DesignOf(again[0], a).EffectiveFace1().Table, "untouched: now the exterior default");
+            Assert.AreEqual(WoodTypes.WOODTYPE_SPF_HF, DesignOf(again[0], c).Species, "edited: kept");
+            Assert.AreEqual(SheathingTable.GypsumAndPlaster, DesignOf(again[0], c).EffectiveFace1().Table, "edited: kept");
+
+            ShearWallAdapter.StoreDesign(b, again);                                 // and back inside: a follows again, c stays
+            a.Start = new Point2(20, 5); a.End = new Point2(20, 35);
+            var back = ShearWallAdapter.ToCalculators(b);
+            Assert.AreEqual(SheathingTable.GypsumAndPlaster, DesignOf(back[0], a).EffectiveFace1().Table);
+        }
+
+        /// <summary>A wall of an older project keeps its design (an interior wall is not given gypsum).</summary>
+        [TestMethod]
+        public void OldProject_InteriorWall_KeepsItsDesign()
+        {
+            var c1 = new ShearWallCalculator_RigidDiaphragm();
+            c1._diaphragm_system.AddDiaphragm(new DiaphragmData_Rectangular(new System.Windows.Point(0, 0), new System.Windows.Point(60, 40)));
+            c1._wall_system.AddWall(new WallData(9, 30, 0, 30, 40));
+            var w = c1._wall_system._walls.Values.Single();
+            w.Design = null;                                                        // saved before designs: the program default then
+            var b = ShearWallAdapter.FromCalculators(new ShearWallCalculatorBase[] { c1 }, new[] { 9.0 });
+            var s = ShearWallAdapter.ToCalculators(b);
+            Assert.AreEqual(SheathingTable.WoodPanels, s[0].Calculator._wall_system._walls.Values.Single().Design.EffectiveFace1().Table);
         }
 
         [TestMethod]

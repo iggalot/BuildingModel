@@ -69,6 +69,12 @@ namespace BuildingModel.ShearWalls
         {
             public Dictionary<string, WallDesignInputs> Design { get; set; } = new Dictionary<string, WallDesignInputs>();
             public WallTypes WallType { get; set; } = WallTypes.Type_01;
+
+            /// <summary>
+            /// Per level: the wall still has the default it was given (true: the exterior one, false: the interior one), so it
+            /// follows when the wall becomes exterior or interior. Not there once the user edits the design (null: none).
+            /// </summary>
+            public Dictionary<string, bool> AutoExterior { get; set; }
         }
 
         public sealed class DiaphragmExtras
@@ -173,14 +179,27 @@ namespace BuildingModel.ShearWalls
                 if (!(height > 0)) continue;
                 var extras = ReadWall(w);
                 var data = new WallData(height, w.Start.X, w.Start.Y, w.End.X, w.End.Y) { ID = key, WallType = extras.WallType };
-                if (extras.Design.TryGetValue(level.Id, out var design) && design != null) data.Design = design;
-                else if (calc.DesignSettings?.NewWallDesign != null) data.Design = calc.DesignSettings.NewWallDesign.Clone(); // a new wall: the project's default
+                if (extras.Design.TryGetValue(level.Id, out var design) && design != null)
+                {
+                    data.Design = design;
+                    // an untouched default follows the wall: it moved onto or off the outside edge
+                    if (extras.AutoExterior != null && extras.AutoExterior.TryGetValue(level.Id, out bool wasExterior) && wasExterior != b.IsExterior(w))
+                        data.Design = NewWallDesign(b, w, calc.DesignSettings);
+                }
+                else data.Design = NewWallDesign(b, w, calc.DesignSettings); // a new wall: the project's exterior or interior default
                 calc._wall_system._walls[key] = data;
                 map.Walls[key] = w.Id;
             }
             calc._wall_system.Update();
             calc._diaphragm_system.Update();
         }
+
+        /// <summary>
+        /// The design a wall starts with: Structural I (or the project's exterior default) when any part of its length is on
+        /// the building's outside edge, gypsum wallboard on both faces (or the project's interior default) otherwise.
+        /// </summary>
+        public static WallDesignInputs NewWallDesign(Building b, Wall w, DesignSettings settings) =>
+            (settings ?? new DesignSettings()).NewWallDesignFor(b.IsExterior(w));
 
         /// <summary>
         /// A wall's height for the diaphragm of <paramref name="level"/>: from the level below that braces it (or its base)
@@ -213,6 +232,7 @@ namespace BuildingModel.ShearWalls
                     if (!(b.Find(kv.Value) is Wall w) || !s.Calculator._wall_system._walls.TryGetValue(kv.Key, out var data)) continue;
                     var x = ReadWall(w);
                     string before = w.GetData(WallKey);
+                    TrackDefault(b, w, s, x, data.Design);
                     x.Design[s.Level.Id] = data.Design;
                     x.WallType = data.WallType;
                     WriteWall(w, x);
@@ -234,6 +254,32 @@ namespace BuildingModel.ShearWalls
             }
             return changed;
         }
+
+        /// <summary>
+        /// Keeps <see cref="WallExtras.AutoExterior"/> for one wall and story: still the default for where the wall is (a new
+        /// wall, or one that followed a move) → marked; changed from what was stored (the user edited it) → no longer marked.
+        /// </summary>
+        private static void TrackDefault(Building b, Wall w, StoryMap s, WallExtras x, WallDesignInputs now)
+        {
+            string id = s.Level.Id;
+            bool exterior = b.IsExterior(w);
+            bool stored = x.Design.TryGetValue(id, out var before) && before != null;
+            bool isDefault = now != null && Same(now, NewWallDesign(b, w, s.Calculator.DesignSettings));
+            bool wasAuto = x.AutoExterior != null && x.AutoExterior.ContainsKey(id);
+            if (isDefault && (!stored || wasAuto))
+            {
+                if (x.AutoExterior == null) x.AutoExterior = new Dictionary<string, bool>();
+                x.AutoExterior[id] = exterior;
+            }
+            else if (wasAuto && !(stored && Same(now, before)))
+            {
+                x.AutoExterior.Remove(id);
+                if (x.AutoExterior.Count == 0) x.AutoExterior = null;
+            }
+        }
+
+        private static bool Same(WallDesignInputs a, WallDesignInputs b) =>
+            JsonConvert.SerializeObject(a, Json) == JsonConvert.SerializeObject(b, Json);
 
         /// <summary>
         /// Writes coordinates typed in the designer's tables back into the model: a wall's ends, and a diaphragm's
@@ -347,7 +393,8 @@ namespace BuildingModel.ShearWalls
                         TopLevelId = level.Id,
                     };
                     var x = new WallExtras { WallType = kv.Value.WallType };
-                    x.Design[level.Id] = kv.Value.Design;
+                    // an older wall without a design used the program default (Structural I): kept as it was, not a "new" wall
+                    x.Design[level.Id] = kv.Value.Design ?? new WallDesignInputs();
                     WriteWall(w, x);
                     b.Walls.Add(w);
                 }

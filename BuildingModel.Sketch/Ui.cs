@@ -6,7 +6,10 @@ using System.Windows.Media;
 
 namespace BuildingModel.Sketch
 {
-    /// <summary>Small, flat toolbar buttons (an icon from Segoe MDL2 Assets and an optional short word) and a few helpers.</summary>
+    /// <summary>
+    /// Small, flat toolbar buttons (an icon from Segoe MDL2 Assets and an optional short word) and a few helpers. Error
+    /// (dark vermilion) and Warning (dark amber) are text colours readable on white; the plan markers use the canvas palette.
+    /// </summary>
     public static class Ui
     {
         public static readonly FontFamily Icons = new FontFamily("Segoe MDL2 Assets");
@@ -17,8 +20,8 @@ namespace BuildingModel.Sketch
         public static readonly Brush Muted = Frozen(Color.FromRgb(0x6B, 0x72, 0x80));
         public static readonly Brush Bar = Frozen(Color.FromRgb(0xF8, 0xF9, 0xFA));
         public static readonly Brush Line = Frozen(Color.FromRgb(0xE3, 0xE6, 0xEA));
-        public static readonly Brush Error = Frozen(Color.FromRgb(0xDC, 0x26, 0x26));
-        public static readonly Brush Warning = Frozen(Color.FromRgb(0xB4, 0x53, 0x09));
+        public static readonly Brush Error = Frozen(Color.FromRgb(0xB5, 0x47, 0x08));
+        public static readonly Brush Warning = Frozen(Color.FromRgb(0x8A, 0x5A, 0x00));
 
         public static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 

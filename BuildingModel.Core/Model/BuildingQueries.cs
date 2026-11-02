@@ -43,6 +43,46 @@ namespace BuildingModel.Model
         public static Region Footprint(this Building b) =>
             Region.Of(b.Diaphragms.Where(d => b.Level(d.LevelId) != null).SelectMany(d => d.Pieces));
 
+        /// <summary>
+        /// How much of a wall's length runs along the building's outside edge (ft): along the outline of the gross diaphragm
+        /// (openings not counted, so a stair hole is not "outside"; a notch or courtyard is) of any level the wall reaches,
+        /// within <paramref name="tolerance"/> of the wall line.
+        /// </summary>
+        public static double ExteriorLength(this Building b, Wall w, double tolerance = WallTolerance)
+        {
+            if (w.Direction == WallDirection.NotOrthogonal) return 0;
+            bool ew = w.Direction == WallDirection.WestEast;
+            double line = ew ? w.Start.Y : w.Start.X;
+            double s0 = ew ? Math.Min(w.Start.X, w.End.X) : Math.Min(w.Start.Y, w.End.Y);
+            double s1 = ew ? Math.Max(w.Start.X, w.End.X) : Math.Max(w.Start.Y, w.End.Y);
+            var along = new List<(double from, double to)>();
+            foreach (var l in b.LevelsAlong(w))
+                foreach (var s in b.GrossDiaphragm(l).Outline())
+                {
+                    if (s.IsHorizontal != ew) continue;
+                    double sl = ew ? s.A.Y : s.A.X;
+                    if (Math.Abs(sl - line) > tolerance) continue;
+                    double from = Math.Max(s0, ew ? Math.Min(s.A.X, s.B.X) : Math.Min(s.A.Y, s.B.Y));
+                    double to = Math.Min(s1, ew ? Math.Max(s.A.X, s.B.X) : Math.Max(s.A.Y, s.B.Y));
+                    if (to > from) along.Add((from, to));
+                }
+            // the union of the pieces (levels can share an edge: counted once)
+            double total = 0, end = double.NegativeInfinity;
+            foreach (var p in along.OrderBy(p => p.from))
+            {
+                double from = Math.Max(p.from, end);
+                if (p.to > from) total += p.to - from;
+                end = Math.Max(end, p.to);
+            }
+            return total;
+        }
+
+        /// <summary>
+        /// An exterior wall: any part of its length runs along the building's outside edge (<see cref="ExteriorLength"/>).
+        /// It is sheathed as an exterior wall even when most of it is inside.
+        /// </summary>
+        public static bool IsExterior(this Building b, Wall w) => b.ExteriorLength(w) > 1e-6;
+
         /// <summary>The levels a wall passes or reaches above its base (base excluded, top included), bottom up.</summary>
         public static List<Level> LevelsAlong(this Building b, Wall w)
         {

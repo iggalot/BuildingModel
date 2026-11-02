@@ -56,7 +56,6 @@ namespace BuildingModel.App
         private readonly ObjectProperties properties;
         private readonly IssueList issueList;
         private readonly TextBlock summary = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Ui.Muted, FontSize = 11.5 };
-        private readonly TextBox nameBox = new TextBox { Width = 160, VerticalContentAlignment = VerticalAlignment.Center, BorderBrush = Ui.Line, Padding = new Thickness(3, 1, 3, 1) };
         private readonly ToggleButton planTab, tab3D;
 
         private ModelDocument doc = new ModelDocument();
@@ -78,33 +77,74 @@ namespace BuildingModel.App
             properties = new ObjectProperties(Sketch);
             issueList = new IssueList(Sketch);
 
-            // the app bar
-            var bar = new StackPanel { Orientation = Orientation.Horizontal };
-            bar.Children.Add(new TextBlock { Text = "Building Model", FontWeight = FontWeights.SemiBold, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 12, 0) });
-            bar.Children.Add(Ui.Button("", "New", "A new building (Ctrl+N)", (s, e) => New()));
-            bar.Children.Add(Ui.Button("", "Open", "Open a building model (Ctrl+O)", (s, e) => OpenDialog()));
-            bar.Children.Add(Ui.Button("", "Save", "Save (Ctrl+S)", (s, e) => Save(false)));
-            bar.Children.Add(Ui.Button("", "Save as", "Save as a new file", (s, e) => Save(true)));
-            bar.Children.Add(Ui.Separator());
-            bar.Children.Add(Ui.Button("", "Level", "Add a level on top (asks the story height)", (s, e) => AddLevel()));
-            bar.Children.Add(Ui.Button("", "Insert", "Insert a level under the one shown (a mezzanine or an added floor)", (s, e) => InsertLevel()));
-            bar.Children.Add(Ui.Button("", "Copy story ↑", "Put a copy of the story under the level below on the level shown", (s, e) => CopyStoryBelow()));
-            bar.Children.Add(Ui.Button("", "Level", "Delete the level shown and the story under it (the levels above come down)", (s, e) => DeleteLevel()));
-            bar.Children.Add(Ui.Separator());
+            // the menu: every command once, named and grouped by what it works on (the keys are shown beside them)
+            var menu = new Menu { Background = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            MenuItem Item(ItemsControl parent, string header, string keys, Action a, string tip = null)
+            {
+                var m = new MenuItem { Header = header, InputGestureText = keys ?? "", ToolTip = tip };
+                if (a != null) m.Click += (s, e) => a();
+                parent.Items.Add(m);
+                return m;
+            }
+            var file = Item(menu, "_File", null, null);
+            Item(file, "_New project…", "Ctrl+N", () => New(), "A new design project: pick or make its folder");
+            Item(file, "_Open…", "Ctrl+O", OpenDialog);
+            Item(file, "_Save", "Ctrl+S", () => Save(false));
+            Item(file, "Save _as…", null, () => Save(true), "Save as a new project folder");
+            file.Items.Add(new Separator());
+            Item(file, "Apply changes from another app…", null, ApplyChanges, "Apply a change set proposed by another app (the shear wall designer)");
+            file.Items.Add(new Separator());
+            Item(file, "E_xit", "Alt+F4", Close);
+
+            var edit = Item(menu, "_Edit", null, null);
+            Item(edit, "_Undo", "Ctrl+Z", () => Sketch.Undo());
+            Item(edit, "_Redo", "Ctrl+Y", () => Sketch.Redo());
+            edit.Items.Add(new Separator());
+            Item(edit, "Select all on this level", "Ctrl+A", () => Sketch.Select(Sketch.Building.VisibleIds(Sketch.ActiveLevel)));
+            Item(edit, "_Delete", "Del", () => Sketch.DeleteSelected());
+            edit.Items.Add(new Separator());
+            Item(edit, "_Move", "M", () => Sketch.SetTool(SketchTool.Move));
+            Item(edit, "_Copy and place", "Ctrl+C", () => Sketch.CopyAndPlace(), "One copy of the selection follows the cursor straight across or up; click to place it");
+            Item(edit, "Copy several", "C", () => Sketch.SetTool(SketchTool.Copy));
+            Item(edit, "M_irror", "I", () => Sketch.SetTool(SketchTool.Mirror));
+            Item(edit, "_Split a wall", "X", () => Sketch.SetTool(SketchTool.Split));
+            Item(edit, "_Join two walls", "J", () => Sketch.JoinSelected());
+            Item(edit, "Measure", "T", () => Sketch.SetTool(SketchTool.Measure));
+
+            var building = Item(menu, "_Building", null, null);
+            Item(building, "_Name…", null, RenameBuilding);
+            Item(building, "New from _size…", null, () => view.NewFromSize(), "A box L × B with its stories, a diaphragm on each level and the outside shear walls (replaces the drawing; Undo puts it back)");
+            Item(building, "_Roof…", null, () => view.EditRoof(), "Flat, gable or hip; the slope (4:12, 6:12...), ridge, parapet and eaves");
+            building.Items.Add(new Separator());
+            Item(building, "What the analysis apps _read…", null, BuildingSummary, "L, B, stories, the roof and each level's share of each face, as the wind and shear wall apps read them");
+
+            var levels = Item(menu, "_Levels", null, null);
+            Item(levels, "_Add a level on top…", null, AddLevel, "Asks the story height");
+            Item(levels, "_Insert a level under this one…", null, InsertLevel, "A mezzanine or an added floor");
+            Item(levels, "_Copy the story below onto this level", null, CopyStoryBelow);
+            levels.Items.Add(new Separator());
+            Item(levels, "_Delete this level…", null, DeleteLevel, "The level shown and the story under it; the levels above come down");
+
+            var viewMenu = Item(menu, "_View", null, null);
+            Item(viewMenu, "_Plan", null, () => ShowPlan(true));
+            Item(viewMenu, "_3D", null, () => ShowPlan(false));
+            viewMenu.Items.Add(new Separator());
+            Item(viewMenu, "_Zoom to the drawing", "Z", () => Sketch.ZoomExtents());
+
+            var bar = new DockPanel { LastChildFill = false };
+            var title = new TextBlock { Text = "Building Model", FontWeight = FontWeights.SemiBold, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 12, 0) };
+            bar.Children.Add(title);
+            bar.Children.Add(menu);
             planTab = Ui.Toggle("", "Plan", "The plan of the level shown", (s, e) => ShowPlan(true));
             tab3D = Ui.Toggle("", "3D", "The building in 3D", (s, e) => ShowPlan(false));
-            bar.Children.Add(planTab);
-            bar.Children.Add(tab3D);
-            bar.Children.Add(Ui.Separator());
-            bar.Children.Add(Ui.Button("", "Summary", "What the analysis apps read from this model: L, B, stories, the roof, each level's share of each face", (s, e) => BuildingSummary()));
-            bar.Children.Add(Ui.Button("", "Apply changes…", "Apply a change set proposed by another app (the shear wall designer)", (s, e) => ApplyChanges()));
-            var nameRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            nameRow.Children.Add(new TextBlock { Text = "Name", Foreground = Ui.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 6, 0) });
-            nameRow.Children.Add(nameBox);
-            bar.Children.Add(nameRow);
-            nameBox.LostFocus += (s, e) => { if (nameBox.Text != Sketch.Building.Name) Sketch.Edit("Name set.", b => b.Name = nameBox.Text.Trim()); };
+            var tabs = new StackPanel { Orientation = Orientation.Horizontal };
+            tabs.Children.Add(planTab);
+            tabs.Children.Add(tab3D);
+            DockPanel.SetDock(tabs, Dock.Right);
+            bar.Children.Add(tabs);
+            view.ShowBuildingTools = false; // they are in the Building menu
 
-            var appBar = new Border { Child = bar, Background = Brushes.White, BorderBrush = Ui.Line, BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(6, 5, 6, 5) };
+            var appBar = new Border { Child = bar, Background = Brushes.White, BorderBrush = Ui.Line, BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(6, 3, 6, 3) };
 
             // the side panel: properties, issues, summary
             var side = new DockPanel { Width = 290, Background = Ui.Bar };
@@ -161,11 +201,10 @@ namespace BuildingModel.App
             issueList.Show(issues);
             var fp = b.Footprint();
             var above = b.LevelsBottomUp.Where(l => l.Elevation > 0).ToList();
-            summary.Text = (fp.IsEmpty ? "No diaphragm yet." : $"Footprint {fp.Bounds.Width:0.##} × {fp.Bounds.Height:0.##} ft ({fp.Area:0} sq ft).") +
+            summary.Text = (string.IsNullOrWhiteSpace(b.Name) ? "" : b.Name + "\n") + (fp.IsEmpty ? "No diaphragm yet." : $"Footprint {fp.Bounds.Width:0.##} × {fp.Bounds.Height:0.##} ft ({fp.Area:0} sq ft).") +
                            $"\n{above.Count} level{(above.Count == 1 ? "" : "s")} above the ground" + (above.Count > 0 ? $", top at {above.Last().Elevation:0.##} ft" : "") +
                            $"\n{b.Walls.Count(w => w.IsShearWall)} shear walls, {b.Walls.Count(w => !w.IsShearWall)} other walls, {b.Openings.Count} openings, {b.Notes.Count} notes." +
                            $"\nRevision {doc.Revision}{(dirty ? " (not saved)" : "")}";
-            if (nameBox.Text != b.Name && !nameBox.IsKeyboardFocused) nameBox.Text = b.Name;
             Title = $"{(string.IsNullOrEmpty(path) ? "New building" : Path.GetFileName(path))}{(dirty ? " *" : "")} — Building Model";
             view3D.HighlightLevelId = Sketch.ActiveLevel?.Id;
             if (view3D.Visibility == Visibility.Visible) view3D.Show(b);
@@ -281,6 +320,14 @@ namespace BuildingModel.App
                 MessageBox.Show(this, "The file could not be saved.\n\n" + ex.Message, "Save", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
+        }
+
+        /// <summary>BUILDING > NAME: the building's name (one undo step).</summary>
+        private void RenameBuilding()
+        {
+            string s = TextPrompt.Ask("The building's name", Sketch.Building.Name ?? "");
+            if (s == null || s.Trim() == Sketch.Building.Name) return;
+            Sketch.Edit("Name set.", b => b.Name = s.Trim());
         }
 
         // ------------------------------------------------------------------ levels

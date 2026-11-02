@@ -37,6 +37,8 @@ namespace BuildingModel.Sketch
             public bool Middle;     // a wall's midpoint: moves the selection
             public bool Start;      // a wall's start (else its end)
             public int Piece;       // a rectangle's piece
+            public bool IsSide;     // the middle of a rectangle's side: moves that side
+            public RectSide Side;
             public Point2 At;       // where the grip is
         }
 
@@ -50,9 +52,54 @@ namespace BuildingModel.Sketch
         public Point2 CursorPoint => cursor;
 
         /// <summary>Ends the command under way (Esc); the tool stays.</summary>
+        /// <summary>Ctrl+C: the copy follows the cursor from the selection's centre (straight across or up) and one click places it.</summary>
+        private bool copyOnce;
+
+        /// <summary>
+        /// Ctrl+C (or Ctrl+D): copies the selection and puts the copy on the cursor, held straight across or straight up from
+        /// the original; a click (or a typed distance) places it and selects it. Esc cancels. Nothing selected: says so.
+        /// </summary>
+        public void CopyAndPlace()
+        {
+            if (selection.Count == 0 || Building == null) { Say("Copy: select what to copy first (click it, or drag a window), then Ctrl+C.", true); return; }
+            var pts = new List<Point2>();
+            foreach (var id in selection)
+            {
+                var o = Building.Find(id);
+                if (o is Wall w) { pts.Add(w.Start); pts.Add(w.End); }
+                else if (o is Note n) pts.Add(n.At);
+                else foreach (var r in LevelView.PiecesOf(o)) { pts.Add(new Point2(r.X0, r.Y0)); pts.Add(new Point2(r.X1, r.Y1)); }
+            }
+            if (pts.Count == 0) return;
+            SetTool(SketchTool.Copy);
+            first = new Point2((pts.Min(p => p.X) + pts.Max(p => p.X)) / 2, (pts.Min(p => p.Y) + pts.Max(p => p.Y)) / 2);
+            copyOnce = true;
+            Say($"Copy of {Names(selection.ToList())}: move the cursor across or up and click to place it (or type the distance). Esc cancels.");
+            InvalidateVisual();
+        }
+
+        /// <summary>Splits the wall of this level nearest <paramref name="at"/> there (one undo step). False with a message when it cannot.</summary>
+        public bool SplitWallAt(Point2 at)
+        {
+            var b = Building;
+            var level = ActiveLevel;
+            if (b == null || level == null) return false;
+            var wall = b.WallsUnder(level).OrderBy(x => Snapper.DistanceToSegment(at, new Segment2(x.Start, x.End))).FirstOrDefault();
+            if (wall == null || Snapper.DistanceToSegment(at, new Segment2(wall.Start, wall.End)) > PixelsToFeet(8)) { Say("Click on a wall.", true); return false; }
+            var p = BuildingEdits.AlongWall(wall, at);
+            string rest = BuildingEdits.SplitWall(b, wall.Id, p);
+            if (rest == null) { Say("That is the end of the wall: split it between its ends.", true); return false; }
+            Commit($"Split {wall.Id}: {wall.Length:0.##} ft and {rest} {((Wall)b.Find(rest)).Length:0.##} ft.");
+            return true;
+        }
+
+        /// <summary>Right-click in Select: the host shows a menu for what is under the cursor (already added to the selection).</summary>
+        public event EventHandler<SketchMenuEventArgs> ContextMenuRequested;
+
         public void ResetCommand()
         {
             first = null;
+            copyOnce = false;
             bool dragging = grip != null || windowFrom != null;
             grip = null;
             windowFrom = null;
@@ -176,7 +223,7 @@ namespace BuildingModel.Sketch
                         break;
                     }
                     if (first == null) { first = p; break; }
-                    var to = Ortho || Tool == SketchTool.Mirror ? Snapper.Ortho(p, first.Value) : p;
+                    var to = Ortho || copyOnce || Tool == SketchTool.Mirror ? Snapper.Ortho(p, first.Value) : p;
                     double dx = to.X - first.Value.X, dy = to.Y - first.Value.Y;
                     var ids = selection.ToList();
                     if (Tool == SketchTool.Move)
@@ -188,6 +235,14 @@ namespace BuildingModel.Sketch
                     else if (Tool == SketchTool.Copy)
                     {
                         var copies = ids.Select(id => BuildingEdits.Copy(b, id, dx, dy)).Where(c => c != null).ToList();
+                        if (copyOnce)
+                        {
+                            // Ctrl+C: one copy, placed; it is then the selection, ready to be moved or copied again
+                            SetTool(SketchTool.Select);
+                            Select(copies);
+                            Commit($"Copied {Names(ids)} {Offset(dx, dy)}: {Names(copies)} (selected).");
+                            break;
+                        }
                         Commit($"Copied {Names(ids)} to {Names(copies)}. Click again for another copy; Esc ends.");
                     }
                     else
@@ -222,7 +277,7 @@ namespace BuildingModel.Sketch
                 case SketchTool.PlanMove:
                     var plan = PlanOf(level);
                     if (plan == null) { Say("There is no plan under this level.", true); SetTool(SketchTool.Select); return; }
-                    if (plan.Locked) { Say("The plan is locked: Plan ▾ > Unlock first.", true); SetTool(SketchTool.Select); return; }
+                    if (plan.Locked) { Say("The plan is locked: Underlay ▾ > Unlock first.", true); SetTool(SketchTool.Select); return; }
                     if (first == null) { first = p; break; }
                     var a = first.Value;
                     if (Snapper.Dist(a, p) < 1e-9) { Say("Pick a different point.", true); return; }
@@ -270,6 +325,15 @@ namespace BuildingModel.Sketch
             }
             if (e.ChangedButton == MouseButton.Right)
             {
+                if (Tool == SketchTool.Select && first == null && grip == null && windowFrom == null && ContextMenuRequested != null)
+                {
+                    // the menu of what is under the cursor (it joins the selection first, as in most programs)
+                    string hit = Snapper.Pick(Building, ActiveLevel, rawCursor, PixelsToFeet(6));
+                    if (hit != null && !selection.Contains(hit)) Select(new[] { hit });
+                    ContextMenuRequested(this, new SketchMenuEventArgs(rawCursor, hit, pos));
+                    e.Handled = true;
+                    return;
+                }
                 if (first != null) ResetCommand();
                 else if (Tool != SketchTool.Select) SetTool(SketchTool.Select);
                 else ClearSelection();
@@ -501,7 +565,7 @@ namespace BuildingModel.Sketch
 
         /// <summary>
         /// The grips of the selection: on every selected wall its two ends and its middle; on a single selected rectangle
-        /// (a diaphragm or an opening) its corners.
+        /// (a diaphragm or an opening) its corners and the middle of each side.
         /// </summary>
         private IEnumerable<Grip> Grips()
         {
@@ -524,6 +588,11 @@ namespace BuildingModel.Sketch
                 {
                     foreach (var c in new[] { new Point2(r.X0, r.Y0), new Point2(r.X1, r.Y0), new Point2(r.X1, r.Y1), new Point2(r.X0, r.Y1) })
                         yield return new Grip { Id = o.Id, Piece = i, At = c };
+                    double mx = (r.X0 + r.X1) / 2, my = (r.Y0 + r.Y1) / 2;
+                    yield return new Grip { Id = o.Id, Piece = i, IsSide = true, Side = RectSide.West, At = new Point2(r.X0, my) };
+                    yield return new Grip { Id = o.Id, Piece = i, IsSide = true, Side = RectSide.East, At = new Point2(r.X1, my) };
+                    yield return new Grip { Id = o.Id, Piece = i, IsSide = true, Side = RectSide.South, At = new Point2(mx, r.Y0) };
+                    yield return new Grip { Id = o.Id, Piece = i, IsSide = true, Side = RectSide.North, At = new Point2(mx, r.Y1) };
                     i++;
                 }
             }
@@ -549,6 +618,15 @@ namespace BuildingModel.Sketch
                 var fixedEnd = g.Start ? w.End : w.Start;
                 return $"{w.Id}: {Snapper.Dist(fixedEnd, BuildingEdits.AlongWall(w, to)):0.##} ft (was {w.Length:0.##} ft). Release to set; Esc cancels.";
             }
+            if (g.IsSide)
+            {
+                var r = LevelView.PiecesOf(Building.Find(g.Id)).ElementAtOrDefault(g.Piece);
+                bool ns = g.Side == RectSide.West || g.Side == RectSide.East;
+                double moved = ns ? to.X - g.At.X : to.Y - g.At.Y;
+                double size = ns ? r.X1 - r.X0 + (g.Side == RectSide.East ? moved : -moved) : r.Y1 - r.Y0 + (g.Side == RectSide.North ? moved : -moved);
+                return $"{g.Id}: {g.Side.ToString().ToLowerInvariant()} side {Math.Abs(moved):0.##} ft {(moved >= 0 ? (ns ? "east" : "north") : (ns ? "west" : "south"))}, " +
+                       $"{(ns ? "width" : "depth")} {Math.Abs(size):0.##} ft. Release to set; Esc cancels.";
+            }
             return $"Stretch {g.Id}. Release to set; Esc cancels.";
         }
 
@@ -557,7 +635,9 @@ namespace BuildingModel.Sketch
             Math.Abs(dx) >= Math.Abs(dy) ? $"{Math.Abs(dx):0.##} ft {(dx >= 0 ? "east" : "west")}" : $"{Math.Abs(dy):0.##} ft {(dy >= 0 ? "north" : "south")}";
 
         private static Cursor GripCursor(Grip? g) =>
-            g == null ? Cursors.Cross : g.Value.Middle ? Cursors.SizeAll : Cursors.Hand;
+            g == null ? Cursors.Cross : g.Value.Middle ? Cursors.SizeAll
+            : g.Value.IsSide ? (g.Value.Side == RectSide.West || g.Value.Side == RectSide.East ? Cursors.SizeWE : Cursors.SizeNS)
+            : Cursors.Hand;
 
         /// <summary>Applies a grip dragged to a point (one undo step). False with a message when it cannot be done.</summary>
         private bool ApplyGrip(Grip g, Point2 to)
@@ -576,6 +656,14 @@ namespace BuildingModel.Sketch
             {
                 if (!BuildingEdits.MoveWallEnd(b, g.Id, g.Start, to)) { Say("That would leave the wall with no length.", true); return false; }
                 Commit($"{g.Id} is now {((Wall)b.Find(g.Id)).Length:0.##} ft long.");
+                return true;
+            }
+            if (g.IsSide)
+            {
+                double at = g.Side == RectSide.West || g.Side == RectSide.East ? to.X : to.Y;
+                if (!BuildingEdits.MoveSide(b, g.Id, g.Piece, g.Side, at)) { Say("That would leave it with no area.", true); return false; }
+                var r = LevelView.PiecesOf(b.Find(g.Id)).ElementAtOrDefault(g.Piece);
+                Commit($"{g.Id} is now {r.X1 - r.X0:0.##} × {r.Y1 - r.Y0:0.##} ft.");
                 return true;
             }
             if (!BuildingEdits.MoveCorner(b, g.Id, g.Piece, g.At, to)) { Say("That would leave it with no area.", true); return false; }
@@ -624,6 +712,8 @@ namespace BuildingModel.Sketch
                     case Key.Z: if ((mods & ModifierKeys.Shift) != 0) Redo(); else Undo(); return true;
                     case Key.Y: Redo(); return true;
                     case Key.A: Select(Building.VisibleIds(ActiveLevel)); return true;
+                    case Key.C: CopyAndPlace(); return true;
+                    case Key.D: CopyAndPlace(); return true;
                 }
                 return false;
             }
@@ -631,10 +721,12 @@ namespace BuildingModel.Sketch
             switch (key)
             {
                 case Key.Escape:
+                    // always back to Select: a command under way is cancelled and its tool put down; in Select, the selection goes
                     Escaped?.Invoke(this, EventArgs.Empty);
-                    if (first != null || grip != null || windowFrom != null) ResetCommand();
-                    else if (Tool != SketchTool.Select) SetTool(SketchTool.Select);
-                    else ClearSelection();
+                    bool busy = first != null || grip != null || windowFrom != null;
+                    if (busy) ResetCommand();
+                    if (Tool != SketchTool.Select) SetTool(SketchTool.Select);
+                    else if (!busy) ClearSelection();
                     Say(Prompt());
                     return true;
                 case Key.Delete: DeleteSelected(); return true;

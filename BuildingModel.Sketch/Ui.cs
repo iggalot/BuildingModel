@@ -106,5 +106,67 @@ namespace BuildingModel.Sketch
         /// <summary>A thin vertical line between groups of buttons.</summary>
         public static FrameworkElement Separator() =>
             new Border { Width = 1, Margin = new Thickness(5, 4, 5, 4), Background = Line };
+
+        /// <summary>A thin horizontal line between groups of a vertical toolbar.</summary>
+        public static FrameworkElement HSeparator() =>
+            new Border { Height = 1, Margin = new Thickness(6, 5, 6, 5), Background = Line };
+
+        /// <summary>A 16 × 16 line icon from path data (stroked; <paramref name="fill"/> also fills its closed shapes lightly).</summary>
+        public static FrameworkElement Icon(string data, bool fill = false)
+        {
+            var g = System.Windows.Media.Geometry.Parse(data);
+            g.Freeze();
+            return new System.Windows.Shapes.Path
+            {
+                Data = g, Width = 16, Height = 16, Stretch = Stretch.None, Stroke = Ink, StrokeThickness = 1.3,
+                StrokeLineJoin = PenLineJoin.Round, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
+                Fill = fill ? Checked : null, SnapsToDevicePixels = true,
+            };
+        }
+
+        /// <summary>A tooltip: the command's name and keys in bold, then what it does.</summary>
+        public static ToolTip Tip(string title, string keys, string text)
+        {
+            var sp = new StackPanel { MaxWidth = 320 };
+            var head = new TextBlock { FontWeight = FontWeights.SemiBold, Foreground = Ink };
+            head.Inlines.Add(new System.Windows.Documents.Run(title));
+            if (!string.IsNullOrEmpty(keys)) head.Inlines.Add(new System.Windows.Documents.Run("   " + keys) { Foreground = Muted, FontWeight = FontWeights.Normal });
+            sp.Children.Add(head);
+            if (!string.IsNullOrEmpty(text)) sp.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = Ink, Margin = new Thickness(0, 3, 0, 0) });
+            return new ToolTip { Content = sp, Placement = System.Windows.Controls.Primitives.PlacementMode.Right };
+        }
+
+        /// <summary>A square icon button for a vertical toolbar (no text: the tooltip names it).</summary>
+        public static T Square<T>(T b, FrameworkElement icon, ToolTip tip) where T : ButtonBase
+        {
+            b.Template = Template();
+            b.Content = icon;
+            b.ToolTip = tip;
+            b.Width = 32;
+            b.Height = 30;
+            b.Margin = new Thickness(3, 1, 3, 1);
+            b.Focusable = false;
+            b.Cursor = Cursors.Hand;
+            ToolTipService.SetInitialShowDelay(b, 250);
+            return b;
+        }
+
+        /// <summary>The icons of the drawing tools (16 × 16 path data).</summary>
+        public static class Icons16
+        {
+            public const string Select = "M4,1.5 L4,13.5 L7,10.6 L9.2,15 L11,14.1 L8.8,9.8 L12.8,9.8 Z";
+            public const string Wall = "M1.5,6.5 L14.5,6.5 L14.5,9.5 L1.5,9.5 Z";
+            public const string Diaphragm = "M2.5,3.5 L13.5,3.5 L13.5,12.5 L2.5,12.5 Z";
+            public const string Cut = "M2.5,2.5 L13.5,2.5 L13.5,8 L8,8 L8,13.5 L2.5,13.5 Z M9.5,9.5 L13.5,13.5 M13.5,9.5 L9.5,13.5";
+            public const string Opening = "M2.5,2.5 L13.5,2.5 L13.5,13.5 L2.5,13.5 Z M2.5,2.5 L13.5,13.5 M13.5,2.5 L2.5,13.5";
+            public const string Note = "M2,2.5 L14,2.5 L14,10.5 L8,10.5 L5,13.5 L5,10.5 L2,10.5 Z";
+            public const string Move = "M8,1 L8,15 M1,8 L15,8 M6,3 L8,1 L10,3 M6,13 L8,15 L10,13 M3,6 L1,8 L3,10 M13,6 L15,8 L13,10";
+            public const string Copy = "M5.5,1.5 L14.5,1.5 L14.5,10.5 L5.5,10.5 Z M3.5,5.5 L1.5,5.5 L1.5,14.5 L10.5,14.5 L10.5,12.5";
+            public const string Delete = "M2.5,4 L13.5,4 M6,4 L6,2 L10,2 L10,4 M4,4 L4.8,14.5 L11.2,14.5 L12,4 M6.5,6.5 L6.5,12 M9.5,6.5 L9.5,12";
+            public const string Measure = "M1.5,10.5 L14.5,10.5 L14.5,14.5 L1.5,14.5 Z M4.5,10.5 L4.5,12.5 M8,10.5 L8,13 M11.5,10.5 L11.5,12.5 M1.5,5 L14.5,5 M1.5,3 L1.5,7 M14.5,3 L14.5,7";
+            public const string Undo = "M5,3 L1.5,6.5 L5,10 M1.5,6.5 L10,6.5 C13,6.5 14.5,8.5 14.5,10.5 C14.5,12.5 13,14 10,14 L7,14";
+            public const string Redo = "M11,3 L14.5,6.5 L11,10 M14.5,6.5 L6,6.5 C3,6.5 1.5,8.5 1.5,10.5 C1.5,12.5 3,14 6,14 L9,14";
+            public const string ZoomAll = "M1.5,5 L1.5,1.5 L5,1.5 M11,1.5 L14.5,1.5 L14.5,5 M14.5,11 L14.5,14.5 L11,14.5 M5,14.5 L1.5,14.5 L1.5,11 M5,5 L11,5 L11,11 L5,11 Z";
+        }
     }
 }

@@ -168,8 +168,15 @@ the plan underlay, grips, previews, snap glyphs, the level caption and a scale b
 grips), Wall, Diaphragm, Opening, Note, Move, Copy, Mirror, Measure, Split, Calibrate. Every edit goes through
 `Commit`, which records an undo step and raises `ModelChanged`.
 
-`SketchView` wraps it with a toolbar of small icon buttons, a level bar, and a status line with the command box,
-the prompt and the cursor coordinates. `ObjectProperties` edits the selection (wall ends and levels, shear wall or
+`SketchView` wraps it, laid out by purpose (2026-11-02):
+- **Left:** a narrow strip of icon buttons for the work on the drawing: Select; Undo, Redo; Wall, Diaphragm, Cut out, Opening, Note; Move, Copy, Delete; Measure. Each tooltip names the command and its key.
+- **Bottom:** the view (zoom to the drawing; Snap, Ortho, Grid; Issues, Underlay ▾), then the command box, the prompt and the cursor coordinates.
+- **Top:** From size… and Roof… (`ShowBuildingTools`), the level buttons (`ShowLevelBar`) and the host's tools. The bar hides when it is empty.
+- **Right-click in Select:** the less used edits (`ContextMenuRequested`): copy and place, copy several, copy to another level (`BuildingEdits.CopyToLevel`), mirror, split this wall here (`SplitWallAt`), join, delete.
+- **Grips:** a selected rectangle (diaphragm or opening) has corner grips and a grip in the middle of each side, which moves that side only (`BuildingEdits.MoveSide`).
+- **Grid:** 1 ft minor and 10 ft major lines (coarser when the minor lines would be closer than 8 px), labelled in feet along the bottom and left edges.
+- **Esc** always returns to Select.
+- **Roof window:** the slope is typed as rise in 12 (4:12, 6:12, 8:12 and 12:12 are one click each; degrees with a °). The model still keeps degrees, and an untouched slope keeps its exact angle. `ObjectProperties` edits the selection (wall ends and levels, shear wall or
 not, rectangles, notes, levels; several at once as one undo step). `IssueList` lists the checks and finds each one on
 the plan. `Building3DView` shows the building in 3D.
 
@@ -188,7 +195,8 @@ the plan. `Building3DView` shows the building in 3D.
 
 ## Building Model app (`BuildingModel.App`)
 
-`BuildingModel.exe`: New, Open, Save (`*.bldg.json`), + level, insert a mezzanine, copy a story up, delete a level,
+`BuildingModel.exe`: a menu bar replaces the row of buttons. Every command appears once, grouped as **File** (new, open, save, apply changes), **Edit** (undo, the edits with their keys), **Building** (name, new from size, roof, what the analysis apps read), **Levels** (add, insert, copy the story below, delete) and **View** (plan, 3D, zoom). The Plan / 3D switch sits at the right.
+It covers New, Open, Save (`*.bldg.json`), + level, insert a mezzanine, copy a story up, delete a level,
 the plan and 3D, a properties panel, the issue list (live), a summary of what the analysis apps read (the
 envelope and the roof; no analysis app is run), the Roof window, and Apply changes (a change set from an analysis app, with its conflicts).
 

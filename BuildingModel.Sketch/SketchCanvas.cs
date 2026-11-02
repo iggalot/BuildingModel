@@ -22,6 +22,15 @@ namespace BuildingModel.Sketch
         public SketchDrawEventArgs(DrawingContext ctx, SketchCanvas s) { Context = ctx; Sketch = s; }
     }
 
+    /// <summary>A right-click in Select: where (ft and on screen) and the object under the cursor (null: none).</summary>
+    public sealed class SketchMenuEventArgs : EventArgs
+    {
+        public Geometry.Point2 At { get; }
+        public string HitId { get; }
+        public Point ScreenPoint { get; }
+        public SketchMenuEventArgs(Geometry.Point2 at, string hitId, Point screen) { At = at; HitId = hitId; ScreenPoint = screen; }
+    }
+
     /// <summary>A message for the status line.</summary>
     public sealed class SketchStatusEventArgs : EventArgs
     {

@@ -11,7 +11,7 @@ using BuildingModel.Serialization;
 namespace BuildingModel.Sketch
 {
     /// <summary>
-    /// The roof's inputs: flat, gable or hip; the slope (degrees, with its rise in 12); the gable's ridge direction; the
+    /// The roof's inputs: flat, gable or hip; the slope as rise in 12 (4:12, 6:12... one click each; degrees with a °); the gable's ridge direction; the
     /// parapet (flat roofs) and the eaves. What the roof comes to (rise, ridge and mean roof height) and the model's roof
     /// checks update as you type. Built in code so it can be tested without a window.
     /// </summary>
@@ -32,7 +32,7 @@ namespace BuildingModel.Sketch
         {
             building = b ?? throw new ArgumentNullException(nameof(b));
             Margin = new Thickness(14);
-            Width = 380;
+            Width = 420;
 
             var shapes = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
             flat = Shape("Flat", shapes);
@@ -40,12 +40,23 @@ namespace BuildingModel.Sketch
             hip = Shape("Hip", shapes);
             Children.Add(Row("Roof", shapes, out _));
 
+            // the slope as builders give it, rise in 12 (4:12, 6:12...); the model keeps degrees. "30°" typed is taken as degrees.
             pitch = Box();
-            rise = new TextBlock { Foreground = Ui.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            pitch.Width = 48;
+            pitch.ToolTip = "Rise in 12: 4 means 4:12. Also 4:12, 4/12, or degrees with a ° (or \"deg\"), e.g. 30°.";
+            rise = new TextBlock { Foreground = Ui.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), MinWidth = 52 };
             var pitchLine = new StackPanel { Orientation = Orientation.Horizontal };
             pitchLine.Children.Add(pitch);
-            pitchLine.Children.Add(new TextBlock { Text = "°", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0) });
+            pitchLine.Children.Add(new TextBlock { Text = ": 12", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) });
             pitchLine.Children.Add(rise);
+            foreach (var r in new[] { 4, 6, 8, 12 })
+            {
+                int riseIn12 = r;
+                var preset = new Button { Content = $"{r}:12", Padding = new Thickness(5, 1, 5, 1), Margin = new Thickness(3, 0, 0, 0), Focusable = false,
+                                          ToolTip = $"{r}:12 = {Math.Atan(r / 12.0) * 180 / Math.PI:0.##}°" };
+                preset.Click += (s, e) => pitch.Text = riseIn12.ToString(CultureInfo.CurrentCulture);
+                pitchLine.Children.Add(preset);
+            }
             Children.Add(pitchRow = Row("Slope", pitchLine, out _));
 
             ridge = new ComboBox { Width = 200, ItemsSource = new[] { "Along the longer side", "West-East", "South-North" } };
@@ -74,7 +85,7 @@ namespace BuildingModel.Sketch
         /// <summary>Sets the shape as a click would (tests and keyboard).</summary>
         public void SetShape(RoofShape s) { (s == RoofShape.Flat ? flat : s == RoofShape.Gable ? gable : hip).IsChecked = true; }
 
-        /// <summary>Sets the text of a box as typing would: "pitch", "parapet" or "eaves".</summary>
+        /// <summary>Sets the text of a box as typing would: "pitch" (the slope: rise in 12, or degrees with °), "parapet" or "eaves".</summary>
         public void Type(string field, string text) { (field == "pitch" ? pitch : field == "parapet" ? parapet : overhang).Text = text; }
 
         public void SetRidge(RidgeAxis r) => ridge.SelectedIndex = (int)r;
@@ -83,7 +94,7 @@ namespace BuildingModel.Sketch
         {
             loading = true;
             SetShape(r.Shape);
-            pitch.Text = Num(r.Pitch);
+            ShowSlope(r.Pitch);
             ridge.SelectedIndex = (int)r.Ridge;
             parapet.Text = Num(r.Parapet);
             overhang.Text = Num(r.Overhang);
@@ -97,7 +108,7 @@ namespace BuildingModel.Sketch
             var r = new Roof
             {
                 Shape = hip.IsChecked == true ? RoofShape.Hip : gable.IsChecked == true ? RoofShape.Gable : RoofShape.Flat,
-                Pitch = Parse(pitch.Text),
+                Pitch = SlopeDegrees(),
                 Ridge = (RidgeAxis)Math.Max(0, ridge.SelectedIndex),
                 Parapet = Parse(parapet.Text),
                 Overhang = Parse(overhang.Text),
@@ -110,7 +121,7 @@ namespace BuildingModel.Sketch
             pitchRow.Visibility = r.IsSloped ? Visibility.Visible : Visibility.Collapsed;
             ridgeRow.Visibility = r.Shape == RoofShape.Gable ? Visibility.Visible : Visibility.Collapsed;
             parapetRow.Visibility = r.IsSloped ? Visibility.Collapsed : Visibility.Visible;
-            rise.Text = r.RisePer12 == "-" ? "" : "rise " + r.RisePer12;
+            rise.Text = r.IsSloped && r.Pitch > 0 && r.Pitch < 90 ? $"= {r.Pitch:0.##}°" : "";
 
             // the model's own roof checks, on a copy with this roof
             var trial = ModelFile.Clone(building);
@@ -137,7 +148,7 @@ namespace BuildingModel.Sketch
             r.Checked += (s, e) =>
             {
                 // a roof made sloped without a usable slope gets the default one (the project default)
-                if (!loading && r != flat && !(Parse(pitch.Text) > 0)) pitch.Text = Num(building.Defaults.RoofPitch);
+                if (!loading && r != flat && !(SlopeDegrees() > 0)) ShowSlope(building.Defaults.RoofPitch);
                 Update();
             };
             into.Children.Add(r);
@@ -170,6 +181,51 @@ namespace BuildingModel.Sketch
         }
 
         private static string Num(double v) => double.IsNaN(v) ? "" : v.ToString("0.##", CultureInfo.CurrentCulture);
+
+        /// <summary>The slope in degrees that the box was last filled with, and the text it was given (kept exact when not retyped).</summary>
+        private double shownDegrees = double.NaN;
+        private string shownText;
+
+        /// <summary>Puts a slope (degrees) in the box as rise in 12.</summary>
+        private void ShowSlope(double degrees)
+        {
+            shownDegrees = degrees;
+            shownText = double.IsNaN(degrees) || degrees <= 0 || degrees >= 90 ? Num(degrees) : Num(12 * Math.Tan(degrees * Math.PI / 180));
+            pitch.Text = shownText;
+        }
+
+        /// <summary>The slope in degrees from the box: rise in 12 ("6", "6:12", "6/12") or degrees ("30°", "30 deg"); NaN when unreadable.</summary>
+        private double SlopeDegrees()
+        {
+            string s = (pitch.Text ?? "").Trim();
+            if (s == shownText && !double.IsNaN(shownDegrees)) return shownDegrees; // not retyped: exactly what the model had
+            return ParseSlope(s);
+        }
+
+        /// <summary>A slope typed as rise in 12 ("6", "6:12", "6/12", "6 in 12") or degrees ("30°", "30 deg"), in degrees; NaN when unreadable or not a slope.</summary>
+        public static double ParseSlope(string text)
+        {
+            string s = (text ?? "").Trim().ToLowerInvariant();
+            if (s.Length == 0) return double.NaN;
+            bool degrees = s.EndsWith("°") || s.EndsWith("deg") || s.EndsWith("degrees");
+            if (degrees)
+            {
+                double d = Parse(s.TrimEnd('°').Replace("degrees", "").Replace("deg", "").Trim());
+                return d >= 0 && d < 90 ? d : double.NaN;
+            }
+            double run = 12;
+            foreach (var sep in new[] { ":", "/", " in " })
+            {
+                int i = s.IndexOf(sep, StringComparison.Ordinal);
+                if (i <= 0) continue;
+                run = Parse(s.Substring(i + sep.Length));
+                s = s.Substring(0, i);
+                break;
+            }
+            double rise = Parse(s);
+            if (double.IsNaN(rise) || rise < 0 || !(run > 0)) return double.NaN;
+            return Math.Atan(rise / run) * 180 / Math.PI;
+        }
 
         private static double Parse(string s) =>
             double.TryParse((s ?? "").Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out double v) ? v : double.NaN;

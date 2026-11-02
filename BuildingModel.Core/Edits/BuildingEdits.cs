@@ -7,6 +7,9 @@ using BuildingModel.Serialization;
 
 namespace BuildingModel.Edits
 {
+    /// <summary>A side of a rectangle (the plan's axes: x east, y north).</summary>
+    public enum RectSide { West, East, South, North }
+
     /// <summary>
     /// The drafting edits on the model: delete, move, copy, split and stretch; levels and stories added, copied and
     /// deleted. Every edit keeps the IDs of what it does not delete, and an object's data bag goes with it (a copy
@@ -182,6 +185,60 @@ namespace BuildingModel.Edits
             if (n.IsEmpty) return false;
             pieces[piece] = n;
             return true;
+        }
+
+        /// <summary>
+        /// Moves one side of a rectangle piece of a diaphragm or an opening to <paramref name="to"/> (an x for the west and east
+        /// sides, a y for the south and north): the side keeps its length, the two sides next to it get longer or shorter.
+        /// False when there is no such piece or the rectangle would have no area.
+        /// </summary>
+        public static bool MoveSide(Building b, string id, int piece, RectSide side, double to)
+        {
+            var o = b.Find(id);
+            var pieces = o is Diaphragm d ? d.Pieces : o is Opening op ? op.Pieces : null;
+            if (pieces == null || piece < 0 || piece >= pieces.Count || double.IsNaN(to) || double.IsInfinity(to)) return false;
+            var r = pieces[piece];
+            double x0 = r.X0, y0 = r.Y0, x1 = r.X1, y1 = r.Y1;
+            switch (side)
+            {
+                case RectSide.West: x0 = to; break;
+                case RectSide.East: x1 = to; break;
+                case RectSide.South: y0 = to; break;
+                default: y1 = to; break;
+            }
+            if (Math.Abs(x1 - x0) < 1e-6 || Math.Abs(y1 - y0) < 1e-6) return false;
+            pieces[piece] = new Rect2(x0, y0, x1, y1);
+            return true;
+        }
+
+        /// <summary>
+        /// Copies objects to another level at the same place in plan: diaphragms and notes onto <paramref name="to"/>, walls into
+        /// the story under it (one story), openings through it (from the level below). Each copy keeps its data. Returns the new
+        /// IDs (nothing for what cannot go there, e.g. a wall when <paramref name="to"/> is the ground).
+        /// </summary>
+        public static List<string> CopyToLevel(Building b, IEnumerable<string> ids, Level to)
+        {
+            var added = new List<string>();
+            if (to == null || ids == null) return added;
+            var below = b.Below(to);
+            foreach (var id in ids.ToList())
+            {
+                var o = b.Find(id);
+                if (o == null || o is Level || o is Building) continue;
+                if ((o is Wall || o is Opening) && below == null) continue;
+                if (!(o is Diaphragm || o is Note || o is Wall || o is Opening)) continue;
+                var copy = CloneObject(o);
+                copy.Id = b.NewId(Prefix(o));
+                switch (copy)
+                {
+                    case Diaphragm d: d.LevelId = to.Id; b.Diaphragms.Add(d); break;
+                    case Note n: n.LevelId = to.Id; b.Notes.Add(n); break;
+                    case Wall w: w.BaseLevelId = below.Id; w.TopLevelId = to.Id; b.Walls.Add(w); break;
+                    case Opening op: op.BottomLevelId = below.Id; op.TopLevelId = to.Id; b.Openings.Add(op); break;
+                }
+                added.Add(copy.Id);
+            }
+            return added;
         }
 
         /// <summary>The box around everything on the plan (all levels); null when there is nothing.</summary>

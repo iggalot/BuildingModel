@@ -12,8 +12,16 @@ using BuildingModel.Model;
 namespace BuildingModel.Sketch
 {
     /// <summary>
-    /// The sketcher as one piece: a toolbar of small buttons over the plan, and a status line with the typed-point box,
-    /// the message and the cursor coordinates. The level buttons can be hidden when the host shows its own.
+    /// The sketcher as one piece, laid out by purpose:
+    /// <list type="bullet">
+    /// <item>LEFT, a narrow strip of icon buttons for the work on the drawing: select, undo/redo, draw, edit, measure (each
+    /// named with its key in its tooltip);</item>
+    /// <item>BOTTOM, the view: zoom, the drafting aids (snap, ortho, grid), what is shown (issues, the plan underlay), then the
+    /// typed-point box, the message and the cursor coordinates;</item>
+    /// <item>TOP, the building commands (new from size, roof) and the level buttons, which a host can hide or replace by its menus;</item>
+    /// <item>RIGHT-CLICK in Select, the less used edits of what is under the cursor (mirror, split here, join, copy to another level).</item>
+    /// </list>
+    /// Esc always returns to Select.
     /// </summary>
     public sealed class SketchView : DockPanel
     {
@@ -26,9 +34,12 @@ namespace BuildingModel.Sketch
         private readonly TextBox command = new TextBox { Width = 120, VerticalContentAlignment = VerticalAlignment.Center, BorderBrush = Ui.Line, Padding = new Thickness(3, 1, 3, 1) };
         private readonly TextBlock status = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(10, 0, 10, 0) };
         private readonly TextBlock coords = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Muted, MinWidth = 150, TextAlignment = TextAlignment.Right };
-        private readonly WrapPanel toolbar = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+        private readonly StackPanel toolStrip = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
+        private readonly StackPanel buildingTools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        private readonly StackPanel viewBar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        private readonly Border topBorder;
 
-        /// <summary>Extra buttons of the host, at the right end of the toolbar.</summary>
+        /// <summary>Extra buttons of the host, in the top bar.</summary>
         public Panel HostTools { get; } = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 
         public SketchView()
@@ -36,70 +47,78 @@ namespace BuildingModel.Sketch
             LastChildFill = true;
             Background = Brushes.White;
 
-            // the toolbar, in the order of the work: pick and undo; draw; edit; drafting aids; view
-            Tool(SketchTool.Select, "", "", "Select (Esc)  —  click, Shift+click to add, drag a window; drag a grip to stretch");
-            undo = Ui.Button("", "", "Undo (Ctrl+Z)", (s, e) => Canvas.Undo());
-            redo = Ui.Button("", "", "Redo (Ctrl+Y)", (s, e) => Canvas.Redo());
-            toolbar.Children.Add(undo);
-            toolbar.Children.Add(redo);
-            toolbar.Children.Add(Ui.Separator());
-            toolbar.Children.Add(Ui.GroupLabel("Draw"));
-            Tool(SketchTool.Wall, "", "Wall", "Wall (W)  —  the story under this level; walls are square. Right-click ends a run.");
-            Tool(SketchTool.Diaphragm, "", "Diaphragm", "Diaphragm (D)  —  a rectangle of floor or roof on this level; rectangles merge");
-            Tool(SketchTool.Cut, "", "Cut", "Cut (K)  —  take a rectangle out of this level's diaphragms: a notch, an L, a courtyard. A part left separate becomes its own diaphragm.");
-            Tool(SketchTool.Opening, "", "Opening", "Opening (O)  —  a hole through this level (stairs, a lobby); set taller ones in the properties");
-            Tool(SketchTool.Note, "", "Note", "Note (N)  —  a note on this level's plan");
-            toolbar.Children.Add(Ui.Separator());
-            toolbar.Children.Add(Ui.GroupLabel("Edit"));
-            Tool(SketchTool.Move, "", "Move", "Move (M)  —  base point, then second point");
-            Tool(SketchTool.Copy, "", "", "Copy (C)  —  base point, then as many copies as you click");
-            Tool(SketchTool.Mirror, "", "Mirror", "Mirror (I)  —  copies about a square line through two points");
-            Tool(SketchTool.Split, "", "Split", "Split a wall (X)  —  click where it splits");
-            toolbar.Children.Add(Ui.Button("", "Join", "Join (J)  —  the two selected walls, end to end on one line", (s, e) => Canvas.JoinSelected()));
-            toolbar.Children.Add(Ui.Button("", "", "Delete (Del)", (s, e) => Canvas.DeleteSelected()));
-            toolbar.Children.Add(Ui.Separator());
-            toolbar.Children.Add(Ui.GroupLabel("Aids"));
-            snap = Ui.Toggle("", "Snap", "Object snaps (F3): ends, middles, crossings, square to, grid", (s, e) => Canvas.ToggleSnap());
-            ortho = Ui.Toggle("", "Ortho", "Ortho (F8): move, copy and measure straight across or up", (s, e) => Canvas.ToggleOrtho());
-            grid = Ui.Toggle("", "Grid", "Grid (1 ft; snaps when Snap is on)", (s, e) => { Canvas.ShowGrid = grid.IsChecked == true; Canvas.Refresh(); });
-            toolbar.Children.Add(snap);
-            toolbar.Children.Add(ortho);
-            toolbar.Children.Add(grid);
-            Tool(SketchTool.Measure, "", "", "Measure (T)");
-            toolbar.Children.Add(Ui.Separator());
-            toolbar.Children.Add(Ui.GroupLabel("Building"));
-            toolbar.Children.Add(Ui.Button("", "From size", "New from size: a box L × B with its stories, a diaphragm on each level and the outside shear walls (replaces the drawing; Undo puts it back)", (s, e) => NewFromSize()));
-            toolbar.Children.Add(Ui.Button("", "Roof", "The roof over the top story: flat, gable or hip, its slope and ridge, the parapet and the eaves", (s, e) => EditRoof()));
-            toolbar.Children.Add(Ui.Separator());
-            toolbar.Children.Add(Ui.GroupLabel("View"));
-            toolbar.Children.Add(Ui.Button("", "", "Zoom to the drawing (Z, or double-click the middle button)", (s, e) => Canvas.ZoomExtents()));
-            issuesButton = Ui.Toggle("", "Issues", "Show the issues on the plan (vermilion circle: error, amber triangle: warning). Click a marker to select what it is about.",
-                                     (s, e) => { Canvas.ShowIssues = issuesButton.IsChecked == true; Canvas.Refresh(); });
-            toolbar.Children.Add(issuesButton);
-            planButton = Ui.Toggle("", "Plan ▾", "The plan under this level, to trace: import a DXF, PDF or picture; set its scale, straighten, move; move or copy it to another floor", (s, e) => PlanMenu());
-            toolbar.Children.Add(planButton);
-            toolbar.Children.Add(HostTools);
+            // LEFT: the work on the drawing, in the order of the work
+            Tool(SketchTool.Select, Ui.Icons16.Select, "Select", "Esc", "Click to pick, Shift+click to add, drag a window. Drag a grip to stretch or move. Right-click for more edits.");
+            toolStrip.Children.Add(Ui.HSeparator());
+            undo = Ui.Square(new Button(), Ui.Icon(Ui.Icons16.Undo), Ui.Tip("Undo", "Ctrl+Z", null));
+            undo.Click += (s, e) => Canvas.Undo();
+            redo = Ui.Square(new Button(), Ui.Icon(Ui.Icons16.Redo), Ui.Tip("Redo", "Ctrl+Y", null));
+            redo.Click += (s, e) => Canvas.Redo();
+            toolStrip.Children.Add(undo);
+            toolStrip.Children.Add(redo);
+            toolStrip.Children.Add(Ui.HSeparator());
+            Tool(SketchTool.Wall, Ui.Icons16.Wall, "Wall", "W", "A wall of the story under this level; walls are square. Right-click or Enter ends a run.", fill: true);
+            Tool(SketchTool.Diaphragm, Ui.Icons16.Diaphragm, "Diaphragm", "D", "A rectangle of floor or roof on this level; touching rectangles merge. Select it to drag its corners or sides.", fill: true);
+            Tool(SketchTool.Cut, Ui.Icons16.Cut, "Cut out", "K", "Take a rectangle out of this level's diaphragms: a notch, an L, a courtyard. A part left separate becomes its own diaphragm.");
+            Tool(SketchTool.Opening, Ui.Icons16.Opening, "Opening", "O", "A hole through this level (stairs, a lobby); set taller ones in the properties.");
+            Tool(SketchTool.Note, Ui.Icons16.Note, "Note", "N", "A note on this level's plan.");
+            toolStrip.Children.Add(Ui.HSeparator());
+            Tool(SketchTool.Move, Ui.Icons16.Move, "Move", "M", "Pick what to move (or select it first), then a base point and where it goes.");
+            Tool(SketchTool.Copy, Ui.Icons16.Copy, "Copy", "C  ·  Ctrl+C", "C: a base point, then click for as many copies as you need.\nCtrl+C: one copy follows the cursor straight across or up; click to place it.");
+            var delete = Ui.Square(new Button(), Ui.Icon(Ui.Icons16.Delete), Ui.Tip("Delete", "Del", "Deletes the selection (Ctrl+Z brings it back)."));
+            delete.Click += (s, e) => Canvas.DeleteSelected();
+            toolStrip.Children.Add(delete);
+            toolStrip.Children.Add(Ui.HSeparator());
+            Tool(SketchTool.Measure, Ui.Icons16.Measure, "Measure", "T", "The distance between two points.");
+            var left = new Border { Child = toolStrip, Background = Ui.Bar, BorderBrush = Ui.Line, BorderThickness = new Thickness(0, 0, 1, 0) };
+            DockPanel.SetDock(left, System.Windows.Controls.Dock.Left);
 
-            var top = new DockPanel { Background = Ui.Bar, LastChildFill = true };
-            var topBorder = new Border { Child = top, BorderBrush = Ui.Line, BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(4, 3, 4, 3) };
+            // TOP: the building and the levels
+            buildingTools.Children.Add(Ui.Button("", "From size…", "New from size: a box L × B with its stories, a diaphragm on each level and the outside shear walls (replaces the drawing; Undo puts it back)", (s, e) => NewFromSize()));
+            buildingTools.Children.Add(Ui.Button("", "Roof…", "The roof over the top story: flat, gable or hip, its slope (4:12, 6:12...), ridge, parapet and eaves", (s, e) => EditRoof()));
+            var top = new DockPanel { Background = Ui.Bar, LastChildFill = false };
             DockPanel.SetDock(levelBar, System.Windows.Controls.Dock.Right);
             top.Children.Add(levelBar);
-            top.Children.Add(toolbar);
+            top.Children.Add(buildingTools);
+            top.Children.Add(HostTools);
+            topBorder = new Border { Child = top, BorderBrush = Ui.Line, BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(4, 3, 4, 3) };
             DockPanel.SetDock(topBorder, System.Windows.Controls.Dock.Top);
-            Children.Add(topBorder);
 
-            // the status line
+            // BOTTOM: the view, then the typed point, the message and the coordinates
+            viewBar.Children.Add(Ui.GroupLabel("View"));
+            var zoom = Ui.Button("", "", "Zoom to the drawing (Z, or double-click the middle button). The wheel zooms, the middle button pans.", (s, e) => Canvas.ZoomExtents());
+            zoom.Content = Ui.Icon(Ui.Icons16.ZoomAll);
+            viewBar.Children.Add(zoom);
+            viewBar.Children.Add(Ui.Separator());
+            snap = Ui.Toggle("", "Snap", "Object snaps (F3): ends, middles, crossings, square to, grid", (s, e) => Canvas.ToggleSnap());
+            ortho = Ui.Toggle("", "Ortho", "Ortho (F8): move, copy and measure straight across or up", (s, e) => Canvas.ToggleOrtho());
+            grid = Ui.Toggle("", "Grid", "The grid: 1 ft lines, heavier every 10 ft, labelled in feet along the edges (coarser when zoomed out); snaps when Snap is on", (s, e) => { Canvas.ShowGrid = grid.IsChecked == true; Canvas.Refresh(); });
+            viewBar.Children.Add(snap);
+            viewBar.Children.Add(ortho);
+            viewBar.Children.Add(grid);
+            viewBar.Children.Add(Ui.Separator());
+            issuesButton = Ui.Toggle("", "Issues", "Show the issues on the plan (circle: error, triangle: warning). Click a marker to select what it is about.",
+                                     (s, e) => { Canvas.ShowIssues = issuesButton.IsChecked == true; Canvas.Refresh(); });
+            viewBar.Children.Add(issuesButton);
+            planButton = Ui.Toggle("", "Underlay ▾", "The drawing under this level, to trace: import a DXF, PDF or picture; set its scale, straighten, move; move or copy it to another floor", (s, e) => PlanMenu());
+            viewBar.Children.Add(planButton);
+            viewBar.Children.Add(Ui.Separator());
+
             var bottom = new DockPanel { Background = Ui.Bar, LastChildFill = true };
             var bottomBorder = new Border { Child = bottom, BorderBrush = Ui.Line, BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(4, 3, 8, 3) };
+            DockPanel.SetDock(viewBar, System.Windows.Controls.Dock.Left);
             DockPanel.SetDock(command, System.Windows.Controls.Dock.Left);
             DockPanel.SetDock(coords, System.Windows.Controls.Dock.Right);
             command.ToolTip = "Type a point and Enter:  x,y   @dx,dy   @length<angle   or a length toward the cursor (12'6\" works too)";
+            bottom.Children.Add(viewBar);
             bottom.Children.Add(command);
             bottom.Children.Add(coords);
             bottom.Children.Add(status);
             DockPanel.SetDock(bottomBorder, System.Windows.Controls.Dock.Bottom);
-            Children.Add(bottomBorder);
 
+            Children.Add(topBorder);
+            Children.Add(bottomBorder);
+            Children.Add(left);
             Children.Add(Canvas);
 
             command.KeyDown += Command_KeyDown;
@@ -110,25 +129,38 @@ namespace BuildingModel.Sketch
             Canvas.ModelChanged += (s, e) => { UpdateButtons(); UpdateLevels(); };
             Canvas.ActiveLevelChanged += (s, e) => UpdateLevels();
             Canvas.SelectionChanged += (s, e) => UpdateButtons();
+            Canvas.ContextMenuRequested += (s, e) => ShowContextMenu(e);
             UpdateButtons();
             UpdateLevels();
         }
 
-        private void Tool(SketchTool tool, string glyph, string text, string tip)
+        private void Tool(SketchTool tool, string icon, string name, string keys, string tip, bool fill = false)
         {
-            var b = Ui.Toggle(glyph, text, tip, (s, e) => Canvas.SetTool(tool));
+            var b = Ui.Square(new ToggleButton(), Ui.Icon(icon, fill), Ui.Tip(name, keys, tip));
+            b.Click += (s, e) => Canvas.SetTool(tool);
             tools[tool] = b;
-            toolbar.Children.Add(b);
+            toolStrip.Children.Add(b);
         }
 
         /// <summary>Shows or hides the sketch's own level buttons (a host with its own hides them).</summary>
         public bool ShowLevelBar
         {
             get => levelBar.Visibility == Visibility.Visible;
-            set => levelBar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            set { levelBar.Visibility = value ? Visibility.Visible : Visibility.Collapsed; UpdateTopBar(); }
         }
 
-        /// <summary>Shows or hides the Plan ▾ button (a host with its own plan import hides it).</summary>
+        /// <summary>Shows or hides From size… and Roof… (a host that has them in its menus hides them).</summary>
+        public bool ShowBuildingTools
+        {
+            get => buildingTools.Visibility == Visibility.Visible;
+            set { buildingTools.Visibility = value ? Visibility.Visible : Visibility.Collapsed; UpdateTopBar(); }
+        }
+
+        /// <summary>The top bar shows only when it has something in it.</summary>
+        private void UpdateTopBar() =>
+            topBorder.Visibility = ShowLevelBar || ShowBuildingTools || HostTools.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        /// <summary>Shows or hides the Underlay ▾ button (a host with its own plan commands hides it).</summary>
         public bool ShowPlanButton
         {
             get => planButton.Visibility == Visibility.Visible;
@@ -179,6 +211,67 @@ namespace BuildingModel.Sketch
             UpdateButtons();
         }
 
+        // ------------------------------------------------------------------ right-click
+
+        /// <summary>
+        /// The right-click menu in Select: with a selection, its edits (move, copy, copy to another level, mirror, split this
+        /// wall here, join, delete); on empty space, the view (zoom, select all, the aids).
+        /// </summary>
+        private void ShowContextMenu(SketchMenuEventArgs e)
+        {
+            var b = Canvas.Building;
+            if (b == null) return;
+            var menu = new ContextMenu { PlacementTarget = Canvas, Placement = PlacementMode.MousePoint };
+            MenuItem Item(ItemsControl parent, string header, string keys, bool enabled, Action a, string tip = null)
+            {
+                var m = new MenuItem { Header = header, InputGestureText = keys ?? "", IsEnabled = enabled, ToolTip = tip };
+                if (a != null) m.Click += (s, ev) => a();
+                parent.Items.Add(m);
+                return m;
+            }
+            var sel = Canvas.Selection.ToList();
+            if (sel.Count > 0)
+            {
+                menu.Items.Add(new MenuItem { Header = sel.Count == 1 ? sel[0] : $"{sel.Count} selected", IsEnabled = false, FontWeight = FontWeights.SemiBold });
+                Item(menu, "Move", "M", true, () => Canvas.SetTool(SketchTool.Move), "A base point, then where it goes.");
+                Item(menu, "Copy and place", "Ctrl+C", true, Canvas.CopyAndPlace, "One copy follows the cursor straight across or up; click to place it.");
+                Item(menu, "Copy several", "C", true, () => Canvas.SetTool(SketchTool.Copy), "A base point, then click for as many copies as you need.");
+                var others = b.LevelsBottomUp.Where(l => l != Canvas.ActiveLevel).ToList();
+                var toLevel = Item(menu, "Copy to level", null, others.Count > 0, null, "The same place in plan on another level (walls go in the story under it).");
+                foreach (var l in others)
+                {
+                    var target = l;
+                    Item(toLevel, $"{l.Name}  ({l.Elevation:0.##} ft)", null, true, () =>
+                    {
+                        List<string> added = null;
+                        Canvas.Edit($"Copied {string.Join(", ", sel)} to {target.Name}.", m => added = BuildingEdits.CopyToLevel(m, sel, m.Level(target.Id)));
+                        if (added == null || added.Count == 0) Canvas.Say($"Nothing could go to {target.Name} (walls and openings need a story under it).", true);
+                    });
+                }
+                Item(menu, "Mirror", "I", true, () => Canvas.SetTool(SketchTool.Mirror), "Copies about a square line through two points; the originals stay.");
+                menu.Items.Add(new Separator());
+                bool onWall = e.HitId != null && b.Find(e.HitId) is Wall;
+                Item(menu, "Split this wall here", "X", onWall, () => Canvas.SplitWallAt(e.At), "Splits the wall where you right-clicked.");
+                int walls = sel.Count(id => b.Find(id) is Wall);
+                Item(menu, "Join the two walls", "J", walls == 2 && sel.Count == 2, Canvas.JoinSelected, "Two walls end to end on one line become one.");
+                menu.Items.Add(new Separator());
+                Item(menu, "Delete", "Del", true, Canvas.DeleteSelected);
+            }
+            else
+            {
+                Item(menu, "Zoom to the drawing", "Z", true, Canvas.ZoomExtents);
+                Item(menu, "Select all on this level", "Ctrl+A", true, () => Canvas.Select(b.VisibleIds(Canvas.ActiveLevel)));
+                menu.Items.Add(new Separator());
+                var s1 = Item(menu, "Snap", "F3", true, () => { Canvas.ToggleSnap(); UpdateButtons(); });
+                s1.IsCheckable = true; s1.IsChecked = Canvas.SnapOn;
+                var s2 = Item(menu, "Ortho", "F8", true, () => { Canvas.ToggleOrtho(); UpdateButtons(); });
+                s2.IsCheckable = true; s2.IsChecked = Canvas.Ortho;
+                var s3 = Item(menu, "Grid", null, true, () => { Canvas.ShowGrid = !Canvas.ShowGrid; Canvas.Refresh(); UpdateButtons(); });
+                s3.IsCheckable = true; s3.IsChecked = Canvas.ShowGrid;
+            }
+            menu.IsOpen = true;
+        }
+
         private void Command_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
@@ -198,7 +291,7 @@ namespace BuildingModel.Sketch
         public int? MaxStories { get; set; }
 
         /// <summary>NEW FROM SIZE: the window, then the box replaces the drawing (one undo step).</summary>
-        private void NewFromSize()
+        public void NewFromSize()
         {
             var b = Canvas.Building;
             if (b == null) return;
@@ -221,7 +314,7 @@ namespace BuildingModel.Sketch
         }
 
         /// <summary>ROOF: the roof window; OK changes the model's roof (one undo step).</summary>
-        private void EditRoof()
+        public void EditRoof()
         {
             var b = Canvas.Building;
             if (b == null) return;

@@ -214,13 +214,14 @@ namespace BuildingModel.Sketch.Tests
             var p = new RoofPanel(b);
             Assert.IsFalse(p.HasErrors);
             p.SetShape(RoofShape.Gable);
-            Assert.AreEqual(26.57, p.Roof.Pitch, 1e-9, "the project default, not a number in the program");
+            Assert.AreEqual(26.57, p.Roof.Pitch, 1e-9, "the project default, not a number in the program (kept exact, though shown as 6:12)");
             Assert.AreEqual("6.0:12", p.Roof.RisePer12);
             p.Type("pitch", "0");
             Assert.IsTrue(p.HasErrors, "a 0° gable");
             p.Type("pitch", "abc");
             Assert.IsTrue(p.HasErrors, "not a number");
-            p.Type("pitch", "30");
+            p.Type("pitch", "8");
+            Assert.AreEqual(Math.Atan(8 / 12.0) * 180 / Math.PI, p.Roof.Pitch, 1e-9, "8 = 8:12");
             p.Type("eaves", "2");
             Assert.IsFalse(p.HasErrors);
             Assert.AreEqual(2, p.Roof.Overhang);

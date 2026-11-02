@@ -136,6 +136,14 @@ namespace BuildingModel.Sketch
             foreach (var g in Grips())
             {
                 var s = ToScreen(g.At);
+                if (g.IsSide)
+                {
+                    // a short bar along the side: drag it across to move that side
+                    bool ew = g.Side == Edits.RectSide.West || g.Side == Edits.RectSide.East;
+                    var bar = ew ? new Rect(s.X - 3, s.Y - 7, 6, 14) : new Rect(s.X - 7, s.Y - 3, 14, 6);
+                    ctx.DrawRoundedRectangle(SelectFill, GripEdge, bar, 2, 2);
+                    continue;
+                }
                 if (!g.Middle) { ctx.DrawRectangle(GripBrush, SelectPen, new Rect(s - new Vector(4, 4), new Size(8, 8))); continue; }
                 var diamond = new StreamGeometry();
                 using (var gc = diamond.Open())
@@ -240,25 +248,56 @@ namespace BuildingModel.Sketch
             }
         }
 
-        private void DrawGrid(DrawingContext ctx)
+        /// <summary>The grid's line spacings at the present zoom (ft): minor lines (1 ft, coarser when they would be closer than 8 px) and major lines, ten minor apart (10 ft).</summary>
+        public (double Minor, double Major) GridSteps()
         {
             double step = GridSpacing > 0 ? GridSpacing : 1;
             while (step * Zoom < 8) step *= step * Zoom < 3 ? 10 : 5;
-            double major = step * 10;
+            return (step, step * 10);
+        }
+
+        /// <summary>
+        /// The grid: minor lines every foot, major lines every 10 ft (both coarser when zoomed far out), and the scale: each
+        /// major line is labelled in feet along the bottom and the left edge of the view (every other one when they crowd).
+        /// </summary>
+        private void DrawGrid(DrawingContext ctx)
+        {
+            var (step, major) = GridSteps();
             var a = ToWorld(new Point(0, ActualHeight));
             var c = ToWorld(new Point(ActualWidth, 0));
+            var labelsX = new List<(double s, double v)>();
+            var labelsY = new List<(double s, double v)>();
             for (double x = Math.Floor(a.X / step) * step; x <= c.X; x += step)
             {
                 bool big = Math.Abs(Math.IEEERemainder(x, major)) < step / 2;
                 double sx = Math.Round(OriginX + x * Zoom) + 0.5;
                 ctx.DrawLine(big ? GridMajorPen : GridMinorPen, new Point(sx, 0), new Point(sx, ActualHeight));
+                if (big) labelsX.Add((sx, Math.Round(x / major) * major));
             }
             for (double y = Math.Floor(a.Y / step) * step; y <= c.Y; y += step)
             {
                 bool big = Math.Abs(Math.IEEERemainder(y, major)) < step / 2;
                 double sy = Math.Round(OriginY - y * Zoom) + 0.5;
                 ctx.DrawLine(big ? GridMajorPen : GridMinorPen, new Point(0, sy), new Point(ActualWidth, sy));
+                if (big) labelsY.Add((sy, Math.Round(y / major) * major));
             }
+
+            // the scale: feet at the major lines, on a light tag so they read over the drawing
+            int every = major * Zoom >= 44 ? 1 : 2;
+            foreach (var (s, v) in labelsX)
+                if (Math.Round(v / major) % every == 0) GridLabel(ctx, v, new Point(s + 2, ActualHeight - 15));
+            foreach (var (s, v) in labelsY)
+                if (Math.Round(v / major) % every == 0 && s < ActualHeight - 30) GridLabel(ctx, v, new Point(2, s - 14));
+        }
+
+        private static readonly Brush GridLabelBack = B(Color.FromArgb(0xD8, 0xFF, 0xFF, 0xFF));
+
+        private void GridLabel(DrawingContext ctx, double feet, Point at)
+        {
+            var ft = new FormattedText(feet.ToString("0.##", CultureInfo.CurrentCulture) + "'", CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                                       new Typeface("Segoe UI"), 10, MutedBrush, Dpi);
+            ctx.DrawRectangle(GridLabelBack, null, new Rect(at.X - 1, at.Y, ft.Width + 3, ft.Height));
+            ctx.DrawText(ft, new Point(at.X + 0.5, at.Y));
         }
 
         private void DrawPreview(DrawingContext ctx)

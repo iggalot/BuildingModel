@@ -219,8 +219,14 @@ namespace BuildingModel.Sketch
                     Label(ctx, $"{bm.Length:0.##} ft", ToScreen(bm.Middle) + new Vector(4, 14), B(Palette.Select), 10, true, true);
                     break;
                 case Column c:
-                    ctx.DrawEllipse(null, HaloPen, ToScreen(c.At), 10, 10);
+                {
+                    // a column is a small square: a halo ring well clear of it and a crisp circle outside, found at any zoom
+                    var cs = ToScreen(c.At);
+                    double ring = Math.Max(4, 0.25 * Zoom) + 12;
+                    ctx.DrawEllipse(null, HaloPen, cs, ring, ring);
+                    ctx.DrawEllipse(null, SelectPen, cs, ring + 8, ring + 8);
                     break;
+                }
                 case Note n:
                     var s = ToScreen(n.At);
                     ctx.DrawEllipse(null, HaloPen, s, 8, 8);

@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BuildingModel.Core\BuildingModel.Core.csproj" />
+    <ProjectReference Include="..\BuildingModel.Wind\BuildingModel.Wind.csproj" />
+    <ProjectReference Include="..\..\ASCE7-Wind-Load-Calculator\ASCE7Wind.Core\ASCE7Wind.Core.csproj" />
   </ItemGroup>
 
 </Project>

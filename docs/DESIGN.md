@@ -82,6 +82,48 @@ walls can come later.
 no packages are needed. The file holds `Format: "BuildingModel"`, `Version: 1` and a revision number that goes up
 with every save.
 
+## Wind adapter (`BuildingModel.Wind`, done)
+
+`WindAdapter.From(building, roofInputs)` converts the model into a `WindEnvelope`.
+
+- **`Building`:** the wind engine's `BuildingData`.
+  - L and B come from the enclosing rectangle of the footprint. A plan that is not a rectangle is noted.
+  - Stories and plate heights come from the levels above the ground that have a diaphragm.
+  - Roof, overhang, parapet and enclosure come from `RoofInputs`, which are typed because they are not drawn.
+  - With more levels than the engine splits (3), the building is one story and a note is added.
+- **`Strips`:** each outside face, split along its length wherever a level starts or stops reaching it.
+  - Each level takes the wall from mid-span below to mid-span above, between the levels that actually reach the face
+    there.
+  - Where a floor stops short of the face (for example a lobby at the façade), the wall spans past it.
+  - A lower roof beside a set-back story tops the wall there.
+  - The ground takes the bottom half of the first span (into the foundation).
+- **`Shares(face, eave)`:** each level's share of a face's projected wall area. The shares of one face add up to 1.
+
+The wind engine itself is unchanged. Using the face shares in the engine's per-level forces is the next wind step.
+
+## Round trip with the Shear Wall Designer (proposal)
+
+The model owns the geometry, and the Shear Wall Designer owns the shear-wall design. Two flows cover the round trip:
+
+1. **Model → designer (import):**
+   - Each level brings its net diaphragms and the walls marked as shear walls. Each wall becomes one designer wall on
+     every story it spans.
+   - The designer's own data (sheathing, nailing, hold-downs) is kept by model wall ID. On a re-import it stays on
+     the walls that still exist, and the designer lists what was added, removed or changed.
+2. **Designer → model (proposed changes, never silent):**
+   - The designer's sketcher can still draw: add a shear wall, split a wall into segments, mark or unmark a wall as a
+     shear wall.
+   - Those edits are written as a **change set** against the model revision they were made on: added, moved,
+     deleted and re-marked walls, by ID.
+   - The model app shows the change set and applies it. If the model has changed since that revision, conflicts on
+     the same ID are listed to choose from.
+   - The model stays the one place the geometry lives, and nothing changes behind the user's back.
+3. **Design results back to the model, read-only for others:**
+   - Format version 2 adds a per-object `Data` bag, keyed by app (`"ShearWall": {...}`), that the model stores but
+     does not interpret.
+   - The designer can publish its results there (panel, nailing, hold-down, capacity), so a seismic app or a combined
+     report can read them without depending on the designer.
+
 ## How the other apps will use it (later steps)
 
 - **Wind:**

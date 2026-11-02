@@ -308,6 +308,19 @@ namespace BuildingModel.Tests
             Assert.AreEqual(5, Snapper.InWindow(b, l2, new Rect2(-1, -1, 41, 31)).Count(id => id.StartsWith("W") || id.StartsWith("D")));
         }
 
+        [TestMethod]
+        public void Column_ToTheFoundation_ShowsOnTheGroundPlan_AndIsPicked()
+        {
+            var b = TwoStory(out var l2, out var roof);
+            var c = b.AddColumn(b.Ground, l2, 20, 15);    // under the Level 2 floor, down to the foundation
+            var up = b.AddColumn(l2, roof, 10, 15);       // standing on the Level 2 floor
+            CollectionAssert.AreEqual(new[] { c.Id }, b.ColumnsStandingOn(b.Ground).Select(x => x.Id).ToArray());
+            CollectionAssert.AreEqual(new[] { up.Id }, b.ColumnsStandingOn(l2).Select(x => x.Id).ToArray());
+            Assert.IsFalse(b.ColumnsUnder(b.Ground).Any()); // the ground has nothing under it
+            Assert.AreEqual(c.Id, Snapper.Pick(b, b.Ground, new Point2(20.2, 15), 0.5));
+            Assert.AreEqual(up.Id, Snapper.Pick(b, l2, new Point2(10.2, 15), 0.5));
+        }
+
         // ------------------------------------------------------------------ checks
 
         [TestMethod]

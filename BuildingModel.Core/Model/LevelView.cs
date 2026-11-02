@@ -26,6 +26,13 @@ namespace BuildingModel.Model
             });
         }
 
+        /// <summary>
+        /// The columns standing on this level (their base is here: the foundation for the ground), drawn at their base on its
+        /// plan so a column run down to the foundation shows on the foundation plan.
+        /// </summary>
+        public static IEnumerable<Column> ColumnsStandingOn(this Building b, Level level) =>
+            level == null ? Enumerable.Empty<Column>() : b.Columns.Where(c => c.BaseLevelId == level.Id);
+
         /// <summary>The walls of the story above this level (drawn faint, to line walls up).</summary>
         public static IEnumerable<Wall> WallsOver(this Building b, Level level)
         {

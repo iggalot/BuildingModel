@@ -64,6 +64,7 @@ namespace BuildingModel.Sketch
         private static readonly Brush BeamBrush = B(BeamColor);
         private static readonly Pen BeamPen = P(BeamColor, 3.5, 4, 1.5, 0.1, 1.5);
         private static readonly Pen ColumnEdge = P(Colors.White, 1.2);
+        private static readonly Pen ColumnBasePen = P(BeamColor, 1.8);
         private static readonly Pen ShearPen = P(Palette.ShearWall, 4);
         private static readonly Pen WallPen = P(Palette.Wall, 2.5);
         private static readonly Pen BelowPen = P(Palette.Below, 3);
@@ -136,6 +137,16 @@ namespace BuildingModel.Sketch
                 double half = Math.Max(4, 0.25 * Zoom);
                 ctx.DrawRectangle(BeamBrush, ColumnEdge, new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half));
                 Label(ctx, c.Id, cs + new Vector(half + 3, -half - 12), BeamBrush, 10, true);
+            }
+            // the columns standing on this level (on the ground: run down to the foundation): an outlined square, "C1 base"
+            foreach (var c in b.ColumnsStandingOn(level))
+            {
+                var cs = ToScreen(c.At);
+                double half = Math.Max(4, 0.25 * Zoom);
+                ctx.DrawRectangle(Brushes.White, ColumnBasePen, new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half));
+                ctx.DrawLine(ColumnBasePen, new Point(cs.X - half, cs.Y - half), new Point(cs.X + half, cs.Y + half));
+                ctx.DrawLine(ColumnBasePen, new Point(cs.X - half, cs.Y + half), new Point(cs.X + half, cs.Y - half));
+                Label(ctx, $"{c.Id} base", cs + new Vector(half + 3, half + 1), BeamBrush, 10, true);
             }
 
             // selection under the labels

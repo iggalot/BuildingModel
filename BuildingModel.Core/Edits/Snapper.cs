@@ -206,7 +206,7 @@ namespace BuildingModel.Edits
         {
             var note = b.NotesOn(level).Select(n => (n.Id, d: Dist(n.At, p))).Where(x => x.d <= reach * 1.5).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
             if (note != null) return note;
-            var column = b.ColumnsUnder(level).Select(c => (c.Id, d: Dist(c.At, p))).Where(x => x.d <= reach * 1.5).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
+            var column = b.ColumnsUnder(level).Concat(b.ColumnsStandingOn(level)).Select(c => (c.Id, d: Dist(c.At, p))).Where(x => x.d <= reach * 1.5).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
             if (column != null) return column;
             var beam = b.BeamsOn(level).Select(x => (x.Id, d: DistanceToSegment(p, new Segment2(x.Start, x.End))))
                         .Where(x => x.d <= reach).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();

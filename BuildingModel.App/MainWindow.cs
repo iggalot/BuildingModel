@@ -78,7 +78,7 @@ namespace BuildingModel.App
             bar.Children.Add(planTab);
             bar.Children.Add(tab3D);
             bar.Children.Add(Ui.Separator());
-            bar.Children.Add(Ui.Button("", "Wind inputs", "What the wind load calculator gets from this model (L, B, stories, each level's share of each face)", (s, e) => WindPreview()));
+            bar.Children.Add(Ui.Button("", "Summary", "What the analysis apps read from this model: L, B, stories, the roof, each level's share of each face", (s, e) => BuildingSummary()));
             bar.Children.Add(Ui.Button("", "Apply changes…", "Apply a change set proposed by another app (the shear wall designer)", (s, e) => ApplyChanges()));
             var nameRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             nameRow.Children.Add(new TextBlock { Text = "Name", Foreground = Ui.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 6, 0) });
@@ -299,28 +299,33 @@ namespace BuildingModel.App
 
         // ------------------------------------------------------------------ the other apps
 
-        private void WindPreview()
+        /// <summary>
+        /// What the analysis apps read from this model, worked out by the model alone: L, B, the stories, the roof and each
+        /// level's share of each outside face. (The wind and shear wall apps read the file; this app runs neither.)
+        /// </summary>
+        private void BuildingSummary()
         {
+            var b = Sketch.Building;
             string text;
             try
             {
-                var env = Wind.WindAdapter.From(Sketch.Building, null);
-                var d = env.Building;
-                text = $"L (W-E) {d.BuildingLength:0.##} ft, B (S-N) {d.BuildingWidth:0.##} ft, eave {d.BuildingHeight:0.##} ft, {d.NumberOfStories} stor{(d.NumberOfStories == 1 ? "y" : "ies")}" +
-                       (d.PlateHeights != null ? $", plate heights {string.Join(", ", d.PlateHeights.Select(p => p.ToString("0.##")))} ft" : "") + ".\n\n";
-                foreach (Wind.Face f in Enum.GetValues(typeof(Wind.Face)))
+                var env = b.Envelope();
+                var h = env.StoryHeights();
+                text = $"L (W-E) {env.Length:0.##} ft, B (S-N) {env.Width:0.##} ft, eave {env.EaveHeight:0.##} ft, {h.Count} stor{(h.Count == 1 ? "y" : "ies")} " +
+                       $"({string.Join(", ", h.Select(p => p.ToString("0.##")))} ft).\n" +
+                       $"{b.DescribeRoof()}; mean roof height {b.MeanRoofHeight():0.##} ft.\n\n";
+                foreach (Face f in Enum.GetValues(typeof(Face)))
                 {
-                    var shares = env.Shares(f, d.BuildingHeight);
-                    text += $"{f} face: " + string.Join(", ", shares.OrderBy(kv => Sketch.Building.Level(kv.Key)?.Elevation).Select(kv => $"{Sketch.Building.Level(kv.Key)?.Name} {kv.Value:P0}")) + "\n";
+                    var shares = env.Shares(f, env.EaveHeight);
+                    text += $"{f} face: " + string.Join(", ", shares.OrderBy(kv => b.Level(kv.Key)?.Elevation).Select(kv => $"{b.Level(kv.Key)?.Name} {kv.Value:P0}")) + "\n";
                 }
                 if (env.Notes.Count > 0) text += "\nNotes:\n• " + string.Join("\n• ", env.Notes);
-                text += "\n\nRoof type, pitch, parapet and exposure are set in the wind load calculator.";
             }
             catch (Exception ex)
             {
-                text = "The wind inputs cannot be made yet: " + ex.Message;
+                text = "The building cannot be summarised yet: " + ex.Message;
             }
-            MessageBox.Show(this, text, "Wind inputs from this model", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, text, "What the analysis apps read from this model", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void ApplyChanges()

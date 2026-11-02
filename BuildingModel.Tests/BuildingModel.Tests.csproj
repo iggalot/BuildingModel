@@ -15,16 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- the model only: the adapters to the wind and shear wall apps are tested in those apps -->
     <ProjectReference Include="..\BuildingModel.Core\BuildingModel.Core.csproj" />
-    <ProjectReference Include="..\BuildingModel.Wind\BuildingModel.Wind.csproj" />
-    <ProjectReference Include="..\..\ASCE7-Wind-Load-Calculator\ASCE7Wind.Core\ASCE7Wind.Core.csproj" />
-    <ProjectReference Include="..\BuildingModel.ShearWalls\BuildingModel.ShearWalls.csproj" />
-    <ProjectReference Include="..\..\ShearWallCalculator\ShearWallCalculator.csproj" />
-    <Reference Include="PresentationCore" />
-    <Reference Include="WindowsBase" />
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>..\..\ShearWallCalculator\packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
 </Project>

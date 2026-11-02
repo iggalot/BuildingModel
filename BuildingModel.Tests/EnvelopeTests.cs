@@ -1,15 +1,13 @@
 using System.Linq;
-using ASCE7WindLoadCalculator;
 using BuildingModel.Geometry;
 using BuildingModel.Model;
-using BuildingModel.Wind;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace BuildingModel.Tests
 {
-    /// <summary>Building model → wind: L, B, stories and plate heights, and each face's wind shared between the levels that reach it.</summary>
+    /// <summary>The building envelope from the model alone: L, B, the story heights, and each outside face shared between the levels that reach it.</summary>
     [TestClass]
-    public class WindAdapterTests
+    public class EnvelopeTests
     {
         private const double Tol = 1e-9;
 
@@ -24,17 +22,14 @@ namespace BuildingModel.Tests
         }
 
         [TestMethod]
-        public void Box_GivesTheWindBuilding()
+        public void Box_LengthWidthStories()
         {
             var b = Box(out _, out _, out _);
-            var env = WindAdapter.From(b, new RoofInputs { RoofType = RoofTypes.ROOF_TYPE_GABLE, Pitch = 20 });
-            var d = env.Building;
-            Assert.AreEqual(60, d.BuildingLength, Tol);
-            Assert.AreEqual(40, d.BuildingWidth, Tol);
-            Assert.AreEqual(3, d.NumberOfStories);
-            CollectionAssert.AreEqual(new[] { 12.0, 10.0, 9.0 }, d.StoryPlateHeights);
-            Assert.AreEqual(31, d.BuildingHeight, Tol);
-            Assert.AreEqual(RoofTypes.ROOF_TYPE_GABLE, d.RoofType);
+            var env = b.Envelope();
+            Assert.AreEqual(60, env.Length, Tol);
+            Assert.AreEqual(40, env.Width, Tol);
+            CollectionAssert.AreEqual(new[] { 12.0, 10.0, 9.0 }, env.StoryHeights());
+            Assert.AreEqual(31, env.EaveHeight, Tol);
             Assert.IsFalse(env.Notes.Any(n => n.Contains("not a rectangle")));
         }
 
@@ -43,7 +38,7 @@ namespace BuildingModel.Tests
         public void Box_StripsAndShares()
         {
             var b = Box(out var l2, out var l3, out var roof);
-            var env = WindAdapter.From(b, null);
+            var env = b.Envelope();
             var south = env.Strips.Where(s => s.Face == Face.South).ToList();
             Assert.AreEqual(4, south.Count, "ground, level 2, level 3, roof; each the full 60 ft");
             Assert.IsTrue(south.All(s => s.Length == 60));
@@ -68,7 +63,7 @@ namespace BuildingModel.Tests
         {
             var b = Box(out var l2, out var l3, out var roof);
             b.AddOpening(b.Ground, l3, new Rect2(0, 0, 20, 20));
-            var env = WindAdapter.From(b, null);
+            var env = b.Envelope();
             var south = env.Strips.Where(s => s.Face == Face.South).ToList();
             Assert.AreEqual(40, south.Where(s => s.LevelId == l2.Id).Sum(s => s.Length), Tol, "level 2 reaches only x 20..60");
             var l3OverLobby = south.Single(s => s.LevelId == l3.Id && s.From == 0);
@@ -91,7 +86,7 @@ namespace BuildingModel.Tests
             var roof = b.AddLevel("Roof", 22);
             b.AddDiaphragm(l2, new Rect2(0, 0, 60, 40));
             b.AddDiaphragm(roof, new Rect2(0, 0, 30, 40));
-            var env = WindAdapter.From(b, null);
+            var env = b.Envelope();
             var east = env.Strips.Where(s => s.Face == Face.East).ToList();
             var e2 = east.Single(s => s.LevelId == l2.Id);
             Assert.AreEqual(6, e2.Bottom, Tol);
@@ -100,7 +95,7 @@ namespace BuildingModel.Tests
             var south = env.Strips.Where(s => s.Face == Face.South && s.LevelId == l2.Id).ToList();
             Assert.AreEqual(17, south.Single(s => s.From == 0).Top, Tol, "under the upper story: mid-story");
             Assert.AreEqual(12, south.Single(s => s.From == 30).Top, Tol, "beside it: the lower roof");
-            Assert.AreEqual(60, env.Building.BuildingLength, Tol);
+            Assert.AreEqual(60, env.Length, Tol);
         }
 
         [TestMethod]
@@ -109,24 +104,23 @@ namespace BuildingModel.Tests
             var b = Building.New();
             var roof = b.AddLevel("Roof", 12);
             b.AddDiaphragm(roof, new Rect2(0, 0, 60, 20), new Rect2(0, 0, 20, 40));
-            var env = WindAdapter.From(b, null);
-            Assert.AreEqual(60, env.Building.BuildingLength, Tol);
-            Assert.AreEqual(40, env.Building.BuildingWidth, Tol);
+            var env = b.Envelope();
+            Assert.AreEqual(60, env.Length, Tol);
+            Assert.AreEqual(40, env.Width, Tol);
             Assert.IsTrue(env.Notes.Any(n => n.Contains("not a rectangle")));
             Assert.AreEqual(20, env.Strips.Where(s => s.Face == Face.North && s.LevelId == roof.Id).Sum(s => s.Length), Tol,
                 "only the wing reaches the north line of the enclosing rectangle");
         }
 
         [TestMethod]
-        public void MoreLevelsThanTheEngineSplits_OneStoryWithANote()
+        public void FourLevels_EveryLevelHasStrips()
         {
             var b = Building.New();
             for (int i = 1; i <= 4; i++) b.AddDiaphragm(b.AddLevel("L" + i, 10 * i), new Rect2(0, 0, 30, 30));
-            var env = WindAdapter.From(b, null);
-            Assert.AreEqual(1, env.Building.NumberOfStories);
-            Assert.AreEqual(40, env.Building.BuildingHeight, Tol);
-            Assert.IsTrue(env.Notes.Any(n => n.Contains("4 diaphragm levels")));
-            Assert.AreEqual(5, env.Strips.Count(s => s.Face == Face.West), "the strips still cover every level");
+            var env = b.Envelope();
+            Assert.AreEqual(4, env.Diaphragms.Count);
+            Assert.AreEqual(40, env.EaveHeight, Tol);
+            Assert.AreEqual(5, env.Strips.Count(s => s.Face == Face.West), "ground and four levels");
         }
     }
 }

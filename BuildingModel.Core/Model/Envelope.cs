@@ -1,30 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ASCE7WindLoadCalculator;
 using BuildingModel.Checks;
 using BuildingModel.Geometry;
-using BuildingModel.Model;
 
-namespace BuildingModel.Wind
+namespace BuildingModel.Model
 {
-    /// <summary>What the plan does not draw: the roof and the enclosure (typed in the wind app or the sketcher).</summary>
-    public sealed class RoofInputs
-    {
-        public RoofTypes RoofType { get; set; } = RoofTypes.ROOF_TYPE_FLAT;
-        public double Pitch { get; set; }
-        public RidgeDirections Ridge { get; set; } = RidgeDirections.RIDGE_DIR_NONE;
-        public double Overhang { get; set; }
-        public double Parapet { get; set; }
-        public BuildingEnclosures ParapetEnclosure { get; set; } = BuildingEnclosures.BLDG_ENCLOSED;
-        public BuildingEnclosures Enclosure { get; set; } = BuildingEnclosures.BLDG_ENCLOSED;
-    }
-
     /// <summary>The four outside faces of the enclosing rectangle; the wind from the west loads the West face first.</summary>
     public enum Face { South, North, West, East }
 
     /// <summary>
-    /// A piece of an outside face whose wind goes to one level: <see cref="Length"/> ft along the face, from
+    /// A piece of an outside face whose load goes to one level: <see cref="Length"/> ft along the face, from
     /// <see cref="Bottom"/> to <see cref="Top"/> ft high (Top = infinity: to the top of the wall, the roof).
     /// </summary>
     public sealed class FaceStrip
@@ -37,13 +23,14 @@ namespace BuildingModel.Wind
         public double Top { get; set; }
     }
 
-    /// <summary>The building as the wind engine sees it, plus how each face's wind is shared between the levels.</summary>
-    public sealed class WindEnvelope
+    /// <summary>
+    /// The building's outside as any lateral-load app needs it, worked out from the model alone: the enclosing rectangle
+    /// (L W-E, B S-N), the levels with a diaphragm, their story heights, and how each outside face is shared between the
+    /// levels whose diaphragm reaches it.
+    /// </summary>
+    public sealed class BuildingEnvelope
     {
-        /// <summary>For the wind engine: L, B, stories and plate heights, the roof.</summary>
-        public BuildingData Building { get; set; }
-
-        /// <summary>The enclosing rectangle in the model's coordinates (L = width W-E, B = depth S-N).</summary>
+        /// <summary>The enclosing rectangle of every level's diaphragm (L = width W-E, B = depth S-N).</summary>
         public Rect2 Bounds { get; set; }
 
         /// <summary>The levels above the ground with a diaphragm, bottom up (the last is the roof).</summary>
@@ -51,8 +38,26 @@ namespace BuildingModel.Wind
 
         public List<FaceStrip> Strips { get; set; } = new List<FaceStrip>();
 
-        /// <summary>What the conversion assumed or could not carry over.</summary>
+        /// <summary>What a user of the envelope should know (model errors, a plan that is not a rectangle).</summary>
         public List<string> Notes { get; set; } = new List<string>();
+
+        /// <summary>L: the enclosing rectangle W-E (ft).</summary>
+        public double Length => Bounds.Width;
+
+        /// <summary>B: the enclosing rectangle S-N (ft).</summary>
+        public double Width => Bounds.Height;
+
+        /// <summary>The top diaphragm's elevation (ft).</summary>
+        public double EaveHeight => Diaphragms.Count == 0 ? 0 : Diaphragms[Diaphragms.Count - 1].Elevation;
+
+        /// <summary>The story heights between the diaphragm levels, bottom up (ft).</summary>
+        public List<double> StoryHeights()
+        {
+            var h = new List<double>();
+            double z = 0;
+            foreach (var l in Diaphragms) { h.Add(l.Elevation - z); z = l.Elevation; }
+            return h;
+        }
 
         /// <summary>
         /// Each level's share of a face's projected wall area (to the eave), including the ground's (into the foundation).
@@ -72,64 +77,31 @@ namespace BuildingModel.Wind
     }
 
     /// <summary>
-    /// Building model → wind: the enclosing rectangle gives L and B (the coefficients use the whole building), the levels
-    /// give the stories and plate heights, and each outside face is shared between the levels whose diaphragm actually
-    /// reaches it. A wall between two such levels sends half its height to each; where a floor stops short of the face
-    /// (a double-height lobby at the façade) that wall spans to the next floor up or down. The ground takes the bottom
-    /// half of the first span (into the foundation).
+    /// The envelope from the model: the enclosing rectangle gives L and B, the levels give the stories, and each outside
+    /// face is shared between the levels whose diaphragm actually reaches it. A wall between two such levels sends half its
+    /// height to each; where a floor stops short of the face (a double-height lobby at the façade) that wall spans to the
+    /// next floor up or down. The ground takes the bottom half of the first span (into the foundation).
     /// </summary>
-    public static class WindAdapter
+    public static class EnvelopeQueries
     {
         public const double FaceTolerance = BuildingQueries.WallTolerance;
 
-        public static WindEnvelope From(Building b, RoofInputs roof)
+        /// <summary>The envelope; throws when there is no ground or no diaphragm above it.</summary>
+        public static BuildingEnvelope Envelope(this Building b)
         {
             if (b == null) throw new ArgumentNullException(nameof(b));
-            roof = roof ?? new RoofInputs();
             var ground = b.Ground ?? throw new InvalidOperationException("The building has no ground level (elevation 0).");
             var levels = b.LevelsBottomUp.Where(l => l.Elevation > 0 && !b.GrossDiaphragm(l).IsEmpty).ToList();
             if (levels.Count == 0) throw new InvalidOperationException("The building has no diaphragm above the ground.");
             var footprint = b.Footprint();
             var box = footprint.Bounds;
-            var env = new WindEnvelope { Bounds = box, Diaphragms = levels };
+            var env = new BuildingEnvelope { Bounds = box, Diaphragms = levels };
 
             foreach (var e in ModelChecks.Run(b).Where(i => i.Severity == Severity.Error))
                 env.Notes.Add("Model error: " + e.Message);
             if (footprint.Area < box.Area - 1e-6)
-                env.Notes.Add($"The plan is not a rectangle ({footprint.Area:0} of {box.Area:0} sq ft): the wind uses the enclosing {box.Width:0.##} × {box.Height:0.##} ft rectangle " +
-                              "for the coefficients (ASCE 7's rectangular-building procedures applied by judgment).");
-
-            double eave = levels[levels.Count - 1].Elevation;
-            var data = new BuildingData
-            {
-                BuildingLength = box.Width,
-                BuildingWidth = box.Height,
-                RoofType = roof.RoofType,
-                RoofPitch = roof.Pitch,
-                OverhangWidth = roof.Overhang,
-                ParapetHeight = roof.Parapet,
-                ParapetEnclosure = roof.ParapetEnclosure,
-                EnclosureType = roof.Enclosure,
-            };
-            data.RidgeDirection = roof.Ridge;
-            if (levels.Count <= BuildingData.MaxStories)
-            {
-                data.NumberOfStories = levels.Count;
-                var plates = new List<double>();
-                double z = 0;
-                foreach (var l in levels)
-                {
-                    plates.Add(l.Elevation - z);
-                    z = l.Elevation;
-                }
-                data.PlateHeights = plates;
-            }
-            else
-            {
-                data.BuildingHeight = eave;
-                env.Notes.Add($"{levels.Count} diaphragm levels: the wind engine splits up to {BuildingData.MaxStories}; use the face strips for the levels.");
-            }
-            env.Building = data;
+                env.Notes.Add($"The plan is not a rectangle ({footprint.Area:0} of {box.Area:0} sq ft): the enclosing {box.Width:0.##} × {box.Height:0.##} ft rectangle " +
+                              "is used for L and B (rectangular-building procedures applied by judgment).");
 
             foreach (Face f in Enum.GetValues(typeof(Face)))
                 env.Strips.AddRange(FaceStrips(b, f, box, ground, levels));

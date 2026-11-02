@@ -10,9 +10,15 @@ The building is described once and used by many separate apps:
 - later, dead/live load and seismic analyzers.
 
 This repo holds the **model** (the data, the geometry rules, the checks and the edits, in `BuildingModel.Core`, no UI),
-the **shared sketcher** that draws it (`BuildingModel.Sketch`), the **Building Model app** (`BuildingModel.App`), and the
-**adapters** that turn it into each analysis app's inputs (`BuildingModel.Wind`, `BuildingModel.ShearWalls`). The
-Shear Wall Designer now draws in the shared sketcher with the model as its source of truth.
+the **shared sketcher** that draws it (`BuildingModel.Sketch`) and the **Building Model app** (`BuildingModel.App`). It
+references no analysis app. Each analysis app holds its own **adapter** that reads the model:
+`ASCE7Wind.ModelAdapter` (in the wind repo) and `ShearWallCalculator.ModelAdapter` (in the shear wall repo), so the
+dependencies run one way: BuildingModel ← Wind ← ShearWall. The Shear Wall Designer draws in the shared sketcher with
+the model as its source of truth, and writes what it draws back into the model.
+
+**One source of truth.** Everything about the building (geometry, roof, project defaults such as a new story's
+height) is stored in the model and read from it by every app; no app keeps its own copy or its own hard-coded
+default. The code's own values (SDPWS tables, ASCE 7 coefficients) live once, in the app's code library.
 
 The analysis apps never depend on each other. Each one converts the model into its own inputs and keeps its own data
 on top of it.
@@ -86,18 +92,36 @@ mark (`ModelIssue.LevelId`, `At`), so the sketcher draws error (red circle) and 
 ## File
 
 `ModelFile.Save` / `ModelFile.Load` write and read JSON using `DataContractJsonSerializer`, which is part of .NET, so
-no packages are needed. The file holds `Format: "BuildingModel"`, `Version: 2` and a revision number that goes up
-with every save. Version 2 adds notes and the per-object `Data` bag (below); version 1 files still open.
+no packages are needed. The file holds `Format: "BuildingModel"`, `Version: 3` and a revision number that goes up
+with every save. Version 2 adds notes and the per-object `Data` bag (below); version 3 adds the roof and the project
+defaults. Older files still open (a flat roof, the program's starting defaults).
 
-## Wind adapter (`BuildingModel.Wind`, done)
+## Roof and project defaults (version 3)
 
-`WindAdapter.From(building, roofInputs)` converts the model into a `WindEnvelope`.
+- **`Roof`** (one, over the top story): `Shape` Flat / Gable / Hip, `Pitch` (degrees), `Ridge` (gable only: Auto =
+  along the longer side, W-E or S-N; a hip's ridge is always along the longer side), `Parapet` (flat roofs) and
+  `Overhang` (the eaves), in ft. A sloped roof covers the rectangle enclosing the top floor.
+- **`RoofQueries`**: `RoofLevel` (the eave), `RoofPlan`, `EffectiveRidge`, `SpanAcrossRidge`, `RoofRise`,
+  `RidgeHeight`, `MeanRoofHeight` (ASCE 7 26.2), `DescribeRoof`. The wind adapter's tests check the engine agrees.
+- **Checks**: `RoofPitch` (a sloped roof needs 0° < slope < 90°), `RoofParapet` / `RoofEaves` (not negative),
+  `ParapetOnSlopedRoof`, `RoofNotRectangular` (a sloped roof over an L-shaped top floor), `HipRidge`. The code's
+  limits (the cladding figures' 45° and 60 ft) are the wind app's checks.
+- **`ModelDefaults`**: a new story's height (15 ft), a new roof's slope when made sloped (18.43°, 4:12), parapet (0)
+  and eaves (0). Saved with the building; every app reads them from here. `ModelDefaults.Start` is the only place the
+  starting values are written.
+- **Sketcher:** the Roof button (Building group) opens `RoofDialog`; what the roof comes to and the roof checks update
+  as you type; OK (one undo step) is off while there is an error.
 
-- **`Building`:** the wind engine's `BuildingData`.
-  - L and B come from the enclosing rectangle of the footprint. A plan that is not a rectangle is noted.
-  - Stories and plate heights come from the levels above the ground that have a diaphragm.
-  - Roof, overhang, parapet and enclosure come from `RoofInputs`, which are typed because they are not drawn.
-  - With more levels than the engine splits (3), the building is one story and a note is added.
+## Envelope (`EnvelopeQueries`, in the core)
+
+`building.Envelope()` works out, from the model alone, what any lateral-load app needs. The wind app's
+`ASCE7Wind.ModelAdapter.WindAdapter.From(building, windOptions)` turns it into the engine's `BuildingData` with the
+model's roof; only the enclosure (`WindOptions`) is the wind app's own input. With more levels than the engine splits
+(3) it makes one story and adds a note.
+
+- **`Bounds`, `Length`, `Width`:** the enclosing rectangle of the footprint (L W-E, B S-N). A plan that is not a
+  rectangle is noted.
+- **`Diaphragms`, `StoryHeights()`, `EaveHeight`:** the levels above the ground that have a diaphragm.
 - **`Strips`:** each outside face, split along its length wherever a level starts or stops reaching it.
   - Each level takes the wall from mid-span below to mid-span above, between the levels that actually reach the face
     there.
@@ -165,10 +189,10 @@ the plan. `Building3DView` shows the building in 3D.
 ## Building Model app (`BuildingModel.App`)
 
 `BuildingModel.exe`: New, Open, Save (`*.bldg.json`), + level, insert a mezzanine, copy a story up, delete a level,
-the plan and 3D, a properties panel, the issue list (live), a building summary, a wind preview through the wind
-adapter, and Apply changes (a change set from an analysis app, with its conflicts).
+the plan and 3D, a properties panel, the issue list (live), a summary of what the analysis apps read (the
+envelope and the roof; no analysis app is run), the Roof window, and Apply changes (a change set from an analysis app, with its conflicts).
 
-## Shear wall adapter (`BuildingModel.ShearWalls`, done)
+## Shear wall adapter (`ShearWallCalculator.ModelAdapter`, in the shear wall repo)
 
 The model is the source of truth for the Shear Wall Designer's geometry; the designer keeps its design in the bags.
 
@@ -191,6 +215,6 @@ How the designer uses it is in `F:\Programming\ShearWallCalculator\docs\SHARED_S
 
 ## Next
 
-- **Wind:** use each level's face shares (`WindAdapter.Shares`) in the wind engine's per-level forces.
+- **Wind:** use each level's face shares (`BuildingEnvelope.Shares`) in the wind engine's per-level forces.
 - **Openings in walls** (doors, windows) for the shear-wall segments, and walls at an angle.
 - **Seismic and dead/live load apps** reading the same model, with their own bags.

@@ -13,7 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\BuildingModel.Core\BuildingModel.Core.csproj" />
     <ProjectReference Include="..\BuildingModel.Sketch\BuildingModel.Sketch.csproj" />
-    <ProjectReference Include="..\BuildingModel.Wind\BuildingModel.Wind.csproj" />
+    <!-- no analysis app: the wind and shear wall apps read this model, not the other way round -->
   </ItemGroup>
 
 </Project>

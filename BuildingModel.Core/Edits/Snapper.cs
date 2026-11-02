@@ -59,14 +59,15 @@ namespace BuildingModel.Edits
         }
 
         /// <summary>The lines of a level that can be snapped to: its walls, the edges of its diaphragms and openings, and the walls above.</summary>
-        public static List<Segment2> SegmentsOf(Building b, Level level)
+        public static List<Segment2> SegmentsOf(Building b, Level level, ICollection<string> except = null)
         {
+            bool Keep(ModelObject o) => except == null || !except.Contains(o.Id);
             var list = new List<Segment2>();
-            foreach (var w in b.WallsUnder(level).Concat(b.WallsOver(level)).Distinct()) list.Add(new Segment2(w.Start, w.End));
-            foreach (var r in b.DiaphragmsOn(level).SelectMany(d => d.Pieces).Concat(b.OpeningsCutting(level).SelectMany(o => o.Pieces)))
+            foreach (var w in b.WallsUnder(level).Concat(b.WallsOver(level)).Distinct().Where(Keep)) list.Add(new Segment2(w.Start, w.End));
+            foreach (var r in b.DiaphragmsOn(level).Where(Keep).SelectMany(d => d.Pieces).Concat(b.OpeningsCutting(level).Where(Keep).SelectMany(o => o.Pieces)))
                 list.AddRange(Edges(r));
             var below = b.Below(level);
-            if (below != null) foreach (var w in b.WallsUnder(below)) list.Add(new Segment2(w.Start, w.End));
+            if (below != null) foreach (var w in b.WallsUnder(below).Where(Keep)) list.Add(new Segment2(w.Start, w.End));
             return list;
         }
 

@@ -167,6 +167,40 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(0, b.Diaphragms.Count);
         }
 
+        /// <summary>
+        /// Grips: every selected wall has a middle grip that moves the whole selection straight across or up (one undo),
+        /// and end grips that change that wall's length; nothing selected, no grips.
+        /// </summary>
+        [STATestMethod]
+        public void Grips_MiddleMovesTheSelection_EndChangesTheLength()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            string w1 = b.AddWall(b.Ground, l2, 0, 0, 20, 0).Id;
+            string w2 = b.AddWall(b.Ground, l2, 0, 10, 20, 10).Id;
+            string w3 = b.AddWall(b.Ground, l2, 30, 0, 30, 20).Id;
+            var s = new SketchCanvas();
+            s.SetBuilding(b, l2.Id);
+            Wall W(string id) => (Wall)s.Building.Find(id);
+            Assert.IsFalse(s.DragGrip(new Point2(10, 0), new Point2(10, 5)), "nothing selected: no grips");
+
+            s.Select(new[] { w1, w2 });
+            Assert.IsTrue(s.DragGrip(new Point2(10, 10), new Point2(13, 4.5)), "w2's middle, dragged mostly south");
+            Assert.AreEqual(new Point2(0, -5.5), W(w1).Start, "both selected walls move, straight south");
+            Assert.AreEqual(new Point2(20, 4.5), W(w2).End);
+            Assert.AreEqual(new Point2(30, 0), W(w3).Start, "w3 was not selected");
+
+            Assert.IsTrue(s.DragGrip(new Point2(20, -5.5), new Point2(26, -1)), "w1's east end");
+            Assert.AreEqual(new Point2(26, -5.5), W(w1).End, "longer, still on its line");
+            Assert.AreEqual(20, W(w2).Length, 1e-9, "only the wall whose grip it was");
+
+            s.Undo();
+            Assert.AreEqual(20, W(w1).Length, 1e-9);
+            s.Undo();
+            Assert.AreEqual(new Point2(0, 0), W(w1).Start, "the move is one undo step");
+            Assert.AreEqual(new Point2(0, 10), W(w2).Start);
+        }
+
         /// <summary>K is the Cut tool: two typed corners take a notch out of the diaphragm; one undo puts it back.</summary>
         [STATestMethod]
         public void CutTool_TakesANotchOut_UndoPutsItBack()

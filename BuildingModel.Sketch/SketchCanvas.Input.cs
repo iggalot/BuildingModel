@@ -24,15 +24,24 @@ namespace BuildingModel.Sketch
         private string hovered;                // what the status says is under the cursor
         private List<Segment2> segments;       // snap lines of the level (cleared on every change)
 
-        /// <summary>The end of a wall or the corner of a rectangle, dragged to edit it.</summary>
+        private Point gripDown;                // where (on screen) the grip drag started: a click without a drag changes nothing
+
+        /// <summary>
+        /// A handle on the selection, dragged to edit it: the end of a wall (its length, along its own line), the middle of
+        /// a wall (moves everything selected, straight across or straight up), or the corner of a rectangle.
+        /// </summary>
         private struct Grip
         {
             public string Id;
             public bool IsWall;
+            public bool Middle;     // a wall's midpoint: moves the selection
             public bool Start;      // a wall's start (else its end)
             public int Piece;       // a rectangle's piece
             public Point2 At;       // where the grip is
         }
+
+        /// <summary>Walls with grips at most (a window over a large plan selects hundreds).</summary>
+        private const int MaxGripWalls = 200;
 
         /// <summary>The command under way (the first point), so the host can show it; null when waiting for a first point.</summary>
         public Point2? CommandPoint => first;
@@ -44,9 +53,11 @@ namespace BuildingModel.Sketch
         public void ResetCommand()
         {
             first = null;
+            bool dragging = grip != null || windowFrom != null;
             grip = null;
             windowFrom = null;
             segments = null;
+            if (dragging && panFrom == null && IsMouseCaptured) ReleaseMouseCapture();
             InvalidateVisual();
         }
 
@@ -67,7 +78,7 @@ namespace BuildingModel.Sketch
                 case SketchTool.Measure: return first == null ? "Measure: first point." : "Measure: second point.";
                 case SketchTool.Split: return "Split: click on a wall where it splits in two.";
                 case SketchTool.Calibrate: return first == null ? "Calibrate the plan: click the first of two points a known distance apart." : "Calibrate: the second point.";
-                default: return "Select: click, Shift+click to add, drag a window. Drag a grip to stretch. Del deletes.";
+                default: return "Select: click, Shift+click to add, drag a window. Drag a wall's middle grip to move the selection, an end grip to change the length. Del deletes.";
             }
         }
 
@@ -259,11 +270,14 @@ namespace BuildingModel.Sketch
                 return;
             }
             // select: a grip, an issue marker, an object, or a window
-            var g = GripAt(pos);
+            bool add = (Keyboard.Modifiers & (ModifierKeys.Shift | ModifierKeys.Control)) != 0;
+            var g = add ? null : GripAt(pos); // Shift+click on a selected wall still takes it out of the selection
             if (g != null)
             {
-                grip = g;
+                BeginGrip(g.Value);
+                gripDown = pos;
                 CaptureMouse();
+                UpdateCursor(pos);
                 return;
             }
             var issue = IssueAt(pos);
@@ -274,7 +288,6 @@ namespace BuildingModel.Sketch
                 return;
             }
             string id = Snapper.Pick(Building, ActiveLevel, rawCursor, PixelsToFeet(6));
-            bool add = (Keyboard.Modifiers & (ModifierKeys.Shift | ModifierKeys.Control)) != 0;
             if (id != null)
             {
                 if (add && selection.Contains(id)) { selection.Remove(id); SelectionChanged?.Invoke(this, EventArgs.Empty); InvalidateVisual(); }
@@ -303,7 +316,12 @@ namespace BuildingModel.Sketch
                 return;
             }
             UpdateCursor(pos);
-            if (Tool == SketchTool.Select && grip == null && windowFrom == null) Hover(pos);
+            if (Tool == SketchTool.Select && grip == null && windowFrom == null)
+            {
+                Hover(pos);
+                Cursor = GripCursor(GripAt(pos));
+            }
+            if (grip != null) Say(DragText(grip.Value, cursor));
             InvalidateVisual();
         }
 
@@ -318,9 +336,7 @@ namespace BuildingModel.Sketch
                 var g = grip.Value;
                 grip = null;
                 ReleaseMouseCapture();
-                bool ok = g.IsWall ? BuildingEdits.MoveWallEnd(Building, g.Id, g.Start, cursor) : BuildingEdits.MoveCorner(Building, g.Id, g.Piece, g.At, cursor);
-                if (ok) Commit($"Stretched {g.Id}.");
-                else Say("That would leave it with no length or area.", true);
+                if ((pos - gripDown).Length >= 3) ApplyGrip(g, cursor); // a click on a grip is not a drag
                 segments = null;
                 InvalidateVisual();
                 return;
@@ -444,24 +460,38 @@ namespace BuildingModel.Sketch
 
         // ------------------------------------------------------------------ grips and markers
 
+        /// <summary>The grip nearest the point, within 6 px.</summary>
         private Grip? GripAt(Point pos)
         {
+            Grip? best = null;
+            double bestD = 6;
             foreach (var g in Grips())
-                if ((ToScreen(g.At) - pos).Length <= 6) return g;
-            return null;
+            {
+                double d = (ToScreen(g.At) - pos).Length;
+                if (d <= bestD) { bestD = d; best = g; }
+            }
+            return best;
         }
 
-        /// <summary>The grips of the one selected wall (its ends) or rectangle (its corners).</summary>
+        /// <summary>
+        /// The grips of the selection: on every selected wall its two ends and its middle; on a single selected rectangle
+        /// (a diaphragm or an opening) its corners.
+        /// </summary>
         private IEnumerable<Grip> Grips()
         {
-            if (selection.Count != 1) yield break;
-            var o = Building.Find(SelectedId);
-            if (o is Wall w)
+            if (selection.Count == 0 || Building == null) yield break;
+            int walls = 0;
+            foreach (var id in selection)
             {
+                if (!(Building.Find(id) is Wall w)) continue;
+                if (++walls > MaxGripWalls) break;
                 yield return new Grip { Id = w.Id, IsWall = true, Start = true, At = w.Start };
                 yield return new Grip { Id = w.Id, IsWall = true, Start = false, At = w.End };
+                yield return new Grip { Id = w.Id, IsWall = true, Middle = true, At = new Point2((w.Start.X + w.End.X) / 2, (w.Start.Y + w.End.Y) / 2) };
             }
-            else
+            if (selection.Count != 1) yield break;
+            var o = Building.Find(SelectedId);
+            if (!(o is Wall))
             {
                 int i = 0;
                 foreach (var r in LevelView.PiecesOf(o))
@@ -471,6 +501,75 @@ namespace BuildingModel.Sketch
                     i++;
                 }
             }
+        }
+
+        /// <summary>A grip drag starts: the snaps leave out what is being dragged (it would only snap to itself).</summary>
+        private void BeginGrip(Grip g)
+        {
+            grip = g;
+            segments = Snapper.SegmentsOf(Building, ActiveLevel, g.Middle ? (ICollection<string>)selection.ToList() : new[] { g.Id });
+        }
+
+        /// <summary>What the drag would do: "Move 3 walls 4.5 ft east", "W3: 18 ft".</summary>
+        private string DragText(Grip g, Point2 to)
+        {
+            if (g.Middle)
+            {
+                var (dx, dy) = BuildingEdits.OrthoOffset(g.At, to);
+                return $"Move {Names(selection.ToList())} {Offset(dx, dy)}. Release to place; Esc cancels.";
+            }
+            if (g.IsWall && Building.Find(g.Id) is Wall w)
+            {
+                var fixedEnd = g.Start ? w.End : w.Start;
+                return $"{w.Id}: {Snapper.Dist(fixedEnd, BuildingEdits.AlongWall(w, to)):0.##} ft (was {w.Length:0.##} ft). Release to set; Esc cancels.";
+            }
+            return $"Stretch {g.Id}. Release to set; Esc cancels.";
+        }
+
+        /// <summary>"4.5 ft east", "2 ft south".</summary>
+        private static string Offset(double dx, double dy) =>
+            Math.Abs(dx) >= Math.Abs(dy) ? $"{Math.Abs(dx):0.##} ft {(dx >= 0 ? "east" : "west")}" : $"{Math.Abs(dy):0.##} ft {(dy >= 0 ? "north" : "south")}";
+
+        private static Cursor GripCursor(Grip? g) =>
+            g == null ? Cursors.Cross : g.Value.Middle ? Cursors.SizeAll : Cursors.Hand;
+
+        /// <summary>Applies a grip dragged to a point (one undo step). False with a message when it cannot be done.</summary>
+        private bool ApplyGrip(Grip g, Point2 to)
+        {
+            var b = Building;
+            if (g.Middle)
+            {
+                var (dx, dy) = BuildingEdits.OrthoOffset(g.At, to);
+                if (Math.Abs(dx) + Math.Abs(dy) < 1e-9) return false;
+                var ids = selection.ToList();
+                BuildingEdits.MoveAll(b, ids, dx, dy);
+                Commit($"Moved {Names(ids)} {Offset(dx, dy)}.");
+                return true;
+            }
+            if (g.IsWall)
+            {
+                if (!BuildingEdits.MoveWallEnd(b, g.Id, g.Start, to)) { Say("That would leave the wall with no length.", true); return false; }
+                Commit($"{g.Id} is now {((Wall)b.Find(g.Id)).Length:0.##} ft long.");
+                return true;
+            }
+            if (!BuildingEdits.MoveCorner(b, g.Id, g.Piece, g.At, to)) { Say("That would leave it with no area.", true); return false; }
+            Commit($"Stretched {g.Id}.");
+            return true;
+        }
+
+        /// <summary>
+        /// Drags the selection's grip at <paramref name="from"/> (ft) to <paramref name="to"/>, as the mouse does: a wall's
+        /// middle moves everything selected (straight across or up), an end changes that wall's length, a corner stretches
+        /// a rectangle. False when there is no grip there or the edit cannot be done.
+        /// </summary>
+        public bool DragGrip(Point2 from, Point2 to)
+        {
+            var g = GripAt(ToScreen(from));
+            if (g == null) return false;
+            bool ok = ApplyGrip(g.Value, to);
+            segments = null;
+            InvalidateVisual();
+            return ok;
         }
 
         /// <summary>The issues shown on this level's plan.</summary>

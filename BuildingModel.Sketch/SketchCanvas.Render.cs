@@ -81,6 +81,8 @@ namespace BuildingModel.Sketch
         private static readonly Brush WindowBrush = B(Color.FromArgb(0x20, 0x2A, 0x78, 0xD6));
         private static readonly Pen WindowPen = P(Palette.Preview, 1, 4, 2);
         private static readonly Brush GripBrush = B(Colors.White);
+        private static readonly Brush SelectFill = B(Palette.Select);
+        private static readonly Pen GripEdge = P(Colors.White, 1.5);
 
         private static Brush MakeHatch()
         {
@@ -130,7 +132,20 @@ namespace BuildingModel.Sketch
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
 
             DrawOver?.Invoke(this, new SketchDrawEventArgs(ctx, this));
-            foreach (var g in Grips()) ctx.DrawRectangle(GripBrush, SelectPen, new Rect(ToScreen(g.At) - new Vector(4, 4), new Size(8, 8)));
+            // grips: hollow squares stretch (ends, corners); the filled diamond in a wall's middle moves the selection
+            foreach (var g in Grips())
+            {
+                var s = ToScreen(g.At);
+                if (!g.Middle) { ctx.DrawRectangle(GripBrush, SelectPen, new Rect(s - new Vector(4, 4), new Size(8, 8))); continue; }
+                var diamond = new StreamGeometry();
+                using (var gc = diamond.Open())
+                {
+                    gc.BeginFigure(new Point(s.X, s.Y - 6), true, true);
+                    gc.PolyLineTo(new[] { new Point(s.X + 6, s.Y), new Point(s.X, s.Y + 6), new Point(s.X - 6, s.Y) }, true, false);
+                }
+                diamond.Freeze();
+                ctx.DrawGeometry(SelectFill, GripEdge, diamond);
+            }
             DrawIssues(ctx);
             DrawPreview(ctx);
             DrawLevelTag(ctx);
@@ -257,10 +272,30 @@ namespace BuildingModel.Sketch
             if (grip != null)
             {
                 var g = grip.Value;
-                if (g.IsWall && Building.Find(g.Id) is Wall w)
+                if (g.Middle)
+                {
+                    // a ghost of everything selected, where it will go, and the path from the grip
+                    var (dx, dy) = BuildingEdits.OrthoOffset(g.At, cursor);
+                    var shift = new Vector(dx * Zoom, -dy * Zoom);
+                    foreach (var id in selection)
+                    {
+                        switch (Building.Find(id))
+                        {
+                            case Wall sw: ctx.DrawLine(PreviewPen, ToScreen(sw.Start) + shift, ToScreen(sw.End) + shift); break;
+                            case Note sn: ctx.DrawEllipse(null, PreviewPen, ToScreen(sn.At) + shift, 8, 8); break;
+                            case ModelObject so:
+                                foreach (var r in LevelView.PiecesOf(so)) { var sr = ScreenRect(r); sr.Offset(shift); ctx.DrawRectangle(null, PreviewPen, sr); }
+                                break;
+                        }
+                    }
+                    var to = new Point2(g.At.X + dx, g.At.Y + dy);
+                    Line(ctx, WindowPen, g.At, to);
+                    Label(ctx, Offset(dx, dy), ToScreen(to) + new Vector(10, -18), B(Palette.Preview));
+                }
+                else if (g.IsWall && Building.Find(g.Id) is Wall w)
                 {
                     var fixedEnd = g.Start ? w.End : w.Start;
-                    var p = Snapper.Ortho(cursor, fixedEnd);
+                    var p = BuildingEdits.AlongWall(w, cursor);
                     Line(ctx, PreviewPen, fixedEnd, p);
                     Label(ctx, $"{Snapper.Dist(fixedEnd, p):0.##} ft", ToScreen(p) + new Vector(10, -18), B(Palette.Preview));
                 }

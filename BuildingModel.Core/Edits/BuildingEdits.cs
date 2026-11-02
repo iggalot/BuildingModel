@@ -138,16 +138,36 @@ namespace BuildingModel.Edits
             return true;
         }
 
-        /// <summary>Moves one end of a wall (grip edit); the wall stays square: the other coordinate follows the fixed end.</summary>
+        /// <summary>Moves one end of a wall along its own line (grip edit): the length changes, the direction and the other end stay.</summary>
         public static bool MoveWallEnd(Building b, string id, bool start, Point2 to)
         {
             if (!(b.Find(id) is Wall w)) return false;
             var fixedEnd = start ? w.End : w.Start;
-            var p = Snapper.Ortho(to, fixedEnd);
+            var p = AlongWall(w, to);
             if (Snapper.Dist(p, fixedEnd) < MinimumWall) return false;
             if (start) w.Start = p; else w.End = p;
             return true;
         }
+
+        /// <summary>The point on the wall's own line (extended) closest to <paramref name="p"/>.</summary>
+        public static Point2 AlongWall(Wall w, Point2 p)
+        {
+            double ux = w.End.X - w.Start.X, uy = w.End.Y - w.Start.Y, len2 = ux * ux + uy * uy;
+            if (len2 < 1e-12) return p;
+            double t = ((p.X - w.Start.X) * ux + (p.Y - w.Start.Y) * uy) / len2;
+            return new Point2(w.Start.X + t * ux, w.Start.Y + t * uy);
+        }
+
+        /// <summary>The offset from <paramref name="from"/> to <paramref name="to"/>, straight across or straight up (whichever is larger).</summary>
+        public static (double dx, double dy) OrthoOffset(Point2 from, Point2 to)
+        {
+            double dx = to.X - from.X, dy = to.Y - from.Y;
+            return Math.Abs(dx) >= Math.Abs(dy) ? (dx, 0.0) : (0.0, dy);
+        }
+
+        /// <summary>Moves every object by (dx, dy) ft; the number moved.</summary>
+        public static int MoveAll(Building b, IEnumerable<string> ids, double dx, double dy) =>
+            ids.Distinct().Count(id => Move(b, id, dx, dy));
 
         /// <summary>Moves one corner of a rectangle piece (grip edit); the opposite corner stays.</summary>
         public static bool MoveCorner(Building b, string id, int piece, Point2 corner, Point2 to)

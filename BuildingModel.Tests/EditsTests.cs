@@ -139,6 +139,46 @@ namespace BuildingModel.Tests
             Assert.AreEqual(new Rect2(0, 0, 45, 35), d.Pieces[0]);
         }
 
+        /// <summary>An end grip changes the length only: dragged off to the side, the wall does not turn.</summary>
+        [TestMethod]
+        public void WallEnd_StaysOnItsLine_LengthOnly()
+        {
+            var b = TwoStory(out _, out _);
+            var w = b.Walls[0];                                   // (0,0) → (40,0)
+            Assert.IsTrue(BuildingEdits.MoveWallEnd(b, w.Id, start: false, to: new Point2(5, 20)));
+            Assert.AreEqual(new Point2(5, 0), w.End, "pulled up and back: shorter, still W-E (it used to turn N-S)");
+            Assert.IsTrue(BuildingEdits.MoveWallEnd(b, w.Id, start: true, to: new Point2(-3, -2)));
+            Assert.AreEqual(new Point2(-3, 0), w.Start, "the start pulled out: longer");
+            Assert.IsFalse(BuildingEdits.MoveWallEnd(b, w.Id, start: false, to: new Point2(-3, 9)), "onto the other end: no length");
+            var angled = b.AddWall(b.Ground, b.Levels.First(l => l.Elevation > 0), 0, 0, 10, 10);
+            Assert.IsTrue(BuildingEdits.MoveWallEnd(b, angled.Id, start: false, to: new Point2(20, 0)));
+            Assert.AreEqual(10, angled.End.X, 1e-9);
+            Assert.AreEqual(10, angled.End.Y, 1e-9, "the closest point on its own (45°) line");
+        }
+
+        [TestMethod]
+        public void OrthoOffset_TheLargerDirectionOnly_MoveAllMovesEach()
+        {
+            Assert.AreEqual((5.0, 0.0), BuildingEdits.OrthoOffset(new Point2(1, 1), new Point2(6, 3)));
+            Assert.AreEqual((0.0, -4.0), BuildingEdits.OrthoOffset(new Point2(1, 1), new Point2(2, -3)));
+            var b = TwoStory(out var l2, out _);
+            var ids = new[] { b.Walls[0].Id, b.Walls[1].Id, b.DiaphragmsOn(l2).Single().Id, b.Walls[0].Id };
+            Assert.AreEqual(3, BuildingEdits.MoveAll(b, ids, 0, 2), "the repeated ID moves once");
+            Assert.AreEqual(new Point2(0, 2), b.Walls[0].Start);
+            Assert.AreEqual(new Point2(40, 32), b.Walls[1].End);
+            Assert.AreEqual(new Rect2(0, 2, 40, 32), b.DiaphragmsOn(l2).Single().Pieces[0]);
+        }
+
+        /// <summary>While something is dragged the snaps leave it out: it would only snap back to where it was.</summary>
+        [TestMethod]
+        public void SnapLines_LeaveOutWhatIsDragged()
+        {
+            var b = TwoStory(out var l2, out _);
+            int all = Snapper.SegmentsOf(b, l2).Count;
+            Assert.AreEqual(all - 1, Snapper.SegmentsOf(b, l2, new[] { b.WallsUnder(l2).First().Id }).Count);
+            Assert.AreEqual(all - 4, Snapper.SegmentsOf(b, l2, new[] { b.DiaphragmsOn(l2).Single().Id }).Count);
+        }
+
         // ------------------------------------------------------------------ stories
 
         [TestMethod]

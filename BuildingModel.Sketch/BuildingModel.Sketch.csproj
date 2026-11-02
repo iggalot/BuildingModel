@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>BuildingModel.Sketch</RootNamespace>
+    <AssemblyName>BuildingModel.Sketch</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BuildingModel.Core\BuildingModel.Core.csproj" />
+  </ItemGroup>
+
+</Project>

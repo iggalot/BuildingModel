@@ -174,6 +174,7 @@ namespace BuildingModel.ShearWalls
                 var extras = ReadWall(w);
                 var data = new WallData(height, w.Start.X, w.Start.Y, w.End.X, w.End.Y) { ID = key, WallType = extras.WallType };
                 if (extras.Design.TryGetValue(level.Id, out var design) && design != null) data.Design = design;
+                else if (calc.DesignSettings?.NewWallDesign != null) data.Design = calc.DesignSettings.NewWallDesign.Clone(); // a new wall: the project's default
                 calc._wall_system._walls[key] = data;
                 map.Walls[key] = w.Id;
             }
@@ -230,6 +231,37 @@ namespace BuildingModel.ShearWalls
                 string before = b.GetData(SettingsKey);
                 b.SetData(SettingsKey, JsonConvert.SerializeObject(any.DesignSettings, Json));
                 changed |= before != b.GetData(SettingsKey);
+            }
+            return changed;
+        }
+
+        /// <summary>
+        /// Writes coordinates typed in the designer's tables back into the model: a wall's ends, and a diaphragm's
+        /// rectangle when it is one rectangle on the story (not split by openings). Returns true when the model changed.
+        /// </summary>
+        public static bool StoreGeometry(Building b, StoryMap s)
+        {
+            bool changed = false;
+            foreach (var kv in s.Walls)
+            {
+                if (!(b.Find(kv.Value) is Wall w) || !s.Calculator._wall_system._walls.TryGetValue(kv.Key, out var data)) continue;
+                var a = new Point2(data.Start.X, data.Start.Y);
+                var e = new Point2(data.End.X, data.End.Y);
+                bool same = (a.Equals(w.Start) && e.Equals(w.End)) || (a.Equals(w.End) && e.Equals(w.Start));
+                if (same) continue;
+                w.Start = a;
+                w.End = e;
+                changed = true;
+            }
+            foreach (var g in s.Diaphragms.GroupBy(kv => kv.Value).Where(g => g.Count() == 1))
+            {
+                var kv = g.First();
+                if (!(b.Find(kv.Value) is Diaphragm d) || d.Pieces.Count != 1 || !s.Calculator._diaphragm_system._diaphragms.TryGetValue(kv.Key, out var data)) continue;
+                if (b.OpeningsCutting(s.Level).Count > 0) continue;
+                var r = new Rect2(data.P1.X, data.P1.Y, data.P3.X, data.P3.Y);
+                if (r.IsEmpty || r.Equals(d.Pieces[0])) continue;
+                d.Pieces[0] = r;
+                changed = true;
             }
             return changed;
         }

@@ -231,6 +231,7 @@ namespace BuildingModel.Sketch
                 return;
             }
             if (e.ChangedButton != MouseButton.Left) return;
+            if (InterceptClick != null && InterceptClick(cursor)) return; // a host command (the designer's plan-image tools)
             if (Tool != SketchTool.Select)
             {
                 ApplyPoint(cursor, rawCursor);
@@ -353,18 +354,36 @@ namespace BuildingModel.Sketch
         {
             mouseInside = true;
             rawCursor = ToWorld(pos);
-            if (SnapOn && Tool != SketchTool.Select || grip != null)
+            if (SnapOn && (Tool != SketchTool.Select || HostWantsSnaps?.Invoke() == true) || grip != null)
             {
                 if (segments == null) segments = Snapper.SegmentsOf(Building, ActiveLevel);
+                var lines = segments;
+                var extra = ExtraSnapLines?.Invoke(rawCursor, PixelsToFeet(10));
+                if (extra != null) lines = segments.Concat(extra).ToList();
                 var modes = SnapModes;
                 if (!ShowGrid) modes &= ~SnapModes.Grid;
                 if (!SnapOn) modes = SnapModes.None;
-                snap = Snapper.Find(rawCursor, PixelsToFeet(10), segments, modes, first, GridSpacing);
+                snap = Snapper.Find(rawCursor, PixelsToFeet(10), lines, modes, first ?? HostFrom?.Invoke(), GridSpacing);
             }
             else snap = new SnapResult { Point = rawCursor };
             cursor = snap.Point;
             CursorMoved?.Invoke(this, EventArgs.Empty);
         }
+
+        /// <summary>A left click the host takes first (true: used, the tool does not see it).</summary>
+        public Func<Point2, bool> InterceptClick { get; set; }
+
+        /// <summary>True while a host command wants snapped points in the Select tool.</summary>
+        public Func<bool> HostWantsSnaps { get; set; }
+
+        /// <summary>The host command's last point (for the perpendicular snap), or null.</summary>
+        public Func<Point2?> HostFrom { get; set; }
+
+        /// <summary>More lines to snap to near the cursor (the designer's CAD plan), given the cursor and the reach in ft.</summary>
+        public Func<Point2, double, IEnumerable<Segment2>> ExtraSnapLines { get; set; }
+
+        /// <summary>Esc was pressed in the sketch (the host ends its own command too).</summary>
+        public event EventHandler Escaped;
 
         /// <summary>The cursor moved (the host shows the coordinates).</summary>
         public event EventHandler CursorMoved;
@@ -466,6 +485,7 @@ namespace BuildingModel.Sketch
             switch (key)
             {
                 case Key.Escape:
+                    Escaped?.Invoke(this, EventArgs.Empty);
                     if (first != null || grip != null || windowFrom != null) ResetCommand();
                     else if (Tool != SketchTool.Select) SetTool(SketchTool.Select);
                     else ClearSelection();

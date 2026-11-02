@@ -159,6 +159,39 @@ namespace BuildingModel.Tests
             Assert.AreEqual(0, Checks.ModelChecks.Run(b).Count(i => i.Code == "BadReference"));
         }
 
+        /// <summary>Typed coordinates in the designer's table go back to the model's wall and single-rectangle diaphragm.</summary>
+        [TestMethod]
+        public void StoreGeometry_WritesTypedCoordinatesBack()
+        {
+            var b = Box(out var l2, out _);
+            var s = ShearWallAdapter.ToCalculators(b)[0];
+            int key = ShearWallAdapter.Number(b.Walls[0].Id).Value;
+            Assert.IsFalse(ShearWallAdapter.StoreGeometry(b, s), "nothing typed yet");
+            var w = s.Calculator._wall_system._walls[key];
+            w.Start = new System.Windows.Point(0, 0);
+            w.End = new System.Windows.Point(50, 0);
+            var d = s.Calculator._diaphragm_system._diaphragms.Values.Single();
+            d.P1 = new System.Windows.Point(0, 0);
+            d.P3 = new System.Windows.Point(70, 40);
+            Assert.IsTrue(ShearWallAdapter.StoreGeometry(b, s));
+            Assert.AreEqual(50, b.Walls[0].End.X, Tol);
+            Assert.AreEqual(70, b.DiaphragmsOn(l2).Single().Pieces[0].X1, Tol);
+            Assert.IsFalse(ShearWallAdapter.StoreGeometry(b, s), "already stored");
+        }
+
+        /// <summary>A wall drawn after the project's default design was set starts with that design.</summary>
+        [TestMethod]
+        public void NewWall_GetsTheProjectDefaultDesign()
+        {
+            var b = Box(out var l2, out _);
+            var s = ShearWallAdapter.ToCalculators(b);
+            s[0].Calculator.DesignSettings.NewWallDesign = new ShearWallCalculator.Design.WallDesignInputs { EdgeSpacing = 3 };
+            ShearWallAdapter.StoreDesign(b, s);
+            var added = b.AddWall(b.Ground, l2, 20, 0, 20, 40);
+            var again = ShearWallAdapter.ToCalculators(b);
+            Assert.AreEqual(3, again[0].Calculator._wall_system._walls[ShearWallAdapter.Number(added.Id).Value].Design.EdgeSpacing);
+        }
+
         [TestMethod]
         public void Numbers()
         {

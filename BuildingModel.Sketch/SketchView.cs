@@ -119,6 +119,13 @@ namespace BuildingModel.Sketch
             set => levelBar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        /// <summary>Shows or hides the Plan ▾ button (a host with its own plan import hides it).</summary>
+        public bool ShowPlanButton
+        {
+            get => planButton.Visibility == Visibility.Visible;
+            set => planButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         /// <summary>Hides a tool's button and stops it being used.</summary>
         public void HideTool(SketchTool tool)
         {

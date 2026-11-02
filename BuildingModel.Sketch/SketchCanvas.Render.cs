@@ -297,7 +297,7 @@ namespace BuildingModel.Sketch
                 }
             }
             // the cursor and the snap glyph
-            if (mouseInside && Tool != SketchTool.Select)
+            if (mouseInside && (Tool != SketchTool.Select || HostWantsSnaps?.Invoke() == true))
             {
                 var c = ToScreen(cursor);
                 ctx.DrawLine(CrossPen, new Point(c.X - 12, c.Y), new Point(c.X + 12, c.Y));
@@ -350,12 +350,15 @@ namespace BuildingModel.Sketch
             Label(ctx, $"{Snapper.Dist(a, b):0.00} ft", new Point((sa.X + sb.X) / 2 + 6, (sa.Y + sb.Y) / 2 - 18), B(Palette.Measure));
         }
 
+        /// <summary>The words of the level tag (the host's own naming), or null for the default.</summary>
+        public Func<Level, string> LevelCaption { get; set; }
+
         /// <summary>The level being drawn, top-left: it must always be clear which level is being edited.</summary>
         private void DrawLevelTag(DrawingContext ctx)
         {
             var l = ActiveLevel;
             double h = Building.StoryHeight(l);
-            string text = l.Elevation == 0 ? $"{l.Name} · 0 ft" : $"{l.Name} · {l.Elevation:0.##} ft · story under it {h:0.##} ft";
+            string text = LevelCaption?.Invoke(l) ?? (l.Elevation == 0 ? $"{l.Name} · 0 ft" : $"{l.Name} · {l.Elevation:0.##} ft · story under it {h:0.##} ft");
             var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                                        new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 12, Brushes.White, Dpi);
             var box = new Rect(8, 8, ft.Width + 16, ft.Height + 8);

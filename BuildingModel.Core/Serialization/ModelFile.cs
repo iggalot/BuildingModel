@@ -12,7 +12,8 @@ namespace BuildingModel.Serialization
     public sealed class ModelDocument
     {
         public const string FormatName = "BuildingModel";
-        public const int CurrentVersion = 1;
+        /// <summary>1: levels, diaphragms, openings, walls. 2: adds the data bags and the notes (a version 1 file reads as is).</summary>
+        public const int CurrentVersion = 2;
 
         [DataMember(Order = 0)] public string Format { get; set; } = FormatName;
         [DataMember(Order = 1)] public int Version { get; set; } = CurrentVersion;
@@ -66,5 +67,27 @@ namespace BuildingModel.Serialization
         }
 
         public static ModelDocument Load(string path) => FromJson(File.ReadAllText(path));
+
+        private static DataContractJsonSerializer BuildingSerializer() =>
+            new DataContractJsonSerializer(typeof(Building), new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true });
+
+        /// <summary>The building alone as compact JSON (undo snapshots, change sets).</summary>
+        public static string BuildingToJson(Building b)
+        {
+            using (var ms = new MemoryStream())
+            {
+                BuildingSerializer().WriteObject(ms, b);
+                return Encoding.UTF8.GetString(ms.ToArray());
+            }
+        }
+
+        public static Building BuildingFromJson(string json)
+        {
+            using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(json ?? "")))
+                return (Building)BuildingSerializer().ReadObject(ms);
+        }
+
+        /// <summary>A deep copy (through JSON).</summary>
+        public static Building Clone(Building b) => BuildingFromJson(BuildingToJson(b));
     }
 }

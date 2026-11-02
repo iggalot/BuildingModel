@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
+using System;
+using BuildingModel.Geometry;
 using BuildingModel.Model;
 
 namespace BuildingModel.Checks
@@ -13,6 +15,12 @@ namespace BuildingModel.Checks
         public string Code { get; set; }
         public string Message { get; set; }
         public List<string> Ids { get; set; } = new List<string>();
+
+        /// <summary>The level whose plan shows the issue (null: the whole building).</summary>
+        public string LevelId { get; set; }
+
+        /// <summary>Where to mark it on that plan (null: no one place).</summary>
+        public Point2? At { get; set; }
 
         public override string ToString() => $"{Severity} {Code}: {Message}";
     }
@@ -106,7 +114,74 @@ namespace BuildingModel.Checks
                         $"Wall {w.Id} passes {string.Join(", ", passed.Select(l => l.Name))} with no diaphragm at the wall: unbraced height {b.UnbracedHeight(w):0.##} ft " +
                         "(check its out-of-plane bending and anchorage).", w.Id);
             }
+            // notes
+            foreach (var n in b.Notes.Where(n => b.Level(n.LevelId) == null))
+                Add(Severity.Error, "BadReference", $"Note {n.Id} is on a level that does not exist.", n.Id);
+
+            ShearWallChecks(b, Add);
+            foreach (var i in issues) Locate(b, i);
             return issues;
+        }
+
+        /// <summary>Shear walls that carry nothing, and shear walls drawn twice.</summary>
+        private static void ShearWallChecks(Building b, Action<Severity, string, string, string[]> add)
+        {
+            var shear = b.Walls.Where(w => w.IsShearWall && w.Direction != WallDirection.NotOrthogonal && b.Level(w.BaseLevelId) != null && b.Level(w.TopLevelId) != null).ToList();
+            foreach (var w in shear)
+            {
+                var top = b.Level(w.TopLevelId);
+                if (top.Elevation > b.Level(w.BaseLevelId).Elevation && b.NetDiaphragm(top).LengthAlong(w.Start, w.End, BuildingQueries.WallTolerance) <= 0)
+                    add(Severity.Warning, "ShearWallNotReached", $"Shear wall {w.Id}: no diaphragm at its top ({top.Name}) reaches it, so it takes no load there.", new[] { w.Id });
+            }
+            for (int i = 0; i < shear.Count; i++)
+                for (int j = i + 1; j < shear.Count; j++)
+                {
+                    var a = shear[i]; var c = shear[j];
+                    if (a.Direction != c.Direction) continue;
+                    bool we = a.Direction == WallDirection.WestEast;
+                    if (Math.Abs(we ? a.Start.Y - c.Start.Y : a.Start.X - c.Start.X) > 1e-6) continue;
+                    double lo = Math.Max(Lo(a, we), Lo(c, we)), hi = Math.Min(Hi(a, we), Hi(c, we));
+                    if (hi - lo <= 1e-6) continue;
+                    double a0 = b.Level(a.BaseLevelId).Elevation, a1 = b.Level(a.TopLevelId).Elevation;
+                    double c0 = b.Level(c.BaseLevelId).Elevation, c1 = b.Level(c.TopLevelId).Elevation;
+                    if (Math.Min(a1, c1) - Math.Max(a0, c0) <= 1e-6) continue;
+                    add(Severity.Error, "WallOverlap", $"Shear walls {a.Id} and {c.Id} overlap over {hi - lo:0.##} ft: the same wall is counted twice.", new[] { a.Id, c.Id });
+                }
+        }
+
+        private static double Lo(Wall w, bool we) => we ? Math.Min(w.Start.X, w.End.X) : Math.Min(w.Start.Y, w.End.Y);
+        private static double Hi(Wall w, bool we) => we ? Math.Max(w.Start.X, w.End.X) : Math.Max(w.Start.Y, w.End.Y);
+
+        /// <summary>Where the issue shows: the level it names, else the level of its first object; at the object, else at the level's diaphragm.</summary>
+        public static void Locate(Building b, ModelIssue issue)
+        {
+            var level = issue.Ids.Select(b.Level).FirstOrDefault(l => l != null);
+            foreach (var id in issue.Ids)
+            {
+                switch (b.Find(id))
+                {
+                    case Wall w:
+                        issue.At = issue.At ?? w.Middle;
+                        level = level ?? b.Level(w.TopLevelId);
+                        break;
+                    case Opening o when o.Pieces.Count > 0:
+                        var r = o.Pieces[0];
+                        issue.At = issue.At ?? new Point2((r.X0 + r.X1) / 2, (r.Y0 + r.Y1) / 2);
+                        level = level ?? b.Levels.Where(l => b.OpeningsCutting(l).Contains(o)).OrderBy(l => l.Elevation).FirstOrDefault() ?? b.Level(o.BottomLevelId);
+                        break;
+                    case Diaphragm d when d.Pieces.Count > 0:
+                        var p = d.Pieces[0];
+                        issue.At = issue.At ?? new Point2((p.X0 + p.X1) / 2, (p.Y0 + p.Y1) / 2);
+                        level = level ?? b.Level(d.LevelId);
+                        break;
+                    case Note n:
+                        issue.At = issue.At ?? n.At;
+                        level = level ?? b.Level(n.LevelId);
+                        break;
+                }
+            }
+            if (level != null && issue.At == null && !b.GrossDiaphragm(level).IsEmpty) issue.At = b.GrossDiaphragm(level).Centroid;
+            issue.LevelId = level?.Id;
         }
     }
 }

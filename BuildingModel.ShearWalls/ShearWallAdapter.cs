@@ -266,6 +266,51 @@ namespace BuildingModel.ShearWalls
             return changed;
         }
 
+        // ------------------------------------------------------------------ stories
+
+        /// <summary>A new building with one story per plate height (bottom first; 9 ft when none or not more than 0), named by <see cref="NameStories"/>.</summary>
+        public static Building NewBuilding(IList<double> plateHeights, double fallback = 9.0)
+        {
+            var b = Building.New();
+            var heights = plateHeights != null && plateHeights.Count > 0 ? plateHeights : new[] { fallback };
+            foreach (double h in heights) BuildingEdits.AddStory(b, h > 0 ? h : fallback);
+            NameStories(b);
+            return b;
+        }
+
+        /// <summary>
+        /// Default story names follow the stories: Level 2, Level 3... and the top one Roof (one story: Level 2). Names the
+        /// user gave (anything but "Level n" and "Roof") stay.
+        /// </summary>
+        public static void NameStories(Building b)
+        {
+            var up = Stories(b);
+            for (int i = 0; i < up.Count; i++)
+            {
+                string name = up[i].Name ?? "";
+                bool standard = name == "Roof" || (name.StartsWith("Level ", StringComparison.Ordinal) && int.TryParse(name.Substring(6), out _));
+                if (standard) up[i].Name = i == up.Count - 1 && up.Count > 1 ? "Roof" : $"Level {i + 2}";
+            }
+        }
+
+        /// <summary>
+        /// After <see cref="BuildingEdits.CopyStory"/>: a copied wall's design was kept for the level it came from; it becomes
+        /// its design on the new level too. Returns how many walls got one.
+        /// </summary>
+        public static int CopyDesignUp(Building b, Level from, Level to)
+        {
+            int n = 0;
+            foreach (var w in b.Walls.Where(w => w.TopLevelId == to.Id))
+            {
+                var x = ReadWall(w);
+                if (x.Design.ContainsKey(to.Id) || !x.Design.TryGetValue(from.Id, out var d) || d == null) continue;
+                x.Design[to.Id] = d.Clone();
+                WriteWall(w, x);
+                n++;
+            }
+            return n;
+        }
+
         /// <summary>
         /// An older designer project (calculators only) as a building model: level n at the sum of the plate heights
         /// (or each story's tallest wall, else 9 ft), each diaphragm rectangle a diaphragm, each wall a shear wall of its

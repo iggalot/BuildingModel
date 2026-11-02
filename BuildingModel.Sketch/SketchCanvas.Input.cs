@@ -72,9 +72,13 @@ namespace BuildingModel.Sketch
 
         // ------------------------------------------------------------------ points
 
+        /// <summary>Text typed in the command box that the host takes first (true: used), e.g. a distance its own command asked for.</summary>
+        public Func<string, bool> InterceptTyped { get; set; }
+
         /// <summary>A typed point (x,y  @dx,dy  @len&lt;angle  or a length toward the cursor). False with a message when it cannot be used.</summary>
         public bool TypePoint(string text)
         {
+            if (InterceptTyped != null && InterceptTyped(text)) return true;
             if (Tool == SketchTool.Select) { Say("Pick a drawing tool first (W wall, D diaphragm...).", true); return false; }
             if (!CoordinateInput.TryParse(text, first, cursor, out var p, out var error))
             {

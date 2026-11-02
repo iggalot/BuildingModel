@@ -193,6 +193,67 @@ namespace BuildingModel.Tests
         }
 
         [TestMethod]
+        public void NewBuilding_OneStoryPerPlateHeight_NamedLevelsAndRoof()
+        {
+            var b = ShearWallAdapter.NewBuilding(new[] { 10.0, 9.0, 0.0 });
+            var up = ShearWallAdapter.Stories(b);
+            CollectionAssert.AreEqual(new[] { 10.0, 19.0, 28.0 }, up.Select(l => l.Elevation).ToArray(), "a height of 0 becomes 9 ft");
+            CollectionAssert.AreEqual(new[] { "Level 2", "Level 3", "Roof" }, up.Select(l => l.Name).ToArray());
+            Assert.AreEqual("Level 2", ShearWallAdapter.Stories(ShearWallAdapter.NewBuilding(null)).Single().Name, "one story");
+        }
+
+        [TestMethod]
+        public void NameStories_FollowsAddAndDelete_KeepsTheUsersNames()
+        {
+            var b = ShearWallAdapter.NewBuilding(new[] { 10.0, 9.0 });
+            var mezz = BuildingEdits.AddStory(b, 8);
+            ShearWallAdapter.NameStories(b);
+            CollectionAssert.AreEqual(new[] { "Level 2", "Level 3", "Roof" }, ShearWallAdapter.Stories(b).Select(l => l.Name).ToArray(), "the old roof is a floor now");
+            ShearWallAdapter.Stories(b)[0].Name = "Podium";
+            BuildingEdits.DeleteStory(b, mezz);
+            ShearWallAdapter.NameStories(b);
+            CollectionAssert.AreEqual(new[] { "Podium", "Roof" }, ShearWallAdapter.Stories(b).Select(l => l.Name).ToArray());
+        }
+
+        /// <summary>Copy ↑ in the designer: the copied walls keep the design they had on the story below.</summary>
+        [TestMethod]
+        public void CopyDesignUp_TheCopiedWallsKeepTheirDesign()
+        {
+            var b = Box(out var l2, out var roof);
+            b.Walls.RemoveAll(w => w.TopLevelId == roof.Id);
+            b.Diaphragms.RemoveAll(d => d.LevelId == roof.Id);
+            var s = ShearWallAdapter.ToCalculators(b);
+            foreach (var w in s[0].Calculator._wall_system._walls.Values) w.Design.EdgeSpacing = 3;
+            ShearWallAdapter.StoreDesign(b, s);
+            Assert.AreEqual(5, BuildingEdits.CopyStory(b, l2, roof));
+            Assert.AreEqual(4, ShearWallAdapter.CopyDesignUp(b, l2, roof));
+            var again = ShearWallAdapter.ToCalculators(b);
+            Assert.AreEqual(4, again[1].Calculator._wall_system._walls.Count);
+            Assert.IsTrue(again[1].Calculator._wall_system._walls.Values.All(w => w.Design.EdgeSpacing == 3));
+            Assert.AreEqual(0, ShearWallAdapter.CopyDesignUp(b, l2, roof), "already there");
+        }
+
+        /// <summary>Data an app fills in after an undo amends that step: the redo is still there.</summary>
+        [TestMethod]
+        public void HistoryAmend_KeepsTheRedo()
+        {
+            var b = Box(out var l2, out _);
+            var h = new ModelHistory();
+            h.Reset(b);
+            b.AddWall(b.Ground, l2, 20, 0, 20, 40);
+            Assert.IsTrue(h.Record(b));
+            Assert.IsNotNull(h.Undo(b));
+            ShearWallAdapter.StoreDesign(b, ShearWallAdapter.ToCalculators(b)); // the designer fills in the walls' design
+            Assert.IsTrue(h.Amend(b));
+            Assert.IsFalse(h.Amend(b), "nothing new");
+            Assert.IsTrue(h.CanRedo);
+            Assert.IsNotNull(h.Redo(b));
+            Assert.AreEqual(9, b.Walls.Count);
+            Assert.IsNotNull(h.Undo(b));
+            Assert.IsNotNull(b.Walls[0].GetData(ShearWallAdapter.WallKey), "the amended step has the design");
+        }
+
+        [TestMethod]
         public void Numbers()
         {
             Assert.AreEqual(12, ShearWallAdapter.Number("W12"));

@@ -126,6 +126,14 @@ namespace BuildingModel.Sketch
             set => planButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        /// <summary>Puts the cursor in the command box (with some text), for a host command that waits for a typed value.</summary>
+        public void FocusCommand(string text = "")
+        {
+            command.Text = text ?? "";
+            command.Focus();
+            command.CaretIndex = command.Text.Length;
+        }
+
         /// <summary>Hides a tool's button and stops it being used.</summary>
         public void HideTool(SketchTool tool)
         {

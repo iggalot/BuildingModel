@@ -108,7 +108,7 @@ namespace BuildingModel.Sketch
 
             foreach (var w in b.WallsOver(level)) Line(ctx, AbovePen, w.Start, w.End);
             var walls = b.WallsUnder(level).ToList();
-            foreach (var w in walls) Line(ctx, w.IsShearWall ? ShearPen : WallPen, w.Start, w.End);
+            foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? (w.IsShearWall ? ShearPen : WallPen), w.Start, w.End);
 
             // selection under the labels
             foreach (var id in selection) DrawSelected(ctx, b.Find(id));
@@ -130,6 +130,9 @@ namespace BuildingModel.Sketch
         }
 
         // ------------------------------------------------------------------ pieces
+
+        /// <summary>The host's pen for a wall of the level shown (e.g. coloured by its design check), or null for the usual one.</summary>
+        public Func<Wall, Pen> WallStyle { get; set; }
 
         public void Line(DrawingContext ctx, Pen pen, Point2 a, Point2 b) => ctx.DrawLine(pen, ToScreen(a), ToScreen(b));
 

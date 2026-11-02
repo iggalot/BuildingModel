@@ -83,6 +83,42 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(l2, v.Canvas.ActiveLevel);
         }
 
+        /// <summary>
+        /// What a host app (the Shear Wall Designer) hooks into: wall colours from its design check, its own overlay and
+        /// level caption, its error markers, and typed text its own command waits for.
+        /// </summary>
+        [STATestMethod]
+        public void HostHooks_WallColourOverlayCaptionTypedText()
+        {
+            var b = Sample(out var l2, out _);
+            var v = new SketchView();
+            var s = v.Canvas;
+            s.SetBuilding(b, l2.Id);
+            var red = Color.FromRgb(0xC6, 0x28, 0x28);
+            var failPen = new Pen(new SolidColorBrush(red), 4);
+            failPen.Freeze();
+            string failing = b.Walls[0].Id;
+            s.WallStyle = w => w.Id == failing ? failPen : null;
+            int overlays = 0;
+            s.DrawOver += (o, e) => overlays++;
+            s.LevelCaption = l => $"{l.Name} · story 1 of 2 · 1 of 4 walls fail";
+            var issues = ModelChecks.Run(b);
+            issues.Add(new ModelIssue { Severity = Severity.Error, Code = "WallFails", Message = $"{failing} fails: shear over the capacity.", Ids = { failing }, LevelId = l2.Id, At = b.Walls[0].Middle });
+            s.Issues = issues;
+            s.ZoomExtents();
+            var bmp = Render(v, "sketch-host");
+            Assert.IsTrue(Count(bmp, red, 10) > 300, "the failing wall in the host's colour");
+            Assert.IsTrue(overlays > 0, "the host's overlay drawn");
+            Assert.IsTrue(s.IssuesHere().Any(i => i.Code == "WallFails"));
+
+            string typed = null;
+            s.InterceptTyped = t => { if (t != "25") return false; typed = t; return true; };
+            Assert.IsTrue(s.TypePoint("25"), "the host took it, in the Select tool too");
+            Assert.AreEqual("25", typed);
+            Assert.IsFalse(s.TypePoint("0,0"), "not the host's: the Select tool cannot use a point");
+            v.FocusCommand("12");
+        }
+
         [STATestMethod]
         public void IssueMarkers_OnTheirLevel()
         {

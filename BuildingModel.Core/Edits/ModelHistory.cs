@@ -47,6 +47,20 @@ namespace BuildingModel.Edits
             return true;
         }
 
+        /// <summary>
+        /// Replaces the current step with the building as it is now, without a step of its own and keeping the steps to
+        /// redo: for data an app fills in by itself after a change, an undo or a redo (a new wall's default design), which
+        /// must not become an undo step or drop the redo steps. True when the step changed.
+        /// </summary>
+        public bool Amend(Building b)
+        {
+            if (current < 0) { Reset(b); return true; }
+            string s = ModelFile.BuildingToJson(b);
+            if (states[current] == s) return false;
+            states[current] = s;
+            return true;
+        }
+
         /// <summary>Puts the previous step back. Returns what was undone ("W3 added"), or null when there is nothing to undo.</summary>
         public string Undo(Building b)
         {

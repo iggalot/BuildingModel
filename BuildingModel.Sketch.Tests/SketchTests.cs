@@ -373,6 +373,20 @@ namespace BuildingModel.Sketch.Tests
         }
 
         [STATestMethod]
+        public void View3D_ShowsBeamsAndColumns()
+        {
+            var b = Sample(out var l2, out _);
+            var bb = b.Footprint().Bounds;
+            double y = (bb.Y0 + bb.Y1) / 2;
+            b.AddBeam(l2, bb.X0, y, bb.X1, y);
+            b.AddColumn(b.Ground, l2, (bb.X0 + bb.X1) / 2, y);
+            var v = new Building3DView { HighlightLevelId = l2.Id };
+            v.Show(b);
+            var bmp = Render(v, "building-3d-beams");
+            Assert.IsTrue(Count(bmp, Color.FromRgb(0x8B, 0x4A, 0x14), 70) > 50, "the beam and the column in timber brown");
+        }
+
+        [STATestMethod]
         public void IssueList_CountsAndSelects()
         {
             var b = Sample(out var l2, out _);

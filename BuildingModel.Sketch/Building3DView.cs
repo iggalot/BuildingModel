@@ -91,6 +91,23 @@ namespace BuildingModel.Sketch
                         : new Rect2(w.Start.X, w.Start.Y - t, w.End.X, w.End.Y + t);
                     group.Children.Add(Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, top.Elevation - SlabThickness, w.IsShearWall ? shear : other));
                 }
+                // beams: a box under the floor they frame; columns: a square post from base to top (rectangles for now)
+                var timber = Material(Color.FromArgb(0xF0, 0x8B, 0x4A, 0x14));
+                foreach (var bm in b.Beams)
+                {
+                    var l = b.Level(bm.LevelId);
+                    if (l == null || bm.Length <= 0) continue;
+                    double top = l.Elevation - SlabThickness;
+                    group.Children.Add(Along(bm.Start, bm.End, BeamWidth, top - BeamDepth, top, timber));
+                }
+                foreach (var c in b.Columns)
+                {
+                    var lo = b.Level(c.BaseLevelId);
+                    var hi = b.Level(c.TopLevelId);
+                    if (lo == null || hi == null || !(hi.Elevation > lo.Elevation)) continue;
+                    double h = ColumnSize / 2;
+                    group.Children.Add(Box(c.At.X - h, c.At.Y - h, lo.Elevation, c.At.X + h, c.At.Y + h, hi.Elevation - SlabThickness - BeamDepthUnder(b, hi, c.At), timber));
+                }
                 var ext = b.Footprint();
                 if (!ext.IsEmpty)
                 {
@@ -132,11 +149,34 @@ namespace BuildingModel.Sketch
         }
 
         /// <summary>A box from plan (x0, y0) to (x1, y1) and from z0 up to z1.</summary>
-        private static GeometryModel3D Box(double x0, double y0, double z0, double x1, double y1, double z1, Material m)
+        /// <summary>Shown sizes (ft) of beams and columns: rectangles until they are sized.</summary>
+        public const double BeamWidth = 0.45, BeamDepth = 1.0, ColumnSize = 0.45;
+
+        /// <summary>A column under a beam stops at the beam's underside.</summary>
+        private static double BeamDepthUnder(Building b, Level top, BuildingModel.Geometry.Point2 at) =>
+            b.BeamsOn(top).Any(x => BuildingModel.Edits.Snapper.DistanceToSegment(at, new BuildingModel.Geometry.Segment2(x.Start, x.End)) <= 0.5) ? BeamDepth : 0;
+
+        /// <summary>A box of width <paramref name="w"/> along a segment in plan (any direction), from z0 to z1.</summary>
+        private static GeometryModel3D Along(BuildingModel.Geometry.Point2 a, BuildingModel.Geometry.Point2 e, double w, double z0, double z1, Material m)
         {
+            double len = Math.Sqrt((e.X - a.X) * (e.X - a.X) + (e.Y - a.Y) * (e.Y - a.Y));
+            double nx = -(e.Y - a.Y) / len * w / 2, ny = (e.X - a.X) / len * w / 2;
             var mesh = new MeshGeometry3D();
             Point3D P(double x, double y, double z) => new Point3D(x, z, -y);
-            var c = new[] { P(x0, y0, z0), P(x1, y0, z0), P(x1, y1, z0), P(x0, y1, z0), P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1) };
+            var c = new[] { P(a.X - nx, a.Y - ny, z0), P(e.X - nx, e.Y - ny, z0), P(e.X + nx, e.Y + ny, z0), P(a.X + nx, a.Y + ny, z0),
+                            P(a.X - nx, a.Y - ny, z1), P(e.X - nx, e.Y - ny, z1), P(e.X + nx, e.Y + ny, z1), P(a.X + nx, a.Y + ny, z1) };
+            return Mesh(c, m);
+        }
+
+        private static GeometryModel3D Box(double x0, double y0, double z0, double x1, double y1, double z1, Material m)
+        {
+            Point3D P(double x, double y, double z) => new Point3D(x, z, -y);
+            return Mesh(new[] { P(x0, y0, z0), P(x1, y0, z0), P(x1, y1, z0), P(x0, y1, z0), P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1) }, m);
+        }
+
+        private static GeometryModel3D Mesh(Point3D[] c, Material m)
+        {
+            var mesh = new MeshGeometry3D();
             int[][] faces = { new[] { 0, 3, 2, 1 }, new[] { 4, 5, 6, 7 }, new[] { 0, 1, 5, 4 }, new[] { 1, 2, 6, 5 }, new[] { 2, 3, 7, 6 }, new[] { 3, 0, 4, 7 } };
             foreach (var f in faces)
             {

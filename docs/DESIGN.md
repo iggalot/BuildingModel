@@ -9,8 +9,10 @@ The building is described once and used by many separate apps:
 - the shear wall designer;
 - later, dead/live load and seismic analyzers.
 
-This repo holds the **model**: the data, the geometry rules and the checks. It has no UI. A sketcher app will write it,
-and the analysis apps will read it.
+This repo holds the **model** (the data, the geometry rules, the checks and the edits, in `BuildingModel.Core`, no UI),
+the **shared sketcher** that draws it (`BuildingModel.Sketch`), the **Building Model app** (`BuildingModel.App`), and the
+**adapters** that turn it into each analysis app's inputs (`BuildingModel.Wind`, `BuildingModel.ShearWalls`). The
+Shear Wall Designer now draws in the shared sketcher with the model as its source of truth.
 
 The analysis apps never depend on each other. Each one converts the model into its own inputs and keeps its own data
 on top of it.
@@ -43,6 +45,7 @@ on top of it.
 | **Diaphragm** | Drawn on a level as one or more rectangles that merge into one outline (L-shapes, notches). It can be partial: a mezzanine covers part of the footprint. |
 | **Opening** | A hole in the floors, drawn once as rectangles, open from a bottom level to a top level. It cuts the diaphragm of every level **strictly between** those two. A lobby open from the ground to the roof cuts every floor in between; a one-floor hole runs from the level below to the level above. |
 | **Wall** | A line in plan (W-E or S-N) from a base level to a top level. It can span several levels, such as a lobby wall from the ground to level 3. It is marked as a shear wall or not. |
+| **Note** | A short text pinned to a point on a level's plan, for the designer and the checker ("Stair: confirm the opening size"). |
 
 Outlines are kept to right angles, as in the shear wall designer, so areas, centroids and edges are exact. Angled
 walls can come later.
@@ -75,12 +78,16 @@ walls can come later.
 | `OpeningAtEdge` | warning | An opening reaches a diaphragm edge, so the chord is interrupted there. |
 | `DiaphragmDiscontinuity` | warning | Openings cut more than 50 % of a level's gross diaphragm area. This is ASCE 7-22 Table 12.3-1, horizontal irregularity type 3 (seismic). |
 | `NoLateralSupport` | error | A level's diaphragm has no shear wall below it, reaching it, in one direction. |
+| `ShearWallNotReached` | warning | A shear wall that no diaphragm reaches at its top or any level it passes: it carries no load. |
+| `WallOverlap` | error | Two walls of the same story lie on top of each other along a stretch. |
 
+`BadReference` also covers notes. Each issue has the level whose plan shows it and, where there is one, the point to
+mark (`ModelIssue.LevelId`, `At`), so the sketcher draws error (red circle) and warning (amber triangle) markers there.
 ## File
 
 `ModelFile.Save` / `ModelFile.Load` write and read JSON using `DataContractJsonSerializer`, which is part of .NET, so
-no packages are needed. The file holds `Format: "BuildingModel"`, `Version: 1` and a revision number that goes up
-with every save.
+no packages are needed. The file holds `Format: "BuildingModel"`, `Version: 2` and a revision number that goes up
+with every save. Version 2 adds notes and the per-object `Data` bag (below); version 1 files still open.
 
 ## Wind adapter (`BuildingModel.Wind`, done)
 
@@ -101,40 +108,89 @@ with every save.
 
 The wind engine itself is unchanged. Using the face shares in the engine's per-level forces is the next wind step.
 
-## Round trip with the Shear Wall Designer (proposal)
+## Data bags (version 2)
 
-The model owns the geometry, and the Shear Wall Designer owns the shear-wall design. Two flows cover the round trip:
+Every object (and the building itself) has a `Data` bag: app name → that app's JSON, stored but not interpreted by the
+model. Copies keep it; undo and change sets cover it. Keys in use:
 
-1. **Model → designer (import):**
-   - Each level brings its net diaphragms and the walls marked as shear walls. Each wall becomes one designer wall on
-     every story it spans.
-   - The designer's own data (sheathing, nailing, hold-downs) is kept by model wall ID. On a re-import it stays on
-     the walls that still exist, and the designer lists what was added, removed or changed.
-2. **Designer → model (proposed changes, never silent):**
-   - The designer's sketcher can still draw: add a shear wall, split a wall into segments, mark or unmark a wall as a
-     shear wall.
-   - Those edits are written as a **change set** against the model revision they were made on: added, moved,
-     deleted and re-marked walls, by ID.
-   - The model app shows the change set and applies it. If the model has changed since that revision, conflicts on
-     the same ID are listed to choose from.
-   - The model stays the one place the geometry lives, and nothing changes behind the user's back.
-3. **Design results back to the model, read-only for others:**
-   - Format version 2 adds a per-object `Data` bag, keyed by app (`"ShearWall": {...}`), that the model stores but
-     does not interpret.
-   - The designer can publish its results there (panel, nailing, hold-down, capacity), so a seismic app or a combined
-     report can read them without depending on the designer.
+| Key | On | Holds |
+|---|---|---|
+| `ShearWall` | wall | `{ Design: { levelId: WallDesignInputs }, WallType }`: the designer's sheathing, nailing, hold-down per story |
+| `ShearWall` | diaphragm | `{ Type }` when not rigid |
+| `ShearWall.DesignSettings` | building | the designer's project settings (method, edition, hold-down list) |
+| `Sketch.Underlay` | level | the plan under that level (DXF linework or image, scale, position) |
 
-## How the other apps will use it (later steps)
+## Edits, undo and change sets (`BuildingModel.Edits`)
 
-- **Wind:**
-  - A converter turns the model into the wind engine's `BuildingData`: L and B from the footprint, then the level
-    elevations and the roof.
-  - It also works out each level's share of each outside face from the diaphragm edges actually present. Where a
-    double-height lobby leaves no floor at the façade, that wall's wind goes to the floors above and below it.
-  - Standalone, the wind app still takes typed inputs.
-- **Shear walls:**
-  - Levels, diaphragms (net, so openings are taken out of the mass) and shear walls, with the design data kept by
-    wall ID.
-  - Its own drawing tools stay until the sketcher replaces them.
-- **Sketcher:** draws the model (levels, rectangles, openings, walls), imports DXF and shows it in 3D. It will be a
-  separate app; it is not in this repo until approved.
+- **`BuildingEdits`**: delete, move, copy (with the data bag), array copy, mirror, split a wall at a point, join two
+  walls in line, stretch a wall end or a rectangle corner, extents. Stories: add one on top, copy one story onto
+  another, delete a story (the levels above come down; taller walls end at the level below; what it does is listed
+  first by `DeleteStoryConsequences`), set a story height.
+- **`ModelHistory`**: a snapshot of the whole building after each change; undo and redo put a snapshot back into the
+  same building object. `Amend` replaces the current step without a new one: an app that fills in its own data after a
+  change, an undo or a redo (a new wall's default design) never loses the redo steps.
+- **`ChangeSet`**: what was added, deleted or changed between two buildings, by ID, as JSON
+  (`Format: "BuildingModelChanges"`). `ApplyTo` applies it to another copy and lists conflicts (the object changed on
+  both sides), which can be forced or skipped.
+- **`CoordinateInput`**: typed points: `x,y`, `@dx,dy`, `@length<angle`, a length toward the cursor; feet and inches.
+- **`Snapper`**: endpoint, midpoint, intersection, perpendicular, nearest and grid snaps; ortho; picking and window
+  selection.
+
+## Sketcher (`BuildingModel.Sketch`)
+
+`SketchCanvas` draws one level: its diaphragm pieces and net outline, the openings that cut it (hatched), the walls
+under it (shear walls blue), the walls of the level below (gray) and above (dashed), notes, error and warning markers,
+the plan underlay, grips, previews, snap glyphs, the level caption and a scale bar. Tools: Select (click, window,
+grips), Wall, Diaphragm, Opening, Note, Move, Copy, Mirror, Measure, Split, Calibrate. Every edit goes through
+`Commit`, which records an undo step and raises `ModelChanged`.
+
+`SketchView` wraps it with a toolbar of small icon buttons, a level bar, and a status line with the command box,
+the prompt and the cursor coordinates. `ObjectProperties` edits the selection (wall ends and levels, shear wall or
+not, rectangles, notes, levels; several at once as one undo step). `IssueList` lists the checks and finds each one on
+the plan. `Building3DView` shows the building in 3D.
+
+**Host hooks** (how an analysis app puts the sketcher in its own window):
+
+| Hook | Use |
+|---|---|
+| `DrawUnder`, `DrawOver` | the app's own drawing under or over the plan (its plan image, design marks, centres of mass and rigidity) |
+| `WallStyle` | the app's pen for a wall (green / red by its design check) |
+| `LevelCaption` | the app's caption for the level shown |
+| `Issues` | the markers to draw (the model checks plus the app's own, such as failing walls) |
+| `InterceptClick`, `HostWantsSnaps`, `HostFrom`, `ExtraSnapLines` | the app's own two-point commands with the sketch's snaps (plan image scale, straighten, move) and extra lines to snap to (its CAD plan) |
+| `InterceptTyped`, `SketchView.FocusCommand` | a value typed for the app's command (a distance) |
+| `Escaped`, `ObjectDoubleClicked`, `CursorMoved`, `SelectionChanged`, `ActiveLevelChanged` | the app follows the sketch |
+| `ShowLevelBar`, `ShowPlanButton`, `HideTool` | the app hides what it has its own of |
+
+## Building Model app (`BuildingModel.App`)
+
+`BuildingModel.exe`: New, Open, Save (`*.bldg.json`), + level, insert a mezzanine, copy a story up, delete a level,
+the plan and 3D, a properties panel, the issue list (live), a building summary, a wind preview through the wind
+adapter, and Apply changes (a change set from an analysis app, with its conflicts).
+
+## Shear wall adapter (`BuildingModel.ShearWalls`, done)
+
+The model is the source of truth for the Shear Wall Designer's geometry; the designer keeps its design in the bags.
+
+- **`ToCalculators(building, existing)`**: one designer story (calculator) per level above the ground, reusing the
+  given calculators in order (their loads and plan images stay):
+  - the net diaphragm (openings taken out) as rectangles, each given to the model diaphragm that holds its centre.
+    Key = the diaphragm's ID number (D3 → 3), or n·100 + k when openings split it;
+  - the shear walls under the level that its net diaphragm reaches. Key = the wall's ID number (W12 → 12), the same
+    on every story the wall spans. Height = from the level below that braces it (or its base) up to this level;
+  - each wall's design for that story from its bag, else the project's default for new walls.
+- **`StoreDesign`**: the design tabs' changes back into the bags (per wall and story, diaphragm type, settings).
+- **`StoreGeometry`**: coordinates typed in the designer's table back into the wall, or into a diaphragm that is one
+  rectangle on that story.
+- **`FromCalculators`**: an older designer project (calculators only) as a model: level n at the sum of the plate
+  heights, walls and diaphragms with their IDs from the keys where free, the design in the bags.
+- **`NewBuilding`, `NameStories`, `CopyDesignUp`**: a building from plate heights; default story names (Level 2,
+  Level 3, ..., Roof; the user's names stay); a copied story's walls keep their design.
+
+How the designer uses it is in `F:\Programming\ShearWallCalculator\docs\SHARED_SKETCHER.md`.
+
+## Next
+
+- **Wind:** use each level's face shares (`WindAdapter.Shares`) in the wind engine's per-level forces.
+- **Openings in walls** (doors, windows) for the shear-wall segments, and walls at an angle.
+- **Seismic and dead/live load apps** reading the same model, with their own bags.

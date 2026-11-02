@@ -127,6 +127,13 @@ namespace BuildingModel.Model
         [DataMember(Order = 1)] public Point2 At { get; set; }
         [DataMember(Order = 2)] public string BaseLevelId { get; set; }
         [DataMember(Order = 3)] public string TopLevelId { get; set; }
+
+        /// <summary>
+        /// The base was set by hand (it passes beside a beam, or stops where the engineer says): the editor leaves it. False:
+        /// the editor keeps it standing on the first wall, beam or column under it, or the foundation, as things are drawn
+        /// and deleted (<see cref="Edits.BuildingEdits.FollowSupports"/>).
+        /// </summary>
+        [DataMember(Order = 4, EmitDefaultValue = false)] public bool BaseFixed { get; set; }
     }
 
     public enum RoofShape { Flat = 0, Gable = 1, Hip = 2 }

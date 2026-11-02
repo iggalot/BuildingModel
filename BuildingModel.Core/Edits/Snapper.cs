@@ -17,7 +17,17 @@ namespace BuildingModel.Edits
         Perpendicular = 8,
         Nearest = 16,
         Grid = 32,
-        Default = Endpoint | Midpoint | Intersection | Perpendicular | Grid,
+        /// <summary>A single point: a column, a beam end, a hold-down (the host's points), ranked first.</summary>
+        Point = 64,
+        Default = Point | Endpoint | Midpoint | Intersection | Perpendicular | Grid,
+    }
+
+    /// <summary>A point to snap to, with what it is ("C1", "Hold-down W3").</summary>
+    public struct SnapPoint
+    {
+        public Point2 At;
+        public string Label;
+        public SnapPoint(Point2 at, string label) { At = at; Label = label; }
     }
 
     /// <summary>The snap found under the cursor: one mode, or None (the point is then the cursor).</summary>
@@ -25,6 +35,8 @@ namespace BuildingModel.Edits
     {
         public SnapModes Kind;
         public Point2 Point;
+        /// <summary>What a point snap is on ("C1"); null for the others.</summary>
+        public string Label;
         public bool Found => Kind != SnapModes.None;
 
         public static string Describe(SnapModes kind) => kind == SnapModes.None ? "" : kind.ToString();
@@ -37,15 +49,22 @@ namespace BuildingModel.Edits
     public static class Snapper
     {
         private static readonly SnapModes[] Order =
-            { SnapModes.Endpoint, SnapModes.Intersection, SnapModes.Midpoint, SnapModes.Perpendicular, SnapModes.Nearest, SnapModes.Grid };
+            { SnapModes.Point, SnapModes.Endpoint, SnapModes.Intersection, SnapModes.Midpoint, SnapModes.Perpendicular, SnapModes.Nearest, SnapModes.Grid };
 
-        public static SnapResult Find(Point2 cursor, double reach, IList<Segment2> segments, SnapModes modes, Point2? from = null, double grid = 0)
+        public static SnapResult Find(Point2 cursor, double reach, IList<Segment2> segments, SnapModes modes, Point2? from = null, double grid = 0, IList<SnapPoint> points = null)
         {
             if (modes == SnapModes.None || !(reach > 0)) return new SnapResult { Point = cursor };
             segments = segments ?? new List<Segment2>();
             foreach (var kind in Order)
             {
                 if ((modes & kind) == 0) continue;
+                if (kind == SnapModes.Point)
+                {
+                    if (points == null || points.Count == 0) continue;
+                    var near = points.Select(p => (p, d: Dist(p.At, cursor))).Where(x => x.d <= reach).OrderBy(x => x.d).ToList();
+                    if (near.Count > 0) return new SnapResult { Kind = kind, Point = near[0].p.At, Label = near[0].p.Label };
+                    continue;
+                }
                 Point2? best = null;
                 double bestD = reach;
                 foreach (var p in Candidates(kind, cursor, segments, from, grid))
@@ -69,6 +88,33 @@ namespace BuildingModel.Edits
             var below = b.Below(level);
             if (below != null) foreach (var w in b.WallsUnder(below).Where(Keep)) list.Add(new Segment2(w.Start, w.End));
             foreach (var bm in b.BeamsOn(level).Where(Keep).Where(x => x.Length > 0)) list.Add(new Segment2(bm.Start, bm.End));
+            return list;
+        }
+
+        /// <summary>
+        /// The single points of a level to snap to: the columns that reach it from below, stand on it or pass through it, and the
+        /// ends of its beams.
+        /// </summary>
+        public static List<SnapPoint> PointsOf(Building b, Level level, ICollection<string> except = null)
+        {
+            var list = new List<SnapPoint>();
+            if (level == null) return list;
+            // the columns at this level, and those of the story below (to stack a column on one, or put a beam end on it)
+            double from = b.Below(level)?.Elevation ?? level.Elevation;
+            foreach (var c in b.Columns)
+            {
+                if (except != null && except.Contains(c.Id)) continue;
+                var lo = b.Level(c.BaseLevelId);
+                var hi = b.Level(c.TopLevelId);
+                if (lo == null || hi == null || lo.Elevation > level.Elevation || hi.Elevation < from) continue;
+                list.Add(new SnapPoint(c.At, hi.Elevation < level.Elevation ? c.Id + " (below)" : c.Id));
+            }
+            foreach (var bm in b.BeamsOn(level))
+            {
+                if (except != null && except.Contains(bm.Id)) continue;
+                list.Add(new SnapPoint(bm.Start, bm.Id + " end"));
+                list.Add(new SnapPoint(bm.End, bm.Id + " end"));
+            }
             return list;
         }
 

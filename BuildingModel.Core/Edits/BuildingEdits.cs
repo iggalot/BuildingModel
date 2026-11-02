@@ -374,19 +374,69 @@ namespace BuildingModel.Edits
         /// through the point, or a column under it at the point; otherwise the ground. So a post drawn on the third floor with
         /// nothing under it runs down through the second floor to the foundation.
         /// </summary>
-        public static Level ColumnBase(Building b, Level top, Point2 at)
+        public static Level ColumnBase(Building b, Level top, Point2 at, string except = null)
         {
             var l = b.Below(top);
             while (l != null && l.Elevation > 0)
             {
-                if (b.WallsUnder(l).Any(w => Snapper.DistanceToSegment(at, new Segment2(w.Start, w.End)) <= BearingTolerance)) return l;
-                if (b.BeamsOn(l).Any(x => Snapper.DistanceToSegment(at, new Segment2(x.Start, x.End)) <= BearingTolerance)) return l;
-                if (b.ColumnsUnder(l).Any(c => Snapper.Dist(c.At, at) <= BearingTolerance)) return l;
+                if (SupportAt(b, l, at, except) != null) return l;
                 var next = b.Below(l);
                 if (next == null) return l;
                 l = next;
             }
             return l;
+        }
+
+        /// <summary>
+        /// What a column standing on <paramref name="level"/> at <paramref name="at"/> bears on: the id of a wall under that level
+        /// through the point, a beam on it through the point, or another column under it at the point (not <paramref name="except"/>);
+        /// null when nothing.
+        /// </summary>
+        public static string SupportAt(Building b, Level level, Point2 at, string except = null)
+        {
+            if (level == null) return null;
+            var w = b.WallsUnder(level).FirstOrDefault(x => Snapper.DistanceToSegment(at, new Segment2(x.Start, x.End)) <= BearingTolerance);
+            if (w != null) return w.Id;
+            var bm = b.BeamsOn(level).FirstOrDefault(x => Snapper.DistanceToSegment(at, new Segment2(x.Start, x.End)) <= BearingTolerance);
+            if (bm != null) return bm.Id;
+            return b.ColumnsUnder(level).FirstOrDefault(c => c.Id != except && Snapper.Dist(c.At, at) <= BearingTolerance)?.Id;
+        }
+
+        /// <summary>
+        /// Keeps every column whose base is not set by hand standing on what carries it, after an edit: a beam or wall drawn across
+        /// its path trims it to stand there; the beam or wall it stood on deleted (or moved away) runs it down again to the next
+        /// support or the foundation. Returns what changed, one sentence per column ("C1 now stands on BM2 at Level 2.").
+        /// </summary>
+        public static List<string> FollowSupports(Building b)
+        {
+            var said = new List<string>();
+            for (int pass = 0; pass < 3; pass++)
+            {
+                bool any = false;
+                foreach (var c in b.Columns.Where(x => !x.BaseFixed).OrderByDescending(x => b.Level(x.TopLevelId)?.Elevation ?? 0).ToList())
+                {
+                    var top = b.Level(c.TopLevelId);
+                    if (top == null || b.Below(top) == null) continue;
+                    var now = ColumnBase(b, top, c.At, c.Id);
+                    if (now == null || now.Id == c.BaseLevelId) continue;
+                    c.BaseLevelId = now.Id;
+                    any = true;
+                    string on = SupportAt(b, now, c.At, c.Id);
+                    said.RemoveAll(s => s.StartsWith(c.Id + " "));
+                    said.Add(now.Elevation == 0 ? $"{c.Id} now runs down to the foundation." : $"{c.Id} now stands on {on} at {now.Name}.");
+                }
+                if (!any) break;
+            }
+            return said;
+        }
+
+        /// <summary>The levels a column passes through on its way down (between its base and its top), top first.</summary>
+        public static List<Level> ThroughLevels(Building b, Column c)
+        {
+            var lo = b.Level(c.BaseLevelId);
+            var hi = b.Level(c.TopLevelId);
+            if (lo == null || hi == null) return new List<Level>();
+            return b.Levels.Where(l => l.Elevation > lo.Elevation && l.Elevation < hi.Elevation).OrderByDescending(l => l.Elevation).ToList();
         }
 
         public static void DeleteStory(Building b, Level level)

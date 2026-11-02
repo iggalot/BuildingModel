@@ -119,6 +119,9 @@ namespace BuildingModel.Sketch
         /// </summary>
         public bool Commit(string what)
         {
+            // columns follow what carries them (a beam drawn across one trims it; its support deleted runs it down again)
+            var followed = BuildingEdits.FollowSupports(Building);
+            if (followed.Count > 0) what = (string.IsNullOrEmpty(what) ? "" : what + " ") + string.Join(" ", followed) + " (Ctrl+Z undoes it.)";
             bool changed = History.Record(Building);
             if (ActiveLevel == null || Building.Level(ActiveLevel.Id) == null)
             {

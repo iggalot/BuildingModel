@@ -92,7 +92,7 @@ namespace BuildingModel.Sketch
             zoom.Content = Ui.Icon(Ui.Icons16.ZoomAll);
             viewBar.Children.Add(zoom);
             viewBar.Children.Add(Ui.Separator());
-            snap = Ui.Toggle("", "Snap", "Object snaps (F3): ends, middles, crossings, square to, grid", (s, e) => Canvas.ToggleSnap());
+            snap = Ui.Toggle("", "Snap", "Object snaps (F3): points (columns, beam ends; hold-downs in Shear Walls), ends, middles, crossings, square to, grid", (s, e) => Canvas.ToggleSnap());
             ortho = Ui.Toggle("", "Ortho", "Ortho (F8): move, copy and measure straight across or up", (s, e) => Canvas.ToggleOrtho());
             grid = Ui.Toggle("", "Grid", "The grid: 1 ft lines, heavier every 10 ft, labelled in feet along the edges (coarser when zoomed out); snaps when Snap is on", (s, e) => { Canvas.ShowGrid = grid.IsChecked == true; Canvas.Refresh(); });
             viewBar.Children.Add(snap);
@@ -251,6 +251,28 @@ namespace BuildingModel.Sketch
                     });
                 }
                 Item(menu, "Mirror", "I", true, () => Canvas.SetTool(SketchTool.Mirror), "Copies about a square line through two points; the originals stay.");
+                if (sel.Count == 1 && b.Find(sel[0]) is Column col && b.Level(col.TopLevelId) is Level colTop)
+                {
+                    // where the column stops: found for it (it follows what is drawn under it), or set by hand
+                    menu.Items.Add(new Separator());
+                    var auto = Item(menu, "Base: stands on what is under it", null, true,
+                        () => Canvas.Edit($"{col.Id}'s base follows what is under it.", _ => col.BaseFixed = false),
+                        "Automatic: it stops on the first wall, beam or column under it, else the foundation; it follows as they are drawn and deleted.");
+                    auto.IsCheckable = true;
+                    auto.IsChecked = !col.BaseFixed;
+                    Item(menu, "Run through to the foundation", null, true,
+                        () => Canvas.Edit($"{col.Id} runs through to the foundation (its base set by hand).", bb => { col.BaseFixed = true; col.BaseLevelId = bb.Ground.Id; }),
+                        "A continuous post: it passes the beams and walls under it (each crossing is a warning to check).");
+                    var standOn = Item(menu, "Stand on", null, true, null, "Stop the column on this level (its base set by hand).");
+                    foreach (var l in b.LevelsBottomUp.Where(x => x.Elevation < colTop.Elevation).Reverse())
+                    {
+                        var level = l;
+                        var it = Item(standOn, level.Elevation == 0 ? "the foundation" : level.Name, null, true,
+                            () => Canvas.Edit($"{col.Id} stands on {(level.Elevation == 0 ? "the foundation" : level.Name)} (its base set by hand).", _ => { col.BaseFixed = true; col.BaseLevelId = level.Id; }));
+                        it.IsCheckable = true;
+                        it.IsChecked = col.BaseFixed && col.BaseLevelId == level.Id;
+                    }
+                }
                 menu.Items.Add(new Separator());
                 bool onWall = e.HitId != null && b.Find(e.HitId) is Wall;
                 Item(menu, "Split this wall here", "X", onWall, () => Canvas.SplitWallAt(e.At), "Splits the wall where you right-clicked.");

@@ -431,6 +431,11 @@ namespace BuildingModel.Sketch
                     switch (snap.Kind)
                     {
                         case SnapModes.Endpoint: ctx.DrawRectangle(null, SnapPen, new Rect(c.X - 5, c.Y - 5, 10, 10)); break;
+                        case SnapModes.Point: // a node: a circle with a cross
+                            ctx.DrawEllipse(null, SnapPen, c, 6, 6);
+                            ctx.DrawLine(SnapPen, new Point(c.X - 4, c.Y - 4), new Point(c.X + 4, c.Y + 4));
+                            ctx.DrawLine(SnapPen, new Point(c.X - 4, c.Y + 4), new Point(c.X + 4, c.Y - 4));
+                            break;
                         case SnapModes.Midpoint:
                             var t = new StreamGeometry();
                             using (var g = t.Open()) { g.BeginFigure(new Point(c.X, c.Y - 6), false, true); g.LineTo(new Point(c.X + 6, c.Y + 5), true, false); g.LineTo(new Point(c.X - 6, c.Y + 5), true, false); }
@@ -442,7 +447,7 @@ namespace BuildingModel.Sketch
                             break;
                         default: ctx.DrawEllipse(null, SnapPen, c, 5, 5); break;
                     }
-                    Label(ctx, SnapResult.Describe(snap.Kind), c + new Vector(9, 7), B(Palette.Select), 9);
+                    Label(ctx, snap.Label ?? SnapResult.Describe(snap.Kind), c + new Vector(9, 7), B(Palette.Select), 9);
                 }
             }
         }

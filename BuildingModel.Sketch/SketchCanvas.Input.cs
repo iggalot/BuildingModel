@@ -510,7 +510,10 @@ namespace BuildingModel.Sketch
                 var modes = SnapModes;
                 if (!ShowGrid) modes &= ~SnapModes.Grid;
                 if (!SnapOn) modes = SnapModes.None;
-                snap = Snapper.Find(rawCursor, PixelsToFeet(10), lines, modes, first ?? HostFrom?.Invoke(), GridSpacing);
+                var points = Snapper.PointsOf(Building, ActiveLevel, grip != null ? (ICollection<string>)(grip.Value.Middle ? selection.ToList() : new List<string> { grip.Value.Id }) : null);
+                var hostPoints = ExtraSnapPoints?.Invoke();
+                if (hostPoints != null) points.AddRange(hostPoints);
+                snap = Snapper.Find(rawCursor, PixelsToFeet(10), lines, modes, first ?? HostFrom?.Invoke(), GridSpacing, points);
             }
             else snap = new SnapResult { Point = rawCursor };
             cursor = snap.Point;
@@ -528,6 +531,9 @@ namespace BuildingModel.Sketch
 
         /// <summary>More lines to snap to near the cursor (the designer's CAD plan), given the cursor and the reach in ft.</summary>
         public Func<Point2, double, IEnumerable<Segment2>> ExtraSnapLines { get; set; }
+
+        /// <summary>The host's single points to snap to on the level shown (Shear Walls: the hold-downs, beam ends and column bases).</summary>
+        public Func<IEnumerable<SnapPoint>> ExtraSnapPoints { get; set; }
 
         /// <summary>Esc was pressed in the sketch (the host ends its own command too).</summary>
         public event EventHandler Escaped;

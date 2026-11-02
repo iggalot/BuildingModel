@@ -3,6 +3,7 @@ using System.Linq;
 using System;
 using BuildingModel.Geometry;
 using BuildingModel.Model;
+using BuildingModel.Edits;
 
 namespace BuildingModel.Checks
 {
@@ -132,6 +133,7 @@ namespace BuildingModel.Checks
                 else if (!(hi.Elevation > lo.Elevation)) Add(Severity.Error, "ColumnLevels", $"Column {c.Id}: its top ({hi.Name}) is not above its base ({lo.Name}).", c.Id);
             }
 
+            BeamColumnChecks(b, issues);
             RoofChecks(b, Add);
             ShearWallChecks(b, Add);
             foreach (var i in issues) Locate(b, i);
@@ -197,6 +199,50 @@ namespace BuildingModel.Checks
         private static double Hi(Wall w, bool we) => we ? Math.Max(w.Start.X, w.End.X) : Math.Max(w.Start.Y, w.End.Y);
 
         /// <summary>Where the issue shows: the level it names, else the level of its first object; at the object, else at the level's diaphragm.</summary>
+        /// <summary>Within this distance (ft), but farther than the bearing tolerance, a beam "just misses" a column: probably a drawing slip.</summary>
+        public const double NearMiss = 1.0;
+
+        /// <summary>
+        /// A beam and a column that cross in plan but are not connected (a warning to examine; selecting it shows both):
+        /// <list type="bullet">
+        /// <item>BeamCrossesColumn: the column runs past the beam's level through the beam (its base set by hand), so the beam does
+        /// not bear on it and it does not carry the beam;</item>
+        /// <item>BeamMissesColumn: the beam passes close to a column that reaches its level, but outside the bearing tolerance, so they
+        /// do not connect.</item>
+        /// </list>
+        /// </summary>
+        private static void BeamColumnChecks(Building b, List<ModelIssue> issues)
+        {
+            foreach (var bm in b.Beams)
+            {
+                var l = b.Level(bm.LevelId);
+                if (l == null || !(bm.Length > 0.1)) continue;
+                var seg = new Segment2(bm.Start, bm.End);
+                foreach (var c in b.Columns)
+                {
+                    var lo = b.Level(c.BaseLevelId);
+                    var hi = b.Level(c.TopLevelId);
+                    if (lo == null || hi == null || lo.Elevation > l.Elevation || hi.Elevation < l.Elevation) continue;
+                    var foot = Snapper.ClosestOnSegment(c.At, seg);
+                    double d = Snapper.Dist(foot, c.At);
+                    if (d <= BuildingEdits.BearingTolerance && lo.Elevation < l.Elevation && hi.Elevation > l.Elevation)
+                        issues.Add(new ModelIssue
+                        {
+                            Severity = Severity.Warning, Code = "BeamCrossesColumn", Ids = new List<string> { bm.Id, c.Id }, At = foot,
+                            Message = $"Beam {bm.Id} crosses column {c.Id} at {l.Name}, but {c.Id} runs on past it (from {lo.Name} to {hi.Name}{(c.BaseFixed ? ", its base set by hand" : "")}): " +
+                                      $"they are not connected. Check whether the beam should bear on the column, or the column stop on the beam.",
+                        });
+                    else if (d > BuildingEdits.BearingTolerance && d <= NearMiss)
+                        issues.Add(new ModelIssue
+                        {
+                            Severity = Severity.Warning, Code = "BeamMissesColumn", Ids = new List<string> { bm.Id, c.Id }, At = foot,
+                            Message = $"Beam {bm.Id} passes {d:0.##} ft from column {c.Id} at {l.Name}: they are not connected (they connect within {BuildingEdits.BearingTolerance:0.##} ft). " +
+                                      "If the column is meant to carry the beam, or stand on it, snap one onto the other.",
+                        });
+                }
+            }
+        }
+
         public static void Locate(Building b, ModelIssue issue)
         {
             var level = issue.Ids.Select(b.Level).FirstOrDefault(l => l != null);

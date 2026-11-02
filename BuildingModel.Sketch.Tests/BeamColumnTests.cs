@@ -84,6 +84,82 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(b.Ground.Id, BuildingEdits.ColumnBase(b, l2, new Point2(5, 5)).Id);
         }
 
+        [STATestMethod]
+        public void ABeamDrawnLater_TrimsTheColumn_DeletingItRunsTheColumnDownAgain()
+        {
+            var (b, l2, l3, s) = TwoStories();
+            s.ShowLevel(l3.Id);
+            s.HandleKey(Key.P, ModifierKeys.None);
+            s.TypePoint("10,5");
+            var c = b.Columns.Single();
+            Assert.AreEqual(b.Ground.Id, c.BaseLevelId);
+            var said = new System.Collections.Generic.List<string>();
+            s.Status += (o, e) => said.Add(e.Text);
+
+            s.ShowLevel(l2.Id);
+            s.HandleKey(Key.B, ModifierKeys.None);
+            s.TypePoint("0,5");
+            s.TypePoint("20,5");
+            Assert.AreEqual(l2.Id, c.BaseLevelId, "the beam drawn across its path: the column now stands on it");
+            Assert.IsTrue(said.Any(t => t.Contains($"{c.Id} now stands on")), "the status says so");
+
+            var bm = b.Beams.Single();
+            s.Edit("Beam deleted.", x => BuildingEdits.Delete(x, bm.Id));
+            Assert.AreEqual(b.Ground.Id, b.Columns.Single().BaseLevelId, "its support gone: down to the foundation again");
+            s.Undo();
+            Assert.AreEqual(l2.Id, b.Columns.Single().BaseLevelId, "undo brings the beam and the trim back together");
+        }
+
+        [STATestMethod]
+        public void AColumnSetToRunThrough_StaysThrough_AndTheCrossingIsAWarning()
+        {
+            var (b, l2, l3, s) = TwoStories();
+            var c = b.AddColumn(b.Ground, l3, 10, 5);
+            c.BaseFixed = true;
+            s.Commit("A post through two stories.");
+            s.Edit("A beam.", x => x.AddBeam(l2, 0, 5, 20, 5));
+            Assert.AreEqual(b.Ground.Id, c.BaseLevelId, "set by hand: it is not trimmed");
+            var issue = ModelChecks.Run(b).Single(i => i.Code == "BeamCrossesColumn");
+            Assert.AreEqual(Checks.Severity.Warning, issue.Severity);
+            CollectionAssert.AreEquivalent(new[] { b.Beams[0].Id, c.Id }, issue.Ids, "selecting the warning shows both members");
+            Assert.AreEqual(l2.Id, issue.LevelId);
+            Assert.AreEqual(new Point2(10, 5), issue.At);
+
+            c.BaseFixed = false;
+            s.Commit("Automatic again.");
+            Assert.AreEqual(l2.Id, c.BaseLevelId);
+            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "BeamCrossesColumn"));
+        }
+
+        [TestMethod]
+        public void ABeamThatJustMissesAColumn_IsAWarning()
+        {
+            var (b, l2, _, _) = TwoStories();
+            var c = b.AddColumn(b.Ground, l2, 10, 5.6);
+            var bm = b.AddBeam(l2, 0, 5, 20, 5);
+            var issue = ModelChecks.Run(b).Single(i => i.Code == "BeamMissesColumn");
+            CollectionAssert.AreEquivalent(new[] { bm.Id, c.Id }, issue.Ids);
+            StringAssert.Contains(issue.Message, "0.6 ft");
+            c.At = new Point2(10, 5.1);
+            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "BeamMissesColumn"), "within 0.25 ft they bear: connected");
+        }
+
+        [TestMethod]
+        public void PointSnaps_AColumnCentre_BeforeALineEnd()
+        {
+            var (b, l2, l3, _) = TwoStories();
+            b.AddColumn(b.Ground, l2, 10, 5);
+            b.AddBeam(l2, 0, 0, 10, 4.8);
+            var points = Snapper.PointsOf(b, l2);
+            Assert.IsTrue(points.Any(p => p.Label.StartsWith("C") && p.At.Equals(new Point2(10, 5))));
+            Assert.IsTrue(points.Count(p => p.Label.EndsWith(" end")) == 2);
+            var r = Snapper.Find(new Point2(10.1, 5.05), 0.5, Snapper.SegmentsOf(b, l2), SnapModes.Default, null, 0, points);
+            Assert.AreEqual(SnapModes.Point, r.Kind);
+            Assert.AreEqual(new Point2(10, 5), r.Point);
+            Assert.AreEqual(b.Columns[0].Id, r.Label);
+            Assert.IsTrue(Snapper.PointsOf(b, l3).Any(p => p.At.Equals(new Point2(10, 5))), "the column's top is on Level 2: drawing on Level 3 you see it from above too");
+        }
+
         [TestMethod]
         public void BeamsAndColumns_SurviveTheFile()
         {

@@ -73,9 +73,17 @@ namespace BuildingModel.Sketch
                     Title($"Column {col.Id}");
                     Number("x", col.At.X, v => col.At = new Point2(v, col.At.Y));
                     Number("y", col.At.Y, v => col.At = new Point2(col.At.X, v));
-                    Levels("Base", col.BaseLevelId, id => col.BaseLevelId = id);
+                    var auto = new CheckBox { Content = "Base: stands on what is under it", IsChecked = !col.BaseFixed, Margin = new Thickness(0, 2, 0, 4),
+                                              ToolTip = "Automatic: it stops on the first wall, beam or column under it, else the foundation, and follows as they are drawn and deleted. Off: the base below stays as set (a post that runs through)." };
+                    auto.Click += (s, e) => sketch.Edit(auto.IsChecked == true ? $"{col.Id}'s base follows what is under it." : $"{col.Id}'s base is set by hand.", b => col.BaseFixed = auto.IsChecked != true);
+                    Children.Add(auto);
+                    Levels("Base", col.BaseLevelId, id => { col.BaseLevelId = id; col.BaseFixed = true; });
                     Levels("Top", col.TopLevelId, id => col.TopLevelId = id);
-                    Hint("It carries what lands on its top down to its base: a wall or beam there, or the foundation.");
+                    var through = BuildingEdits.ThroughLevels(B, col);
+                    var baseLevel = B.Level(col.BaseLevelId);
+                    string on = baseLevel == null ? "" : baseLevel.Elevation == 0 ? "the foundation" : $"{BuildingEdits.SupportAt(B, baseLevel, col.At, col.Id) ?? "nothing"} at {baseLevel.Name}";
+                    Hint($"From {on} up to {B.Level(col.TopLevelId)?.Name}" + (through.Count > 0 ? $", through {string.Join(", ", through.Select(l => l.Name))}" : "") +
+                         ". It carries what lands on it down to its base.");
                     break;
                 case Note n:
                     Title("Note " + n.Id);

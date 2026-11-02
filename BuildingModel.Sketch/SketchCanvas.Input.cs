@@ -59,6 +59,7 @@ namespace BuildingModel.Sketch
                 case SketchTool.Wall: return first == null ? $"Wall under {lvl}: click or type the start (x,y). Esc ends." : "Wall: click or type the end (@dx,dy or a length). Walls are square. Right-click ends the run.";
                 case SketchTool.Diaphragm: return first == null ? $"Diaphragm on {lvl}: first corner." : "Diaphragm: opposite corner (or @width,depth).";
                 case SketchTool.Opening: return first == null ? $"Opening in {lvl}: first corner." : "Opening: opposite corner (or @width,depth).";
+                case SketchTool.Cut: return first == null ? $"Cut from the diaphragms of {lvl}: first corner of the area to take away." : "Cut: opposite corner (or @width,depth).";
                 case SketchTool.Note: return $"Note on {lvl}: click where it goes.";
                 case SketchTool.Move: return selection.Count == 0 ? "Move: pick what to move." : first == null ? "Move: base point." : "Move: second point.";
                 case SketchTool.Copy: return selection.Count == 0 ? "Copy: pick what to copy." : first == null ? "Copy: base point." : "Copy: second point (again for more copies; Esc ends).";
@@ -126,6 +127,22 @@ namespace BuildingModel.Sketch
                         var d = b.AddDiaphragm(level, r);
                         Commit($"Diaphragm {d.Id} added, {r.Width:0.##} × {r.Height:0.##} ft.");
                     }
+                    break;
+
+                case SketchTool.Cut:
+                    if (level.Elevation == 0) { Say("The ground has no diaphragm: show a level above it.", true); return; }
+                    if (first == null) { first = p; break; }
+                    var cutRect = new Rect2(first.Value.X, first.Value.Y, p.X, p.Y);
+                    if (cutRect.IsEmpty) { Say("The rectangle has no area: pick the opposite corner.", true); return; }
+                    first = null;
+                    var cut = BuildingEdits.CutDiaphragms(b, level, cutRect);
+                    if (!cut.Any) { Say($"Nothing to cut there: the rectangle does not overlap a diaphragm of {level.Name}.", true); return; }
+                    string said = $"Cut {cutRect.Width:0.##} × {cutRect.Height:0.##} ft from {string.Join(", ", cut.Changed.Concat(cut.Removed))}" +
+                                  (cut.Removed.Count > 0 ? $"; {string.Join(", ", cut.Removed)} removed (nothing left)" : "") + ".";
+                    foreach (var s in cut.Split)
+                        said += $" {s.from} was cut in two: the separate part{(s.parts.Count == 1 ? " is" : "s are")} now {string.Join(", ", s.parts)}.";
+                    Commit(said);
+                    if (cut.Split.Count > 0 || cut.Removed.Count > 0) Say(said, true); // a split or a removal: said as a warning, so it is seen
                     break;
 
                 case SketchTool.Note:
@@ -501,6 +518,7 @@ namespace BuildingModel.Sketch
                 case Key.W: SetTool(SketchTool.Wall); return true;
                 case Key.D: SetTool(SketchTool.Diaphragm); return true;
                 case Key.O: SetTool(SketchTool.Opening); return true;
+                case Key.K: SetTool(SketchTool.Cut); return true;
                 case Key.N: SetTool(SketchTool.Note); return true;
                 case Key.M: SetTool(SketchTool.Move); return true;
                 case Key.C: SetTool(SketchTool.Copy); return true;

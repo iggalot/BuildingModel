@@ -283,6 +283,11 @@ namespace BuildingModel.Sketch
                         Line(ctx, P(Palette.ShearWall, 4, 2, 1.5), a, e);
                         Label(ctx, $"{Snapper.Dist(a, e):0.##} ft", ToScreen(e) + new Vector(10, -18), B(Palette.Preview));
                         break;
+                    case SketchTool.Cut:
+                        var cr = new Rect2(a.X, a.Y, cursor.X, cursor.Y);
+                        ctx.DrawRectangle(CutBrush, CutPen, ScreenRect(cr));
+                        Label(ctx, $"cut {cr.Width:0.##} × {cr.Height:0.##} ft", ToScreen(cursor) + new Vector(10, -18), B(Palette.Cut));
+                        break;
                     case SketchTool.Diaphragm:
                     case SketchTool.Opening:
                         var r = new Rect2(a.X, a.Y, cursor.X, cursor.Y);

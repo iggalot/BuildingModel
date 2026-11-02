@@ -96,6 +96,13 @@ namespace BuildingModel.Sketch
             ToolTipService.SetInitialShowDelay(b, 300);
         }
 
+        /// <summary>The small caption that starts a group of buttons (DRAW, EDIT...), so the toolbar reads in the order of the work.</summary>
+        public static FrameworkElement GroupLabel(string text) => new TextBlock
+        {
+            Text = text.ToUpperInvariant(), FontSize = 9.5, Foreground = Muted, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(1, 0, 4, 0), IsHitTestVisible = false,
+        };
+
         /// <summary>A thin vertical line between groups of buttons.</summary>
         public static FrameworkElement Separator() =>
             new Border { Width = 1, Margin = new Thickness(5, 4, 5, 4), Background = Line };

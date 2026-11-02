@@ -312,6 +312,123 @@ namespace BuildingModel.Edits
             return true;
         }
 
+        // ------------------------------------------------------------------ cut
+
+        /// <summary>What a cut did: diaphragms made smaller, taken away whole, and the new ones a cut split off.</summary>
+        public sealed class CutResult
+        {
+            public List<string> Changed { get; } = new List<string>();
+            public List<string> Removed { get; } = new List<string>();
+            /// <summary>Each split: the diaphragm cut and the IDs of the separate parts made from it (it keeps the largest).</summary>
+            public List<(string from, List<string> parts)> Split { get; } = new List<(string, List<string>)>();
+            public bool Any => Changed.Count + Removed.Count > 0;
+        }
+
+        /// <summary>
+        /// Takes a rectangle out of the diaphragms of a level (a notch, an L, a courtyard): each diaphragm it overlaps keeps
+        /// the rest, as few rectangles as practical. A diaphragm left with nothing is deleted. One left in separate parts
+        /// becomes separate diaphragms: it keeps the largest part (its ID and data), the others are new diaphragms with a
+        /// copy of its data. Unlike an opening (a hole through floors the checks know about), a cut changes the outline.
+        /// </summary>
+        public static CutResult CutDiaphragms(Building b, Level level, Rect2 cut)
+        {
+            var result = new CutResult();
+            if (b == null || level == null || cut.IsEmpty) return result;
+            foreach (var d in b.Diaphragms.Where(d => d.LevelId == level.Id).ToList())
+            {
+                var before = Region.Of(d.Pieces);
+                if (!(before.AreaWithin(cut) > 1e-9)) continue;
+                var after = before.Minus(new[] { cut });
+                if (after.IsEmpty)
+                {
+                    b.Diaphragms.Remove(d);
+                    result.Removed.Add(d.Id);
+                    continue;
+                }
+                var parts = Parts(after).OrderByDescending(p => p.Sum(r => r.Area)).ToList();
+                d.Pieces = Merge(parts[0]);
+                result.Changed.Add(d.Id);
+                if (parts.Count == 1) continue;
+                var ids = new List<string>();
+                foreach (var p in parts.Skip(1))
+                {
+                    var extra = (Diaphragm)CloneObject(d);
+                    extra.Id = b.NewId("D");
+                    extra.Pieces = Merge(p);
+                    b.Diaphragms.Add(extra);
+                    ids.Add(extra.Id);
+                }
+                result.Split.Add((d.Id, ids));
+            }
+            return result;
+        }
+
+        /// <summary>The region's cells grouped into pieces that touch along an edge (a corner touch does not join).</summary>
+        public static List<List<Rect2>> Parts(Region region)
+        {
+            var cells = region.Cells().ToList();
+            var group = new int[cells.Count];
+            for (int i = 0; i < group.Length; i++) group[i] = -1;
+            int n = 0;
+            for (int i = 0; i < cells.Count; i++)
+            {
+                if (group[i] >= 0) continue;
+                var stack = new Stack<int>();
+                stack.Push(i);
+                group[i] = n;
+                while (stack.Count > 0)
+                {
+                    int k = stack.Pop();
+                    for (int j = 0; j < cells.Count; j++)
+                        if (group[j] < 0 && ShareEdge(cells[k], cells[j])) { group[j] = n; stack.Push(j); }
+                }
+                n++;
+            }
+            return Enumerable.Range(0, n).Select(g => cells.Where((c, i) => group[i] == g).ToList()).ToList();
+        }
+
+        private static bool ShareEdge(Rect2 a, Rect2 c)
+        {
+            const double e = 1e-9;
+            double overlapX = Math.Min(a.X1, c.X1) - Math.Max(a.X0, c.X0);
+            double overlapY = Math.Min(a.Y1, c.Y1) - Math.Max(a.Y0, c.Y0);
+            bool sideBySide = (Math.Abs(a.X1 - c.X0) < e || Math.Abs(c.X1 - a.X0) < e) && overlapY > e;
+            bool stacked = (Math.Abs(a.Y1 - c.Y0) < e || Math.Abs(c.Y1 - a.Y0) < e) && overlapX > e;
+            return sideBySide || stacked;
+        }
+
+        /// <summary>
+        /// Grid cells joined into fewer rectangles with the same area: cells in a row joined across, then rows of the same
+        /// span joined up.
+        /// </summary>
+        public static List<Rect2> Merge(IEnumerable<Rect2> cells)
+        {
+            const double e = 1e-9;
+            var strips = new List<Rect2>();
+            foreach (var row in cells.GroupBy(c => (c.Y0, c.Y1)))
+            {
+                Rect2? run = null;
+                foreach (var c in row.OrderBy(c => c.X0))
+                {
+                    if (run != null && Math.Abs(run.Value.X1 - c.X0) < e) run = new Rect2(run.Value.X0, run.Value.Y0, c.X1, run.Value.Y1);
+                    else { if (run != null) strips.Add(run.Value); run = c; }
+                }
+                if (run != null) strips.Add(run.Value);
+            }
+            var merged = new List<Rect2>();
+            foreach (var col in strips.GroupBy(s => (s.X0, s.X1)))
+            {
+                Rect2? run = null;
+                foreach (var s in col.OrderBy(s => s.Y0))
+                {
+                    if (run != null && Math.Abs(run.Value.Y1 - s.Y0) < e) run = new Rect2(run.Value.X0, run.Value.Y0, run.Value.X1, s.Y1);
+                    else { if (run != null) merged.Add(run.Value); run = s; }
+                }
+                if (run != null) merged.Add(run.Value);
+            }
+            return merged.OrderBy(r => r.Y0).ThenBy(r => r.X0).ToList();
+        }
+
         // ------------------------------------------------------------------ helpers
 
         public static string Prefix(ModelObject o) => o is Level ? "L" : o is Diaphragm ? "D" : o is Opening ? "O" : o is Wall ? "W" : o is Note ? "N" : "X";

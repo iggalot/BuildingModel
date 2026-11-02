@@ -12,7 +12,7 @@ using BuildingModel.Model;
 namespace BuildingModel.Sketch
 {
     /// <summary>The drawing tools.</summary>
-    public enum SketchTool { Select, Wall, Diaphragm, Opening, Note, Move, Copy, Measure, Split, Mirror, Calibrate }
+    public enum SketchTool { Select, Wall, Diaphragm, Opening, Note, Move, Copy, Measure, Split, Mirror, Calibrate, Cut }
 
     /// <summary>What a host draws under or over the model, with the sketch's transform.</summary>
     public sealed class SketchDrawEventArgs : EventArgs

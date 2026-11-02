@@ -167,6 +167,25 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(0, b.Diaphragms.Count);
         }
 
+        /// <summary>K is the Cut tool: two typed corners take a notch out of the diaphragm; one undo puts it back.</summary>
+        [STATestMethod]
+        public void CutTool_TakesANotchOut_UndoPutsItBack()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            var d = b.AddDiaphragm(l2, new Rect2(0, 0, 60, 40));
+            var s = new SketchCanvas();
+            s.SetBuilding(b, l2.Id);
+            Assert.IsTrue(s.HandleKey(Key.K, ModifierKeys.None));
+            Assert.AreEqual(SketchTool.Cut, s.Tool);
+            Assert.IsTrue(s.TypePoint("40,20"));
+            Assert.IsTrue(s.TypePoint("@20,20"));        // the north-east corner, 20 × 20
+            Assert.AreEqual(2400 - 400, Region.Of(b.DiaphragmsOn(l2).Single().Pieces).Area, 1e-9);
+            Assert.AreEqual(d.Id, b.DiaphragmsOn(l2).Single().Id, "the same diaphragm, smaller");
+            s.Undo();
+            Assert.AreEqual(2400, Region.Of(b.DiaphragmsOn(l2).Single().Pieces).Area, 1e-9);
+        }
+
         [STATestMethod]
         public void Ground_HasNoWallsOrDiaphragms_TopLevelHasNoOpening()
         {

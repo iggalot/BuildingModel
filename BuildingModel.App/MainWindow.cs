@@ -176,7 +176,7 @@ namespace BuildingModel.App
         {
             if (ask && !ConfirmDiscard()) return;
             var b = Building.New("New building");
-            var l2 = BuildingEdits.AddStory(b, 10);
+            var l2 = BuildingEdits.AddStory(b, b.Defaults.StoryHeight);
             doc = new ModelDocument { Building = b };
             path = null;
             Sketch.SetBuilding(b, l2.Id);
@@ -249,7 +249,7 @@ namespace BuildingModel.App
         {
             var b = Sketch.Building;
             var top = b.LevelsBottomUp.Last();
-            var h = AskHeight($"Story height from {top.Name} up to the new level (ft)", top.Elevation > 0 ? b.StoryHeight(top) : 10);
+            var h = AskHeight($"Story height from {top.Name} up to the new level (ft)", top.Elevation > 0 ? b.StoryHeight(top) : b.Defaults.StoryHeight);
             if (h == null) return;
             var l = BuildingEdits.AddStory(b, h.Value);
             if (top.Elevation > 0 && b.DiaphragmsOn(top).Any() &&

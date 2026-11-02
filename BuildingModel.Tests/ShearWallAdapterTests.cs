@@ -261,7 +261,7 @@ namespace BuildingModel.Tests
         {
             var b = ShearWallAdapter.NewBuilding(new[] { 10.0, 9.0, 0.0 });
             var up = ShearWallAdapter.Stories(b);
-            CollectionAssert.AreEqual(new[] { 10.0, 19.0, 28.0 }, up.Select(l => l.Elevation).ToArray(), "a height of 0 becomes 9 ft");
+            CollectionAssert.AreEqual(new[] { 10.0, 19.0, 34.0 }, up.Select(l => l.Elevation).ToArray(), "a height of 0 becomes the 15 ft default");
             CollectionAssert.AreEqual(new[] { "Level 2", "Level 3", "Roof" }, up.Select(l => l.Name).ToArray());
             Assert.AreEqual("Level 2", ShearWallAdapter.Stories(ShearWallAdapter.NewBuilding(null)).Single().Name, "one story");
         }

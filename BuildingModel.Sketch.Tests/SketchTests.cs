@@ -167,6 +167,31 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(0, b.Diaphragms.Count);
         }
 
+        /// <summary>The roof window: made sloped it takes the project's default slope; the model's checks disable OK.</summary>
+        [STATestMethod]
+        public void RoofPanel_DefaultSlope_ChecksFromTheModel_BuildingUnchanged()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            b.AddDiaphragm(l2, new Rect2(0, 0, 60, 40));
+            b.Defaults.RoofPitch = 26.57; // 6:12, this project's choice
+            b.Roof.Pitch = 0;
+            var p = new RoofPanel(b);
+            Assert.IsFalse(p.HasErrors);
+            p.SetShape(RoofShape.Gable);
+            Assert.AreEqual(26.57, p.Roof.Pitch, 1e-9, "the project default, not a number in the program");
+            Assert.AreEqual("6.0:12", p.Roof.RisePer12);
+            p.Type("pitch", "0");
+            Assert.IsTrue(p.HasErrors, "a 0° gable");
+            p.Type("pitch", "abc");
+            Assert.IsTrue(p.HasErrors, "not a number");
+            p.Type("pitch", "30");
+            p.Type("eaves", "2");
+            Assert.IsFalse(p.HasErrors);
+            Assert.AreEqual(2, p.Roof.Overhang);
+            Assert.AreEqual(RoofShape.Flat, b.Roof.Shape, "the building changes only on OK");
+        }
+
         /// <summary>
         /// Grips: every selected wall has a middle grip that moves the whole selection straight across or up (one undo),
         /// and end grips that change that wall's length; nothing selected, no grips.

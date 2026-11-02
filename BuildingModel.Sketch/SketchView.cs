@@ -67,6 +67,9 @@ namespace BuildingModel.Sketch
             toolbar.Children.Add(grid);
             Tool(SketchTool.Measure, "", "", "Measure (T)");
             toolbar.Children.Add(Ui.Separator());
+            toolbar.Children.Add(Ui.GroupLabel("Building"));
+            toolbar.Children.Add(Ui.Button("", "Roof", "The roof over the top story: flat, gable or hip, its slope and ridge, the parapet and the eaves", (s, e) => EditRoof()));
+            toolbar.Children.Add(Ui.Separator());
             toolbar.Children.Add(Ui.GroupLabel("View"));
             toolbar.Children.Add(Ui.Button("", "", "Zoom to the drawing (Z, or double-click the middle button)", (s, e) => Canvas.ZoomExtents()));
             issuesButton = Ui.Toggle("", "Issues", "Show the issues on the plan (vermilion circle: error, amber triangle: warning). Click a marker to select what it is about.",
@@ -188,6 +191,18 @@ namespace BuildingModel.Sketch
                 Canvas.Focus();
                 e.Handled = true;
             }
+        }
+
+        /// <summary>ROOF: the roof window; OK changes the model's roof (one undo step).</summary>
+        private void EditRoof()
+        {
+            var b = Canvas.Building;
+            if (b == null) return;
+            var r = RoofDialog.Ask(b, Window.GetWindow(this));
+            if (r == null) return;
+            b.Roof = r;
+            Canvas.Commit("Roof: " + b.DescribeRoof() + ".");
+            Canvas.Refresh();
         }
 
         private void PlanMenu()

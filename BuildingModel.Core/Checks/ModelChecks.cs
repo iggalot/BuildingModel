@@ -118,9 +118,39 @@ namespace BuildingModel.Checks
             foreach (var n in b.Notes.Where(n => b.Level(n.LevelId) == null))
                 Add(Severity.Error, "BadReference", $"Note {n.Id} is on a level that does not exist.", n.Id);
 
+            RoofChecks(b, Add);
             ShearWallChecks(b, Add);
             foreach (var i in issues) Locate(b, i);
             return issues;
+        }
+
+        /// <summary>
+        /// The roof's geometry: a sloped roof needs a slope between 0 and 90 degrees and a rectangular top floor; parapet
+        /// and eaves are not negative; a parapet counts on a flat roof only. (The code's limits on slope and height, such as
+        /// the cladding figures' 45 degrees and 60 ft, are the wind calculator's checks.)
+        /// </summary>
+        private static void RoofChecks(Building b, Action<Severity, string, string, string[]> add)
+        {
+            var r = b.Roof;
+            if (r == null) return;
+            var top = b.RoofLevel();
+            var at = top == null ? new string[0] : new[] { top.Id }.Concat(b.DiaphragmsOn(top).Select(d => d.Id).Take(1)).ToArray();
+            if (r.IsSloped && !(r.Pitch > 0 && r.Pitch < 90))
+                add(Severity.Error, "RoofPitch", r.Pitch == 0 ? $"The {r.Shape.ToString().ToLowerInvariant()} roof has a 0° slope: make it Flat, or give it a slope."
+                                                             : $"The roof slope ({r.Pitch:0.##}°) must be between 0 and 90 degrees.", at);
+            if (r.Parapet < 0) add(Severity.Error, "RoofParapet", $"The parapet height ({r.Parapet:0.##} ft) cannot be negative.", at);
+            if (r.Overhang < 0) add(Severity.Error, "RoofEaves", $"The eaves ({r.Overhang:0.##} ft) cannot be negative.", at);
+            if (r.IsSloped && r.Parapet > 0)
+                add(Severity.Warning, "ParapetOnSlopedRoof", $"A parapet ({r.Parapet:0.##} ft) is counted on a flat roof only; the {r.Shape.ToString().ToLowerInvariant()} roof ignores it.", at);
+            if (!r.IsSloped || top == null) return;
+            var floor = b.GrossDiaphragm(top);
+            if (floor.Area <= 0) return; // NoDiaphragm says so
+            if (floor.Area < floor.Bounds.Area - 1e-6)
+                add(Severity.Warning, "RoofNotRectangular",
+                    $"{top.Name} is not a rectangle ({floor.Area:0} of {floor.Bounds.Area:0} sq ft): the {r.Shape.ToString().ToLowerInvariant()} roof is taken over the " +
+                    $"{floor.Bounds.Width:0.##} × {floor.Bounds.Height:0.##} ft rectangle around it.", at);
+            if (r.Shape == RoofShape.Hip && r.Ridge != RidgeAxis.Auto && r.Ridge != b.EffectiveRidge())
+                add(Severity.Warning, "HipRidge", "A hip roof's ridge runs along the longer side; the ridge direction chosen is not used.", at);
         }
 
         /// <summary>Shear walls that carry nothing, and shear walls drawn twice.</summary>

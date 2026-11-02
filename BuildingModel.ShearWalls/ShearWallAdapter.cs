@@ -314,10 +314,11 @@ namespace BuildingModel.ShearWalls
 
         // ------------------------------------------------------------------ stories
 
-        /// <summary>A new building with one story per plate height (bottom first; 9 ft when none or not more than 0), named by <see cref="NameStories"/>.</summary>
-        public static Building NewBuilding(IList<double> plateHeights, double fallback = 9.0)
+        /// <summary>A new building with one story per plate height (bottom first; the default story height when none or not more than 0), named by <see cref="NameStories"/>.</summary>
+        public static Building NewBuilding(IList<double> plateHeights, double? fallbackHeight = null)
         {
             var b = Building.New();
+            double fallback = fallbackHeight ?? b.Defaults.StoryHeight;
             var heights = plateHeights != null && plateHeights.Count > 0 ? plateHeights : new[] { fallback };
             foreach (double h in heights) BuildingEdits.AddStory(b, h > 0 ? h : fallback);
             NameStories(b);

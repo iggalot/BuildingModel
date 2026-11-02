@@ -117,6 +117,20 @@ namespace BuildingModel.Checks
             // notes
             foreach (var n in b.Notes.Where(n => b.Level(n.LevelId) == null))
                 Add(Severity.Error, "BadReference", $"Note {n.Id} is on a level that does not exist.", n.Id);
+            // beams and columns
+            foreach (var bm in b.Beams)
+            {
+                if (b.Level(bm.LevelId) == null) Add(Severity.Error, "BadReference", $"Beam {bm.Id} is on a level that does not exist.", bm.Id);
+                else if (!(bm.Length > 0.1)) Add(Severity.Error, "BeamLength", $"Beam {bm.Id} has no length.", bm.Id);
+                else if (b.Level(bm.LevelId).Elevation == 0) Add(Severity.Warning, "BeamOnGround", $"Beam {bm.Id} is on the ground level: a grade beam is the foundation's (its ends anchor to the foundation).", bm.Id);
+            }
+            foreach (var c in b.Columns)
+            {
+                var lo = b.Level(c.BaseLevelId);
+                var hi = b.Level(c.TopLevelId);
+                if (lo == null || hi == null) Add(Severity.Error, "BadReference", $"Column {c.Id} refers to a level that does not exist.", c.Id);
+                else if (!(hi.Elevation > lo.Elevation)) Add(Severity.Error, "ColumnLevels", $"Column {c.Id}: its top ({hi.Name}) is not above its base ({lo.Name}).", c.Id);
+            }
 
             RoofChecks(b, Add);
             ShearWallChecks(b, Add);
@@ -207,6 +221,14 @@ namespace BuildingModel.Checks
                     case Note n:
                         issue.At = issue.At ?? n.At;
                         level = level ?? b.Level(n.LevelId);
+                        break;
+                    case Beam bm:
+                        issue.At = issue.At ?? bm.Middle;
+                        level = level ?? b.Level(bm.LevelId);
+                        break;
+                    case Column c:
+                        issue.At = issue.At ?? c.At;
+                        level = level ?? b.Level(c.TopLevelId);
                         break;
                 }
             }

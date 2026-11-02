@@ -31,6 +31,8 @@ namespace BuildingModel.Edits
                 case Opening o: return b.Openings.Remove(o);
                 case Wall w: return b.Walls.Remove(w);
                 case Note n: return b.Notes.Remove(n);
+                case Beam bm: return b.Beams.Remove(bm);
+                case Column c: return b.Columns.Remove(c);
                 default: return false;
             }
         }
@@ -44,6 +46,8 @@ namespace BuildingModel.Edits
                 case Opening o: o.Pieces = o.Pieces.Select(r => Shift(r, dx, dy)).ToList(); return true;
                 case Wall w: w.Start = Shift(w.Start, dx, dy); w.End = Shift(w.End, dx, dy); return true;
                 case Note n: n.At = Shift(n.At, dx, dy); return true;
+                case Beam bm: bm.Start = Shift(bm.Start, dx, dy); bm.End = Shift(bm.End, dx, dy); return true;
+                case Column c: c.At = Shift(c.At, dx, dy); return true;
                 default: return false;
             }
         }
@@ -61,6 +65,8 @@ namespace BuildingModel.Edits
                 case Opening op: b.Openings.Add(op); break;
                 case Wall w: b.Walls.Add(w); break;
                 case Note n: b.Notes.Add(n); break;
+                case Beam bm: b.Beams.Add(bm); break;
+                case Column c: b.Columns.Add(c); break;
             }
             Move(b, copy.Id, dx, dy);
             return copy.Id;
@@ -99,6 +105,8 @@ namespace BuildingModel.Edits
                     case Opening o: o.Pieces = o.Pieces.Select(R).ToList(); break;
                     case Wall w: w.Start = M(w.Start); w.End = M(w.End); break;
                     case Note n: n.At = M(n.At); break;
+                    case Beam bm: bm.Start = M(bm.Start); bm.End = M(bm.End); break;
+                    case Column c: c.At = M(c.At); break;
                     default: continue;
                 }
                 result.Add(target);
@@ -225,8 +233,8 @@ namespace BuildingModel.Edits
             {
                 var o = b.Find(id);
                 if (o == null || o is Level || o is Building) continue;
-                if ((o is Wall || o is Opening) && below == null) continue;
-                if (!(o is Diaphragm || o is Note || o is Wall || o is Opening)) continue;
+                if ((o is Wall || o is Opening || o is Column) && below == null) continue;
+                if (!(o is Diaphragm || o is Note || o is Wall || o is Opening || o is Beam || o is Column)) continue;
                 var copy = CloneObject(o);
                 copy.Id = b.NewId(Prefix(o));
                 switch (copy)
@@ -235,6 +243,8 @@ namespace BuildingModel.Edits
                     case Note n: n.LevelId = to.Id; b.Notes.Add(n); break;
                     case Wall w: w.BaseLevelId = below.Id; w.TopLevelId = to.Id; b.Walls.Add(w); break;
                     case Opening op: op.BottomLevelId = below.Id; op.TopLevelId = to.Id; b.Openings.Add(op); break;
+                    case Beam bm: bm.LevelId = to.Id; b.Beams.Add(bm); break;
+                    case Column c: c.BaseLevelId = below.Id; c.TopLevelId = to.Id; b.Columns.Add(c); break;
                 }
                 added.Add(copy.Id);
             }
@@ -254,6 +264,8 @@ namespace BuildingModel.Edits
                 pts.Add(new Point2(r.X1, r.Y1));
             }
             foreach (var n in level == null ? b.Notes : b.NotesOn(level).ToList()) pts.Add(n.At);
+            foreach (var bm in level == null ? b.Beams : b.BeamsOn(level).ToList()) { pts.Add(bm.Start); pts.Add(bm.End); }
+            foreach (var c in level == null ? b.Columns : b.ColumnsUnder(level).ToList()) pts.Add(c.At);
             if (pts.Count == 0) return null;
             return new Rect2(pts.Min(p => p.X), pts.Min(p => p.Y), pts.Max(p => p.X), pts.Max(p => p.Y));
         }
@@ -265,6 +277,8 @@ namespace BuildingModel.Edits
             {
                 case Wall w: return w.Middle;
                 case Note n: return n.At;
+                case Beam bm: return bm.Middle;
+                case Column c: return c.At;
                 case ModelObject o when LevelView.PiecesOf(o).Any():
                     var r = LevelView.PiecesOf(o).First();
                     return new Point2((r.X0 + r.X1) / 2, (r.Y0 + r.Y1) / 2);
@@ -351,6 +365,30 @@ namespace BuildingModel.Edits
         /// left with no height. Taller walls and openings that ended there end at the level below; the levels above come
         /// down by the story height so the other stories keep their heights. The ground cannot be deleted.
         /// </summary>
+        /// <summary>How close (ft) a column must be to a wall, beam or column below to bear on it.</summary>
+        public const double BearingTolerance = 0.25;
+
+        /// <summary>
+        /// Where a column under <paramref name="top"/> at <paramref name="at"/> stands: a vertical load path goes down until something
+        /// carries it. Going down from the level below, the first level with a wall under it through the point, a beam on it
+        /// through the point, or a column under it at the point; otherwise the ground. So a post drawn on the third floor with
+        /// nothing under it runs down through the second floor to the foundation.
+        /// </summary>
+        public static Level ColumnBase(Building b, Level top, Point2 at)
+        {
+            var l = b.Below(top);
+            while (l != null && l.Elevation > 0)
+            {
+                if (b.WallsUnder(l).Any(w => Snapper.DistanceToSegment(at, new Segment2(w.Start, w.End)) <= BearingTolerance)) return l;
+                if (b.BeamsOn(l).Any(x => Snapper.DistanceToSegment(at, new Segment2(x.Start, x.End)) <= BearingTolerance)) return l;
+                if (b.ColumnsUnder(l).Any(c => Snapper.Dist(c.At, at) <= BearingTolerance)) return l;
+                var next = b.Below(l);
+                if (next == null) return l;
+                l = next;
+            }
+            return l;
+        }
+
         public static void DeleteStory(Building b, Level level)
         {
             if (level == null || !b.Levels.Contains(level)) throw new ArgumentException("No such level.");
@@ -359,6 +397,14 @@ namespace BuildingModel.Edits
             double h = level.Elevation - below.Elevation;
             b.Diaphragms.RemoveAll(d => d.LevelId == level.Id);
             b.Notes.RemoveAll(n => n.LevelId == level.Id);
+            b.Beams.RemoveAll(x => x.LevelId == level.Id);
+            b.Columns.RemoveAll(c => c.TopLevelId == level.Id && c.BaseLevelId == below.Id);
+            foreach (var c in b.Columns)
+            {
+                if (c.TopLevelId == level.Id) c.TopLevelId = below.Id;
+                if (c.BaseLevelId == level.Id) c.BaseLevelId = below.Id;
+            }
+            b.Columns.RemoveAll(c => c.BaseLevelId == c.TopLevelId);
             b.Walls.RemoveAll(w => w.TopLevelId == level.Id && w.BaseLevelId == below.Id);
             foreach (var w in b.Walls)
             {
@@ -603,9 +649,9 @@ namespace BuildingModel.Edits
 
         // ------------------------------------------------------------------ helpers
 
-        public static string Prefix(ModelObject o) => o is Level ? "L" : o is Diaphragm ? "D" : o is Opening ? "O" : o is Wall ? "W" : o is Note ? "N" : "X";
+        public static string Prefix(ModelObject o) => o is Level ? "L" : o is Diaphragm ? "D" : o is Opening ? "O" : o is Wall ? "W" : o is Note ? "N" : o is Beam ? "BM" : o is Column ? "C" : "X";
 
-        public static string KindName(ModelObject o) => o is Level ? "level" : o is Diaphragm ? "diaphragm" : o is Opening ? "opening" : o is Wall ? "wall" : o is Note ? "note" : "object";
+        public static string KindName(ModelObject o) => o is Level ? "level" : o is Diaphragm ? "diaphragm" : o is Opening ? "opening" : o is Wall ? "wall" : o is Note ? "note" : o is Beam ? "beam" : o is Column ? "column" : "object";
 
         /// <summary>A deep copy of one object (data included), through the building's JSON.</summary>
         public static ModelObject CloneObject(ModelObject o)
@@ -618,6 +664,8 @@ namespace BuildingModel.Edits
                 case Opening op: tmp.Openings.Add(op); break;
                 case Wall w: tmp.Walls.Add(w); break;
                 case Note n: tmp.Notes.Add(n); break;
+                case Beam bm: tmp.Beams.Add(bm); break;
+                case Column c: tmp.Columns.Add(c); break;
                 default: throw new ArgumentException("Not a model object.");
             }
             var copy = ModelFile.Clone(tmp);

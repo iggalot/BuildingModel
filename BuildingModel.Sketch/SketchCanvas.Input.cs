@@ -119,6 +119,8 @@ namespace BuildingModel.Sketch
                 case SketchTool.Opening: return first == null ? $"Opening in {lvl}: first corner." : "Opening: opposite corner (or @width,depth).";
                 case SketchTool.Cut: return first == null ? $"Cut from the diaphragms of {lvl}: first corner of the area to take away." : "Cut: opposite corner (or @width,depth).";
                 case SketchTool.Note: return $"Note on {lvl}: click where it goes.";
+                case SketchTool.Beam: return first == null ? $"Beam in the framing of {lvl}: click or type its first end (over the wall or column it bears on)." : "Beam: click or type its other end. It carries what stands on it to its ends.";
+                case SketchTool.Column: return $"Column under {lvl}: click where it stands (from the level below up to {lvl}).";
                 case SketchTool.Move: return selection.Count == 0 ? "Move: pick what to move." : first == null ? "Move: base point." : "Move: second point.";
                 case SketchTool.Copy: return selection.Count == 0 ? "Copy: pick what to copy." : first == null ? "Copy: base point." : "Copy: second point (again for more copies; Esc ends).";
                 case SketchTool.Mirror: return selection.Count == 0 ? "Mirror: pick what to mirror." : first == null ? "Mirror: first point of the mirror line." : "Mirror: second point (the line is made square). The originals stay.";
@@ -203,6 +205,24 @@ namespace BuildingModel.Sketch
                         said += $" {s.from} was cut in two: the separate part{(s.parts.Count == 1 ? " is" : "s are")} now {string.Join(", ", s.parts)}.";
                     Commit(said);
                     if (cut.Split.Count > 0 || cut.Removed.Count > 0) Say(said, true); // a split or a removal: said as a warning, so it is seen
+                    break;
+
+                case SketchTool.Beam:
+                    if (level.Elevation == 0) { Say("A beam is in the framing of a level above the ground (a grade beam is the foundation's).", true); return; }
+                    if (first == null) { first = p; break; }
+                    var bEnd = Ortho ? Snapper.Ortho(p, first.Value) : p;
+                    if (Snapper.Dist(bEnd, first.Value) < BuildingEdits.MinimumWall) return;
+                    var bm = b.AddBeam(level, first.Value.X, first.Value.Y, bEnd.X, bEnd.Y);
+                    first = null;
+                    Commit($"Beam {bm.Id} added on {level.Name}, {bm.Length:0.##} ft.");
+                    break;
+
+                case SketchTool.Column:
+                    if (below == null) { Say("Columns are drawn on a level above the ground: they stand on the level below.", true); return; }
+                    var colBase = BuildingEdits.ColumnBase(b, level, p);
+                    var col = b.AddColumn(colBase, level, p.X, p.Y);
+                    string standsOn = colBase.Elevation == 0 ? "the foundation" : colBase.Id == below.Id ? $"{below.Name} (on what is under it there)" : colBase.Name;
+                    Commit($"Column {col.Id} added under {level.Name} at ({p.X:0.##}, {p.Y:0.##}), down to {standsOn}.");
                     break;
 
                 case SketchTool.Note:
@@ -737,6 +757,8 @@ namespace BuildingModel.Sketch
                 case Key.O: SetTool(SketchTool.Opening); return true;
                 case Key.K: SetTool(SketchTool.Cut); return true;
                 case Key.N: SetTool(SketchTool.Note); return true;
+                case Key.B: SetTool(SketchTool.Beam); return true;
+                case Key.P: SetTool(SketchTool.Column); return true;
                 case Key.M: SetTool(SketchTool.Move); return true;
                 case Key.C: SetTool(SketchTool.Copy); return true;
                 case Key.I: SetTool(SketchTool.Mirror); return true;

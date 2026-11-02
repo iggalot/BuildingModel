@@ -40,6 +40,7 @@ The test packages come from the local NuGet cache only (`NuGet.config`). .NET Fr
 | Ctrl+C (or Ctrl+D) | Copy and place: one copy of the selection follows the cursor straight across or up; click (or type the distance) to place it; the copy is then selected |
 | Right-click (Select) | The edits of what is under the cursor: move, copy and place, copy several, copy to another level, mirror, split this wall here, join, delete. On empty space: zoom, select all, snap / ortho / grid |
 | W / D / O / N | Wall (chained, square) / Diaphragm (two corners) / Opening / Note |
+| B / P | Beam in the level's framing (two ends) / Column under the level: it runs down through the floors until a wall, beam or column carries it, or to the foundation (a multistory column) |
 | M / C / I | Move / Copy (repeats) / Mirror the selection |
 | T | Measure |
 | X / J | Split a wall at a point / Join two walls in line |

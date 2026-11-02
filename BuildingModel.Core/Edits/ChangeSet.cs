@@ -164,6 +164,8 @@ namespace BuildingModel.Edits
                 case Opening op: tmp.Openings.Add(op); break;
                 case Wall w: tmp.Walls.Add(w); break;
                 case Note n: tmp.Notes.Add(n); break;
+                case Beam bm: tmp.Beams.Add(bm); break;
+                case Column c: tmp.Columns.Add(c); break;
             }
             return ModelFile.BuildingToJson(tmp);
         }
@@ -195,6 +197,8 @@ namespace BuildingModel.Edits
                 case "opening": Swap(b.Openings); break;
                 case "wall": Swap(b.Walls); break;
                 case "note": Swap(b.Notes); break;
+                case "beam": Swap(b.Beams); break;
+                case "column": Swap(b.Columns); break;
             }
         }
     }

@@ -68,6 +68,7 @@ namespace BuildingModel.Edits
                 list.AddRange(Edges(r));
             var below = b.Below(level);
             if (below != null) foreach (var w in b.WallsUnder(below).Where(Keep)) list.Add(new Segment2(w.Start, w.End));
+            foreach (var bm in b.BeamsOn(level).Where(Keep).Where(x => x.Length > 0)) list.Add(new Segment2(bm.Start, bm.End));
             return list;
         }
 
@@ -159,6 +160,11 @@ namespace BuildingModel.Edits
         {
             var note = b.NotesOn(level).Select(n => (n.Id, d: Dist(n.At, p))).Where(x => x.d <= reach * 1.5).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
             if (note != null) return note;
+            var column = b.ColumnsUnder(level).Select(c => (c.Id, d: Dist(c.At, p))).Where(x => x.d <= reach * 1.5).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
+            if (column != null) return column;
+            var beam = b.BeamsOn(level).Select(x => (x.Id, d: DistanceToSegment(p, new Segment2(x.Start, x.End))))
+                        .Where(x => x.d <= reach).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
+            if (beam != null) return beam;
             var wall = b.WallsUnder(level).Select(w => (w.Id, d: DistanceToSegment(p, new Segment2(w.Start, w.End))))
                         .Where(x => x.d <= reach).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
             if (wall != null) return wall;
@@ -178,6 +184,8 @@ namespace BuildingModel.Edits
             ids.AddRange(b.DiaphragmsOn(level).Where(d => d.Pieces.All(r => In(new Point2(r.X0, r.Y0)) && In(new Point2(r.X1, r.Y1)))).Select(d => d.Id));
             ids.AddRange(b.OpeningsCutting(level).Where(o => o.Pieces.All(r => In(new Point2(r.X0, r.Y0)) && In(new Point2(r.X1, r.Y1)))).Select(o => o.Id));
             ids.AddRange(b.NotesOn(level).Where(n => In(n.At)).Select(n => n.Id));
+            ids.AddRange(b.BeamsOn(level).Where(x => In(x.Start) && In(x.End)).Select(x => x.Id));
+            ids.AddRange(b.ColumnsUnder(level).Where(c => In(c.At)).Select(c => c.Id));
             return ids;
         }
     }

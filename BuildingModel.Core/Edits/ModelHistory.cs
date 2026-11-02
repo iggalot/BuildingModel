@@ -90,6 +90,8 @@ namespace BuildingModel.Edits
             target.Openings = source.Openings;
             target.Walls = source.Walls;
             target.Notes = source.Notes;
+            target.Beams = source.Beams;
+            target.Columns = source.Columns;
             target.Data.Clear();
             foreach (var kv in source.Data) target.Data[kv.Key] = kv.Value;
         }

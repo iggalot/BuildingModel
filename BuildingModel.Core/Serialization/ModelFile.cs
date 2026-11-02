@@ -12,8 +12,8 @@ namespace BuildingModel.Serialization
     public sealed class ModelDocument
     {
         public const string FormatName = "BuildingModel";
-        /// <summary>1: levels, diaphragms, openings, walls. 2: adds the data bags and the notes. 3: adds the roof (an older file reads as is, with a flat roof).</summary>
-        public const int CurrentVersion = 3;
+        /// <summary>1: levels, diaphragms, openings, walls. 2: adds the data bags and the notes. 3: adds the roof (an older file reads as is, with a flat roof). 4: adds beams and columns (none in an older file).</summary>
+        public const int CurrentVersion = 4;
 
         [DataMember(Order = 0)] public string Format { get; set; } = FormatName;
         [DataMember(Order = 1)] public int Version { get; set; } = CurrentVersion;

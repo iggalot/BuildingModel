@@ -61,6 +61,8 @@ namespace BuildingModel.Sketch
             Tool(SketchTool.Diaphragm, Ui.Icons16.Diaphragm, "Diaphragm", "D", "A rectangle of floor or roof on this level; touching rectangles merge. Select it to drag its corners or sides.", fill: true);
             Tool(SketchTool.Cut, Ui.Icons16.Cut, "Cut out", "K", "Take a rectangle out of this level's diaphragms: a notch, an L, a courtyard. A part left separate becomes its own diaphragm.");
             Tool(SketchTool.Opening, Ui.Icons16.Opening, "Opening", "O", "A hole through this level (stairs, a lobby); set taller ones in the properties.");
+            Tool(SketchTool.Beam, Ui.Icons16.Beam, "Beam", "B", "A beam in this level's framing: it carries what stands on it from the story above (a hold-down or post with no wall under it) to its ends, which bear on the walls or columns below.");
+            Tool(SketchTool.Column, Ui.Icons16.Column, "Column", "P", "A column (post) under this level. It runs down through the floors below until a wall, beam or column carries it, or to the foundation: a continuous load path.", fill: true);
             Tool(SketchTool.Note, Ui.Icons16.Note, "Note", "N", "A note on this level's plan.");
             toolStrip.Children.Add(Ui.HSeparator());
             Tool(SketchTool.Move, Ui.Icons16.Move, "Move", "M", "Pick what to move (or select it first), then a base point and where it goes.");

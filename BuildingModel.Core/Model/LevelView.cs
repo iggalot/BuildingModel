@@ -42,6 +42,22 @@ namespace BuildingModel.Model
         public static IEnumerable<Note> NotesOn(this Building b, Level level) =>
             level == null ? Enumerable.Empty<Note>() : b.Notes.Where(n => n.LevelId == level.Id);
 
+        /// <summary>The beams in the framing of this level.</summary>
+        public static IEnumerable<Beam> BeamsOn(this Building b, Level level) =>
+            level == null ? Enumerable.Empty<Beam>() : b.Beams.Where(x => x.LevelId == level.Id);
+
+        /// <summary>The columns that reach this level from below (base under it, top at or above it), like <see cref="WallsUnder"/>.</summary>
+        public static IEnumerable<Column> ColumnsUnder(this Building b, Level level)
+        {
+            if (level == null) return Enumerable.Empty<Column>();
+            return b.Columns.Where(c =>
+            {
+                var lo = b.Level(c.BaseLevelId);
+                var hi = b.Level(c.TopLevelId);
+                return lo != null && hi != null && lo.Elevation < level.Elevation && hi.Elevation >= level.Elevation;
+            });
+        }
+
         /// <summary>The rectangles of an object on the plan (a diaphragm's or an opening's pieces); none for others.</summary>
         public static IEnumerable<Rect2> PiecesOf(ModelObject o) =>
             o is Diaphragm d ? d.Pieces : o is Opening op ? op.Pieces : Enumerable.Empty<Rect2>();
@@ -61,6 +77,8 @@ namespace BuildingModel.Model
             foreach (var o in b.OpeningsCutting(level)) ids.Add(o.Id);
             foreach (var w in b.WallsUnder(level)) ids.Add(w.Id);
             foreach (var n in b.NotesOn(level)) ids.Add(n.Id);
+            foreach (var x in b.BeamsOn(level)) ids.Add(x.Id);
+            foreach (var c in b.ColumnsUnder(level)) ids.Add(c.Id);
             return ids;
         }
     }

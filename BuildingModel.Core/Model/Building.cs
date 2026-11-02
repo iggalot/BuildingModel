@@ -101,6 +101,34 @@ namespace BuildingModel.Model
         [DataMember(Order = 3)] public string Text { get; set; } = "";
     }
 
+    /// <summary>
+    /// A beam in the framing of one level (format version 4), from Start to End in plan: it carries what stands on it from
+    /// the story above (a hold-down or a post with no wall under it) to its two ends, which bear on the walls or columns
+    /// of the story under the level. Drawn in the Building Model editor or the shear wall designer.
+    /// </summary>
+    [DataContract]
+    public sealed class Beam : ModelObject
+    {
+        [DataMember(Order = 1)] public string LevelId { get; set; }
+        [DataMember(Order = 2)] public Point2 Start { get; set; }
+        [DataMember(Order = 3)] public Point2 End { get; set; }
+
+        public double Length => new Segment2(Start, End).Length;
+        public Point2 Middle => new Point2((Start.X + End.X) / 2, (Start.Y + End.Y) / 2);
+    }
+
+    /// <summary>
+    /// A column (post) at a point in plan (format version 4), from its base level to its top level: it carries what lands
+    /// on it (a beam end, a hold-down) down to its base, onto the foundation at the ground or onto what is under it.
+    /// </summary>
+    [DataContract]
+    public sealed class Column : ModelObject
+    {
+        [DataMember(Order = 1)] public Point2 At { get; set; }
+        [DataMember(Order = 2)] public string BaseLevelId { get; set; }
+        [DataMember(Order = 3)] public string TopLevelId { get; set; }
+    }
+
     public enum RoofShape { Flat = 0, Gable = 1, Hip = 2 }
 
     /// <summary>Which way the ridge runs in plan. Auto: along the longer side (a hip roof always is).</summary>
@@ -204,6 +232,10 @@ namespace BuildingModel.Model
         /// <summary>The project's defaults (the program's starting values in a file from before version 3). Never null.</summary>
         [DataMember(Order = 8)] public ModelDefaults Defaults { get; set; }
 
+        /// <summary>Beams and columns (format version 4; empty in older files).</summary>
+        [DataMember(Order = 9, EmitDefaultValue = false)] public List<Beam> Beams { get; set; } = new List<Beam>();
+        [DataMember(Order = 10, EmitDefaultValue = false)] public List<Column> Columns { get; set; } = new List<Column>();
+
         public Building()
         {
             Defaults = new ModelDefaults();
@@ -228,6 +260,8 @@ namespace BuildingModel.Model
             Openings = Openings ?? new List<Opening>();
             Walls = Walls ?? new List<Wall>();
             Notes = Notes ?? new List<Note>();
+            Beams = Beams ?? new List<Beam>();
+            Columns = Columns ?? new List<Column>();
             Defaults = Defaults ?? new ModelDefaults();
             Roof = Roof ?? Defaults.NewRoof();
             foreach (var d in Diaphragms) d.Pieces = d.Pieces ?? new List<Rect2>();
@@ -245,9 +279,10 @@ namespace BuildingModel.Model
 
         public IEnumerable<string> AllIds() => Objects().Select(o => o.Id);
 
-        /// <summary>Every level, diaphragm, opening, wall and note.</summary>
+        /// <summary>Every level, diaphragm, opening, wall, note, beam and column.</summary>
         public IEnumerable<ModelObject> Objects() =>
-            Levels.Cast<ModelObject>().Concat(Diaphragms).Concat(Openings).Concat(Walls).Concat(Notes ?? Enumerable.Empty<Note>());
+            Levels.Cast<ModelObject>().Concat(Diaphragms).Concat(Openings).Concat(Walls).Concat(Notes ?? Enumerable.Empty<Note>())
+                  .Concat(Beams ?? Enumerable.Empty<Beam>()).Concat(Columns ?? Enumerable.Empty<Column>());
 
         /// <summary>The object with this ID (the building itself for its own ID), or null.</summary>
         public ModelObject Find(string id) => id == null ? null : id == Id ? this : Objects().FirstOrDefault(o => o.Id == id);
@@ -287,6 +322,20 @@ namespace BuildingModel.Model
             var n = new Note { Id = NewId("N"), LevelId = level.Id, At = new Point2(x, y), Text = text ?? "" };
             Notes.Add(n);
             return n;
+        }
+
+        public Beam AddBeam(Level level, double x0, double y0, double x1, double y1)
+        {
+            var bm = new Beam { Id = NewId("BM"), LevelId = level.Id, Start = new Point2(x0, y0), End = new Point2(x1, y1) };
+            Beams.Add(bm);
+            return bm;
+        }
+
+        public Column AddColumn(Level baseLevel, Level top, double x, double y)
+        {
+            var c = new Column { Id = NewId("C"), At = new Point2(x, y), BaseLevelId = baseLevel.Id, TopLevelId = top.Id };
+            Columns.Add(c);
+            return c;
         }
 
         // ------------------------------------------------------------------ lookups

@@ -12,7 +12,7 @@ using BuildingModel.Model;
 namespace BuildingModel.Sketch
 {
     /// <summary>The drawing tools.</summary>
-    public enum SketchTool { Select, Wall, Diaphragm, Opening, Note, Move, Copy, Measure, Split, Mirror, Calibrate, Cut, PlanStraighten, PlanMove }
+    public enum SketchTool { Select, Wall, Diaphragm, Opening, Note, Move, Copy, Measure, Split, Mirror, Calibrate, Cut, PlanStraighten, PlanMove, Beam, Column }
 
     /// <summary>What a host draws under or over the model, with the sketch's transform.</summary>
     public sealed class SketchDrawEventArgs : EventArgs
@@ -187,6 +187,7 @@ namespace BuildingModel.Sketch
             var o = Building.Find(id);
             if (o == null) return;
             string level = o is Diaphragm d ? d.LevelId : o is Wall w ? w.TopLevelId : o is Note n ? n.LevelId
+                         : o is Beam bm ? bm.LevelId : o is Column col ? col.TopLevelId
                          : o is Opening op ? Building.Levels.Where(l => Building.OpeningsCutting(l).Contains(op)).OrderBy(l => l.Elevation).Select(l => l.Id).FirstOrDefault()
                          : null;
             if (level != null && level != ActiveLevel?.Id) ShowLevel(level);

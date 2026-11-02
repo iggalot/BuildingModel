@@ -60,6 +60,23 @@ namespace BuildingModel.Sketch
                     Levels("Open to", op.TopLevelId, id => op.TopLevelId = id);
                     Hint("It cuts every level strictly between: a lobby from the ground to level 3 cuts level 2.");
                     break;
+                case Beam bm:
+                    Title($"Beam {bm.Id}");
+                    Number("Start x", bm.Start.X, v => bm.Start = new Point2(v, bm.Start.Y));
+                    Number("Start y", bm.Start.Y, v => bm.Start = new Point2(bm.Start.X, v));
+                    Number("End x", bm.End.X, v => bm.End = new Point2(v, bm.End.Y));
+                    Number("End y", bm.End.Y, v => bm.End = new Point2(bm.End.X, v));
+                    Levels("Level", bm.LevelId, id => bm.LevelId = id);
+                    Hint($"Span {bm.Length:0.##} ft. It carries the hold-downs and posts of the story above that land on it to its ends; Shear Walls sizes the end reactions and the hold-downs under them.");
+                    break;
+                case Column col:
+                    Title($"Column {col.Id}");
+                    Number("x", col.At.X, v => col.At = new Point2(v, col.At.Y));
+                    Number("y", col.At.Y, v => col.At = new Point2(col.At.X, v));
+                    Levels("Base", col.BaseLevelId, id => col.BaseLevelId = id);
+                    Levels("Top", col.TopLevelId, id => col.TopLevelId = id);
+                    Hint("It carries what lands on its top down to its base: a wall or beam there, or the foundation.");
+                    break;
                 case Note n:
                     Title("Note " + n.Id);
                     var t = new TextBox { Text = n.Text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 60, Margin = new Thickness(0, 4, 0, 0) };

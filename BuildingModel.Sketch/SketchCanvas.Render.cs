@@ -60,6 +60,10 @@ namespace BuildingModel.Sketch
         private static readonly Pen PiecePen = P(Color.FromArgb(0x70, 0x7A, 0x63, 0x3E), 1, 3, 3);
         private static readonly Pen OpeningPen = P(Palette.DiaphragmEdge, 1.5, 5, 3);
         private static readonly Brush OpeningBrush = MakeHatch();
+        private static readonly Color BeamColor = Color.FromRgb(0x8B, 0x4A, 0x14);
+        private static readonly Brush BeamBrush = B(BeamColor);
+        private static readonly Pen BeamPen = P(BeamColor, 3.5, 4, 1.5, 0.1, 1.5);
+        private static readonly Pen ColumnEdge = P(Colors.White, 1.2);
         private static readonly Pen ShearPen = P(Palette.ShearWall, 4);
         private static readonly Pen WallPen = P(Palette.Wall, 2.5);
         private static readonly Pen BelowPen = P(Palette.Below, 3);
@@ -119,6 +123,20 @@ namespace BuildingModel.Sketch
             foreach (var w in b.WallsOver(level)) Line(ctx, AbovePen, w.Start, w.End);
             var walls = b.WallsUnder(level).ToList();
             foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? (w.IsShearWall ? ShearPen : WallPen), w.Start, w.End);
+
+            // beams in this level's framing (brown, dash-dot as on framing plans) and the columns under it (filled squares)
+            foreach (var bm in b.BeamsOn(level))
+            {
+                Line(ctx, BeamPen, bm.Start, bm.End);
+                Label(ctx, bm.Id, ToScreen(bm.Middle) + new Vector(4, 2), BeamBrush, 10, true);
+            }
+            foreach (var c in b.ColumnsUnder(level))
+            {
+                var cs = ToScreen(c.At);
+                double half = Math.Max(4, 0.25 * Zoom);
+                ctx.DrawRectangle(BeamBrush, ColumnEdge, new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half));
+                Label(ctx, c.Id, cs + new Vector(half + 3, -half - 12), BeamBrush, 10, true);
+            }
 
             // selection under the labels
             foreach (var id in selection) DrawSelected(ctx, b.Find(id));
@@ -195,6 +213,13 @@ namespace BuildingModel.Sketch
             {
                 case Wall w:
                     Line(ctx, HaloPen, w.Start, w.End);
+                    break;
+                case Beam bm:
+                    Line(ctx, HaloPen, bm.Start, bm.End);
+                    Label(ctx, $"{bm.Length:0.##} ft", ToScreen(bm.Middle) + new Vector(4, 14), B(Palette.Select), 10, true, true);
+                    break;
+                case Column c:
+                    ctx.DrawEllipse(null, HaloPen, ToScreen(c.At), 10, 10);
                     break;
                 case Note n:
                     var s = ToScreen(n.At);
@@ -352,6 +377,11 @@ namespace BuildingModel.Sketch
                 var a = first.Value;
                 switch (Tool)
                 {
+                    case SketchTool.Beam:
+                        var be = Ortho ? Snapper.Ortho(cursor, a) : cursor;
+                        Line(ctx, BeamPen, a, be);
+                        Label(ctx, $"beam {Snapper.Dist(a, be):0.##} ft", ToScreen(be) + new Vector(10, -18), BeamBrush);
+                        break;
                     case SketchTool.Wall:
                         var e = Snapper.Ortho(cursor, a);
                         Line(ctx, P(Palette.ShearWall, 4, 2, 1.5), a, e);

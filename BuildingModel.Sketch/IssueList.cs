@@ -51,12 +51,7 @@ namespace BuildingModel.Sketch
                 DockPanel.SetDock(mark, System.Windows.Controls.Dock.Left);
                 row.Children.Add(mark);
                 row.Children.Add(text);
-                row.MouseLeftButtonUp += (s, a) =>
-                {
-                    if (issue.LevelId != null) sketch.ShowLevel(issue.LevelId);
-                    sketch.Select(issue.Ids.Where(id => !(sketch.Building.Find(id) is Model.Level)));
-                    sketch.Focus();
-                };
+                row.MouseLeftButtonUp += (s, a) => sketch.ShowIssue(issue);
                 row.MouseEnter += (s, a) => row.Background = Ui.Hover;
                 row.MouseLeave += (s, a) => row.Background = Brushes.Transparent;
                 rows.Children.Add(row);

@@ -184,6 +184,32 @@ namespace BuildingModel.Sketch
 
         public void ClearSelection() => Select(null);
 
+        /// <summary>
+        /// An issue picked in a list: shows its level, selects what it is about (every member it names) and brings its place
+        /// into view.
+        /// </summary>
+        public void ShowIssue(BuildingModel.Checks.ModelIssue issue)
+        {
+            if (issue == null) return;
+            if (issue.LevelId != null && Building.Level(issue.LevelId) != null && issue.LevelId != ActiveLevel?.Id) ShowLevel(issue.LevelId);
+            Select(issue.Ids.Where(id => !(Building.Find(id) is Level)));
+            var at = issue.At ?? issue.Ids.Select(id => BuildingEdits.Anchor(Building, id)).FirstOrDefault(a => a != null);
+            if (at != null) CenterOn(at.Value);
+            Focus();
+        }
+
+        /// <summary>Brings a point into the middle of the view when it is off screen (or near the edge).</summary>
+        public void CenterOn(Point2 p)
+        {
+            var s = ToScreen(p);
+            double m = 40;
+            if (s.X >= m && s.Y >= m && s.X <= ActualWidth - m && s.Y <= ActualHeight - m) { InvalidateVisual(); return; }
+            OriginX = ActualWidth / 2 - p.X * Zoom;
+            OriginY = ActualHeight / 2 + p.Y * Zoom;
+            viewSet = true;
+            InvalidateVisual();
+        }
+
         /// <summary>Selects an object from a table: shows its level and brings it into view.</summary>
         public void SelectAndShow(string id)
         {

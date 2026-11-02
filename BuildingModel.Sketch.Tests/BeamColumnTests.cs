@@ -131,6 +131,19 @@ namespace BuildingModel.Sketch.Tests
             Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "BeamCrossesColumn"));
         }
 
+        [STATestMethod]
+        public void ShowIssue_GoesToItsLevel_AndSelectsBothMembers()
+        {
+            var (b, l2, l3, s) = TwoStories();
+            var c = b.AddColumn(b.Ground, l2, 10, 5.6);
+            var bm = b.AddBeam(l2, 0, 5, 20, 5);
+            s.ShowLevel(l3.Id);
+            var issue = ModelChecks.Run(b).Single(i => i.Code == "BeamMissesColumn");
+            s.ShowIssue(issue);
+            Assert.AreEqual(l2.Id, s.ActiveLevel.Id, "the level the issue is on");
+            CollectionAssert.AreEquivalent(new[] { bm.Id, c.Id }, s.Selection.ToList(), "both members selected");
+        }
+
         [TestMethod]
         public void ABeamThatJustMissesAColumn_IsAWarning()
         {

@@ -76,7 +76,7 @@ namespace BuildingModel.Sketch
             issuesButton = Ui.Toggle("", "Issues", "Show the issues on the plan (vermilion circle: error, amber triangle: warning). Click a marker to select what it is about.",
                                      (s, e) => { Canvas.ShowIssues = issuesButton.IsChecked == true; Canvas.Refresh(); });
             toolbar.Children.Add(issuesButton);
-            planButton = Ui.Toggle("", "Plan ▾", "A plan under this level to trace: import a DXF or an image, calibrate, hide, remove", (s, e) => PlanMenu());
+            planButton = Ui.Toggle("", "Plan ▾", "The plan under this level, to trace: import a DXF, PDF or picture; set its scale, straighten, move; move or copy it to another floor", (s, e) => PlanMenu());
             toolbar.Children.Add(planButton);
             toolbar.Children.Add(HostTools);
 
@@ -157,7 +157,7 @@ namespace BuildingModel.Sketch
             ortho.IsChecked = Canvas.Ortho;
             grid.IsChecked = Canvas.ShowGrid;
             issuesButton.IsChecked = Canvas.ShowIssues;
-            planButton.IsChecked = Canvas.UnderlayOf(Canvas.ActiveLevel) != null;
+            planButton.IsChecked = Canvas.ShowUnderlay && Canvas.PlanOf(Canvas.ActiveLevel) != null;
             undo.IsEnabled = Canvas.History.CanUndo;
             redo.IsEnabled = Canvas.History.CanRedo;
         }
@@ -232,43 +232,194 @@ namespace BuildingModel.Sketch
             Canvas.Refresh();
         }
 
+        /// <summary>
+        /// True (the Building Model editor): Plan ▾ imports, places and removes the plans. False (an app that only uses the
+        /// model, e.g. the Shear Wall Calculator): the plans are shown or hidden and zoomed to, nothing else, because the
+        /// plans are the building's and only the editor changes the building.
+        /// </summary>
+        public bool PlanEditing { get; set; } = true;
+
+        /// <summary>Raised by "Edit plans in the Building Model editor..." when <see cref="PlanEditing"/> is off (the item shows only when handled).</summary>
+        public event EventHandler EditPlansRequested;
+
         private void PlanMenu()
         {
             UpdateButtons();
-            var u = Canvas.UnderlayOf(Canvas.ActiveLevel);
+            var level = Canvas.ActiveLevel;
+            var u = Canvas.PlanOf(level);
             var menu = new ContextMenu { PlacementTarget = planButton, Placement = PlacementMode.Bottom };
-            MenuItem Item(string header, bool enabled, Action a)
+            MenuItem Item(ItemsControl parent, string header, bool enabled, Action a, string tip = null)
             {
-                var m = new MenuItem { Header = header, IsEnabled = enabled };
-                m.Click += (s, e) => a();
-                menu.Items.Add(m);
+                var m = new MenuItem { Header = header, IsEnabled = enabled, ToolTip = tip };
+                if (a != null) m.Click += (s, e) => a();
+                parent.Items.Add(m);
                 return m;
             }
-            Item("Import a plan (DXF or image)...", true, ImportPlan);
-            Item("Calibrate the scale (two points)", u != null && !u.IsDxf, () => Canvas.SetTool(SketchTool.Calibrate));
-            Item(u?.Visible == false ? "Show the plan" : "Hide the plan", u != null, () => { u.Visible = !u.Visible; Canvas.SaveUnderlay(); Canvas.Commit(u.Visible ? "Plan shown." : "Plan hidden."); UpdateButtons(); });
-            Item("Remove the plan", u != null, () => Canvas.SetUnderlay(null));
+            void ZoomToPlan() { var r = u?.WorldBounds() ?? Rect.Empty; if (!r.IsEmpty) Canvas.ZoomTo(r); }
+
+            if (!PlanEditing)
+            {
+                Item(menu, Canvas.ShowUnderlay ? "Hide the plans" : "Show the plans", true, () => { Canvas.ShowUnderlay = !Canvas.ShowUnderlay; Canvas.Refresh(); UpdateButtons(); },
+                     "Only on this screen: the plans stay in the building model.");
+                Item(menu, "Zoom to the plan", u != null, ZoomToPlan);
+                if (EditPlansRequested != null)
+                {
+                    menu.Items.Add(new Separator());
+                    Item(menu, "Import or place plans in the Building Model editor...", true, () => EditPlansRequested(this, EventArgs.Empty),
+                         "The plans are part of the building, so they are imported, scaled, moved and removed in the Building Model editor.");
+                }
+                menu.IsOpen = true;
+                return;
+            }
+
+            bool movable = u != null && !u.Locked;
+            Item(menu, u == null ? "Import a plan (DXF, PDF, image)..." : "Replace the plan (DXF, PDF, image)...", level != null, ImportPlan);
+            menu.Items.Add(new Separator());
+            Item(menu, "Set scale: click two points, type the distance", movable, () => Canvas.SetTool(SketchTool.Calibrate),
+                 "Pick the two ends of a long dimension on the plan; the plan is rescaled about the first point.");
+            Item(menu, "Straighten: click two points on a wall line", movable, () => Canvas.SetTool(SketchTool.PlanStraighten),
+                 "Turns the plan so that line runs exactly E-W or N-S.");
+            Item(menu, "Move: base point, then destination", movable, () => Canvas.SetTool(SketchTool.PlanMove),
+                 "The destination snaps to the walls, e.g. to line up a building corner with a wall end.");
+            Item(menu, "Rotate 90°", movable, () =>
+            {
+                var r = u.WorldBounds();
+                var c = new Point(r.X + r.Width / 2, r.Y + r.Height / 2);
+                Canvas.EditPlan(level, "Plan turned 90°.", p => p.RotateAbout(c, 90));
+            });
+            menu.Items.Add(new Separator());
+            var opacity = Item(menu, "Opacity", u != null, null);
+            foreach (double v in new[] { 0.25, 0.4, 0.6, 0.8, 1.0 })
+            {
+                var mi = Item(opacity, $"{v * 100:0} %", true, () => Canvas.EditPlan(level, $"Plan opacity {v * 100:0} %.", p => p.Opacity = v));
+                mi.IsCheckable = true;
+                mi.IsChecked = u != null && Math.Abs(u.Opacity - v) < 0.01;
+            }
+            Item(menu, u?.Locked == true ? "Unlock" : "Lock (no moving or rescaling)", u != null,
+                 () => Canvas.EditPlan(level, u.Locked ? "Plan unlocked." : "Plan locked.", p => p.Locked = !p.Locked));
+            Item(menu, u?.Visible == false ? "Show the plan" : "Hide the plan", u != null,
+                 () => Canvas.EditPlan(level, u.Visible ? "Plan hidden." : "Plan shown.", p => p.Visible = !p.Visible), "Saved with the building.");
+            Item(menu, "Zoom to the plan", u != null, ZoomToPlan);
+            menu.Items.Add(new Separator());
+            var others = Canvas.Building.LevelsBottomUp.Where(l => l != level).ToList();
+            var moveTo = Item(menu, "Move to floor", u != null && others.Count > 0, null);
+            var copyTo = Item(menu, "Copy to floor", u != null && others.Count > 0, null);
+            foreach (var l in others)
+            {
+                var target = l;
+                Item(moveTo, target.Name, true, () => PlanToLevel(level, target, move: true));
+                Item(copyTo, target.Name, true, () => PlanToLevel(level, target, move: false));
+            }
+            Item(menu, "Remove the plan", u != null, () => Canvas.SetPlan(level, null, $"Plan removed from {level.Name} (the file stays in the project folder). Ctrl+Z undoes it."));
             menu.IsOpen = true;
         }
 
-        private void ImportPlan()
+        /// <summary>Move or copy the plan of <paramref name="from"/> to <paramref name="to"/>, asking before replacing a plan there.</summary>
+        private void PlanToLevel(Level from, Level to, bool move)
         {
+            var p = Canvas.PlanOf(from)?.Clone();
+            if (p == null) return;
+            if (Canvas.PlanOf(to) != null &&
+                MessageBox.Show(Window.GetWindow(this), $"{to.Name} already has a plan. Replace it with this one?\n\nCtrl+Z can undo it.", "Plan",
+                                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+            Canvas.Edit(move ? $"Plan moved from {from.Name} to {to.Name}." : $"Plan copied from {from.Name} to {to.Name}.", b =>
+            {
+                PlanImage.Put(b.Level(to.Id), p);
+                if (move) PlanImage.Put(b.Level(from.Id), null);
+            });
+            Canvas.ShowLevel(to.Id);
+            UpdateButtons();
+        }
+
+        /// <summary>The building's width (ft) for a first guess at a picture's scale; 60 ft when there is nothing yet.</summary>
+        private double DrawingWidthFeet()
+        {
+            var r = BuildingEdits.Extents(Canvas.Building);
+            return r != null && r.Value.Width > 1 ? r.Value.Width : 60;
+        }
+
+        /// <summary>
+        /// Import a plan under the level shown: a DXF (true size from its units, linework to snap to), a PDF sheet (the printed
+        /// drawing scale; the paper size is in the file) or a picture (drawing scale and dpi, or set the scale on the plan).
+        /// The file is copied into the project's plans folder; the level keeps the file and its placement (Ctrl+Z undoes it).
+        /// </summary>
+        private async void ImportPlan()
+        {
+            var level = Canvas.ActiveLevel;
+            if (level == null) return;
+            var owner = Window.GetWindow(this);
             var open = new Microsoft.Win32.OpenFileDialog
             {
-                Title = "Plan under " + Canvas.ActiveLevel?.Name,
-                Filter = "Plans (*.dxf;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff)|*.dxf;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff|All files (*.*)|*.*",
+                Title = "Plan under " + level.Name,
+                InitialDirectory = BuildingModel.Diagnostics.ProjectFolder.DialogFolder,
+                Filter = "Plans (*.dxf;*.pdf;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif)|*.dxf;*.pdf;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif|" +
+                         "CAD drawing (*.dxf)|*.dxf|PDF sheet (*.pdf)|*.pdf|Images (*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif)|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif|" +
+                         "All files (*.*)|*.*",
             };
-            if (open.ShowDialog(Window.GetWindow(this)) != true) return;
+            if (open.ShowDialog(owner) != true) return;
+            string file = open.FileName;
+            string ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
+            if (ext == ".dwg")
+            {
+                MessageBox.Show(owner, "DWG files are not read directly. In AutoCAD, save the drawing as DXF (SAVEAS > DXF, or DXFOUT) and import the DXF: " +
+                                       "it comes in at true size.", "Plan", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            PlanImage p = null;
+            bool calibrateOnPlan = false;
+            Cursor = Cursors.Wait;
             try
             {
-                var u = PlanUnderlay.Import(open.FileName);
-                Canvas.SetUnderlay(u);
-                if (!u.IsDxf) Canvas.SetTool(SketchTool.Calibrate);
+                if (ext == ".dxf")
+                {
+                    var drawing = await PdfPages.InBackground(() => DxfReader.ReadFile(file));
+                    if (drawing.Paths.Count == 0) throw new System.IO.InvalidDataException("No lines, polylines or arcs were found in model space.");
+                    Cursor = null;
+                    var dialog = new ImportDxfDialog(file, drawing) { Owner = owner };
+                    if (dialog.ShowDialog() != true) return;
+                    p = dialog.Result;
+                    p.StoreInProject(file);
+                }
+                else if (ext == ".pdf")
+                {
+                    var pages = await PdfPages.InBackground(() => PdfPages.PaperSizes(file));
+                    if (pages.Count == 0) throw new System.IO.InvalidDataException("The PDF has no pages.");
+                    Cursor = null;
+                    var dialog = new ImportPdfDialog(file, pages, DrawingWidthFeet()) { Owner = owner };
+                    if (dialog.ShowDialog() != true) return;
+                    p = dialog.Result;
+                    calibrateOnPlan = dialog.CalibrateOnDrawing;
+                    string name = System.IO.Path.GetFileNameWithoutExtension(file) + (pages.Count > 1 ? $" p{dialog.PageIndex + 1}" : "") + ".png";
+                    p.StoreInProject(file, dialog.Png, name);
+                }
+                else
+                {
+                    Cursor = null;
+                    var dialog = new ImportImageDialog(file, DrawingWidthFeet()) { Owner = owner };
+                    if (dialog.ShowDialog() != true) return;
+                    p = dialog.Result;
+                    p.Source = "Image";
+                    calibrateOnPlan = dialog.CalibrateOnDrawing;
+                    p.StoreInProject(file);
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Window.GetWindow(this), "This plan could not be read.\n\n" + ex.Message, "Plan", MessageBoxButton.OK, MessageBoxImage.Warning);
+                BuildingModel.Diagnostics.Log.Warning("Plan", "Could not import the plan " + file, ex);
+                MessageBox.Show(owner, "This file could not be imported.\n\n" + ex.Message, "Plan", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
+            finally
+            {
+                Cursor = null;
+            }
+
+            Canvas.ShowUnderlay = true;
+            Canvas.SetPlan(level, p, $"Plan {System.IO.Path.GetFileName(file)} ({p.Source}) placed under {level.Name}" + (p.Calibrated ? "." : "; set its scale next."));
+            var bounds = Canvas.PlanOf(level)?.WorldBounds() ?? Rect.Empty;
+            if (!bounds.IsEmpty) Canvas.ZoomTo(bounds);
+            if (calibrateOnPlan || !p.Calibrated) Canvas.SetTool(SketchTool.Calibrate);
             UpdateButtons();
         }
     }

@@ -77,7 +77,9 @@ namespace BuildingModel.Sketch
                 case SketchTool.Mirror: return selection.Count == 0 ? "Mirror: pick what to mirror." : first == null ? "Mirror: first point of the mirror line." : "Mirror: second point (the line is made square). The originals stay.";
                 case SketchTool.Measure: return first == null ? "Measure: first point." : "Measure: second point.";
                 case SketchTool.Split: return "Split: click on a wall where it splits in two.";
-                case SketchTool.Calibrate: return first == null ? "Calibrate the plan: click the first of two points a known distance apart." : "Calibrate: the second point.";
+                case SketchTool.Calibrate: return first == null ? "Plan scale: click the first end of a known dimension on the plan  (Esc cancels)." : "Plan scale: click the other end; then type the real distance.";
+                case SketchTool.PlanStraighten: return first == null ? "Straighten the plan: click a point on a wall line that should run E-W or N-S  (Esc cancels)." : "Straighten the plan: a second point on the same line.";
+                case SketchTool.PlanMove: return first == null ? "Move the plan: click a base point on the plan  (Esc cancels)." : "Move the plan: click where the base point goes (snaps to the walls).";
                 default: return "Select: click, Shift+click to add, drag a window. Drag a wall's middle grip to move the selection, an end grip to change the length. Del deletes.";
             }
         }
@@ -216,19 +218,32 @@ namespace BuildingModel.Sketch
                     break;
 
                 case SketchTool.Calibrate:
-                    var u = UnderlayOf(level);
-                    if (u == null) { Say("There is no plan under this level to calibrate.", true); return; }
+                case SketchTool.PlanStraighten:
+                case SketchTool.PlanMove:
+                    var plan = PlanOf(level);
+                    if (plan == null) { Say("There is no plan under this level.", true); SetTool(SketchTool.Select); return; }
+                    if (plan.Locked) { Say("The plan is locked: Plan ▾ > Unlock first.", true); SetTool(SketchTool.Select); return; }
                     if (first == null) { first = p; break; }
                     var a = first.Value;
+                    if (Snapper.Dist(a, p) < 1e-9) { Say("Pick a different point.", true); return; }
                     first = null;
-                    string len = (PromptText ?? TextPrompt.Ask)($"Distance between the two points (now {Snapper.Dist(a, p):0.##} ft)", "");
-                    if (len == null) return;
-                    if (!CoordinateInput.TryLength(len, out double feet) || !(feet > 0)) { Say($"\"{len}\" is not a length.", true); return; }
-                    u.Calibrate(new Point(a.X, a.Y), new Point(p.X, p.Y), feet);
-                    SaveUnderlay();
-                    Commit($"Plan scaled: those points are now {feet:0.##} ft apart.");
+                    Point pa = new Point(a.X, a.Y), pb = new Point(p.X, p.Y);
+                    if (Tool == SketchTool.Calibrate)
+                    {
+                        string len = (PromptText ?? TextPrompt.Ask)($"Real distance between the two points (now {Snapper.Dist(a, p):0.##} ft), e.g. 24'-6\" or 24.5", "");
+                        if (len == null) return;
+                        if (!CoordinateInput.TryLength(len, out double feet) || !(feet > 0)) { Say($"\"{len}\" is not a length: type feet, or feet and inches (24.5, 24'6\" or 24'-6\").", true); return; }
+                        EditPlan(level, $"Plan scale set: the picked {Snapper.Dist(a, p):0.##} ft is now {feet:0.##} ft.", x => x.Calibrate(pa, pb, feet));
+                    }
+                    else if (Tool == SketchTool.PlanStraighten)
+                    {
+                        double turn = 0;
+                        EditPlan(level, null, x => turn = x.Straighten(pa, pb));
+                        Say(Math.Abs(turn) < 0.005 ? "The line already runs square: the plan was not turned." : $"Plan turned {turn:+0.##;-0.##}°.");
+                    }
+                    else EditPlan(level, $"Plan moved {p.X - a.X:0.##} ft, {p.Y - a.Y:0.##} ft.", x => x.Move(pa, pb));
                     SetTool(SketchTool.Select);
-                    break;
+                    return;
             }
             segments = null;
             Say(Prompt());
@@ -391,12 +406,23 @@ namespace BuildingModel.Sketch
         {
             mouseInside = true;
             rawCursor = ToWorld(pos);
-            if (SnapOn && (Tool != SketchTool.Select || HostWantsSnaps?.Invoke() == true) || grip != null)
+            // picking on the plan itself (its scale, its line, its base point): snap only to its own CAD lines, never to the
+            // walls or the grid, which would pull the pick off the feature on the plan
+            bool onPlan = Tool == SketchTool.Calibrate || Tool == SketchTool.PlanStraighten || (Tool == SketchTool.PlanMove && first == null);
+            if (onPlan)
+            {
+                var own = PlanLinesNear(rawCursor, PixelsToFeet(10));
+                snap = SnapOn && own.Count > 0 ? Snapper.Find(rawCursor, PixelsToFeet(10), own, SnapModes & ~SnapModes.Grid, first, GridSpacing)
+                                               : new SnapResult { Point = rawCursor };
+            }
+            else if (SnapOn && (Tool != SketchTool.Select || HostWantsSnaps?.Invoke() == true) || grip != null)
             {
                 if (segments == null) segments = Snapper.SegmentsOf(Building, ActiveLevel);
                 var lines = segments;
                 var extra = ExtraSnapLines?.Invoke(rawCursor, PixelsToFeet(10));
                 if (extra != null) lines = segments.Concat(extra).ToList();
+                var own = PlanLinesNear(rawCursor, PixelsToFeet(10));
+                if (own.Count > 0) lines = lines.Concat(own).ToList();
                 var modes = SnapModes;
                 if (!ShowGrid) modes &= ~SnapModes.Grid;
                 if (!SnapOn) modes = SnapModes.None;

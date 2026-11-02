@@ -384,24 +384,5 @@ namespace BuildingModel.Sketch.Tests
             StringAssert.Contains(header.Text, "warning");
         }
 
-        private static string SampleDxf([CallerFilePath] string here = "") =>
-            Path.GetFullPath(Path.Combine(Path.GetDirectoryName(here), "..", "..", "ShearWallCalculator", "samples", "Default_60x40_plan.dxf"));
-
-        [STATestMethod]
-        public void Underlay_DxfAtTrueSize_ImageCalibrates()
-        {
-            string dxf = SampleDxf();
-            if (!File.Exists(dxf)) Assert.Inconclusive("The sample plan is in the Shear Wall Designer repo: " + dxf);
-            var u = PlanUnderlay.Import(dxf);
-            var r = u.WorldBounds();
-            Assert.AreEqual(60, r.Width, 1.01, "the 60 x 40 ft plan (walls 6 in thick)");
-            var back = PlanUnderlay.FromJson(u.ToJson());
-            Assert.AreEqual(u.Scale, back.Scale, 1e-12);
-
-            var img = new PlanUnderlay { Scale = 0.1, OriginX = 0, OriginY = 0 };
-            Assert.IsTrue(img.Calibrate(new Point(0, 0), new Point(5, 0), 10));
-            Assert.AreEqual(0.2, img.Scale, 1e-12);
-            Assert.IsFalse(img.Calibrate(new Point(1, 1), new Point(1, 1), 10));
-        }
     }
 }

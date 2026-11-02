@@ -12,7 +12,7 @@ using BuildingModel.Model;
 namespace BuildingModel.Sketch
 {
     /// <summary>The drawing tools.</summary>
-    public enum SketchTool { Select, Wall, Diaphragm, Opening, Note, Move, Copy, Measure, Split, Mirror, Calibrate, Cut }
+    public enum SketchTool { Select, Wall, Diaphragm, Opening, Note, Move, Copy, Measure, Split, Mirror, Calibrate, Cut, PlanStraighten, PlanMove }
 
     /// <summary>What a host draws under or over the model, with the sketch's transform.</summary>
     public sealed class SketchDrawEventArgs : EventArgs
@@ -78,11 +78,14 @@ namespace BuildingModel.Sketch
         {
             Building = b ?? Building.New();
             if (Building.Ground == null) Building.Levels.Insert(0, new Level { Id = Building.NewId("L"), Name = "Ground", Elevation = 0 });
+            var converted = PlanImage.Migrate(Building); // plans in older formats; part of opening, not an undo step
             History.Reset(Building);
             selection.Clear();
             ResetCommand();
             ActiveLevel = Building.Level(activeLevelId) ?? Building.LevelsBottomUp.FirstOrDefault(l => l.Elevation > 0) ?? Building.Ground;
-            underlays.Clear();
+            plans.Clear();
+            plansWarned.Clear();
+            if (converted.Count > 0) Say($"Plans converted from an older format: {converted.Count} level{(converted.Count == 1 ? "" : "s")}. Save to keep it.");
             ActiveLevelChanged?.Invoke(this, EventArgs.Empty);
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             InvalidateVisual();
@@ -249,7 +252,7 @@ namespace BuildingModel.Sketch
             if (!EnabledTools.Contains(tool)) return;
             ResetCommand();
             Tool = tool;
-            if (tool != SketchTool.Select && tool != SketchTool.Measure && tool != SketchTool.Calibrate) lastTool = tool;
+            if (tool != SketchTool.Select && tool != SketchTool.Measure && !IsPlanTool(tool)) lastTool = tool;
             ToolChanged?.Invoke(this, EventArgs.Empty);
             Say(Prompt());
             InvalidateVisual();
@@ -293,7 +296,7 @@ namespace BuildingModel.Sketch
         public void ZoomExtents()
         {
             var r = BuildingEdits.Extents(Building, ActiveLevel) ?? BuildingEdits.Extents(Building);
-            var u = UnderlayOf(ActiveLevel);
+            var u = PlanOf(ActiveLevel);
             Rect box = r == null ? Rect.Empty : new Rect(r.Value.X0, r.Value.Y0, r.Value.Width, r.Value.Height);
             if (u != null && u.Visible && ShowUnderlay) { var ub = u.WorldBounds(); if (!ub.IsEmpty) box.Union(ub); }
             if (box.IsEmpty) box = new Rect(0, 0, 60, 40);
@@ -313,34 +316,55 @@ namespace BuildingModel.Sketch
 
         // ------------------------------------------------------------------ underlays (one per level, in the level's data bag)
 
-        private readonly Dictionary<string, PlanUnderlay> underlays = new Dictionary<string, PlanUnderlay>();
+        // The plan of each level as last read: its stored record (JSON) and the object, which keeps the loaded file. A changed
+        // record (an edit, undo, redo) is read again; the picture or linework is kept when the file is the same.
+        private readonly Dictionary<string, (string json, PlanImage plan)> plans = new Dictionary<string, (string, PlanImage)>();
+        private readonly HashSet<string> plansWarned = new HashSet<string>(StringComparer.Ordinal);
 
-        public PlanUnderlay UnderlayOf(Level l)
+        /// <summary>The plan under level <paramref name="l"/> (see <see cref="PlanImage"/>), or null.</summary>
+        public PlanImage PlanOf(Level l)
         {
             if (l == null) return null;
-            if (!underlays.TryGetValue(l.Id, out var u))
+            string json = l.GetData(PlanImage.DataKey);
+            if (json == null) { plans.Remove(l.Id); return null; }
+            if (plans.TryGetValue(l.Id, out var c) && c.json == json) return c.plan;
+            var p = PlanImage.FromJson(json);
+            if (p != null && c.plan != null) p.AdoptContent(c.plan);
+            plans[l.Id] = (json, p);
+            if (p != null)
             {
-                u = PlanUnderlay.FromJson(l.GetData(PlanUnderlay.DataKey));
-                underlays[l.Id] = u;
-                if (u != null && u.WorldBounds().IsEmpty && u.LoadError != null) Say(u.LoadError, true);
+                p.EnsureLoaded();
+                if (p.LoadError != null && plansWarned.Add(p.LoadError)) { Say(p.LoadError, true); BuildingModel.Diagnostics.Log.Warning("Plan", p.LoadError, null); }
             }
-            return u;
+            return p;
         }
 
-        /// <summary>Puts a plan under the active level (null removes it); saved in the level's data bag.</summary>
-        public void SetUnderlay(PlanUnderlay u)
+        /// <summary>
+        /// Puts plan <paramref name="p"/> under level <paramref name="l"/> (null removes it), as one edit (Ctrl+Z undoes it).
+        /// Only the Building Model editor does this: a host that only shows plans sets <see cref="SketchView.PlanEditing"/> off.
+        /// </summary>
+        public void SetPlan(Level l, PlanImage p, string what)
         {
-            if (ActiveLevel == null) return;
-            underlays[ActiveLevel.Id] = u;
-            ActiveLevel.SetData(PlanUnderlay.DataKey, u?.ToJson());
-            Commit(u == null ? "Plan removed." : "Plan placed under " + ActiveLevel.Name + ".");
-            if (u != null) ZoomExtents();
+            if (l == null) return;
+            Edit(what ?? (p == null ? $"Plan removed from {l.Name}." : $"Plan placed under {l.Name}."), b => PlanImage.Put(b.Level(l.Id), p));
         }
 
-        internal void SaveUnderlay()
+        /// <summary>Changes the plan of level <paramref name="l"/> (a copy is changed and stored, as one edit).</summary>
+        public void EditPlan(Level l, string what, Action<PlanImage> change)
         {
-            var u = UnderlayOf(ActiveLevel);
-            if (u != null) ActiveLevel.SetData(PlanUnderlay.DataKey, u.ToJson());
+            var p = PlanOf(l)?.Clone();
+            if (p == null) return;
+            change(p);
+            SetPlan(l, p, what);
         }
+
+        /// <summary>The plan's CAD lines near a world point (for snaps), when it is shown.</summary>
+        internal List<Segment2> PlanLinesNear(Point2 world, double reach)
+        {
+            var p = ShowUnderlay ? PlanOf(ActiveLevel) : null;
+            return p == null || !p.Visible || !p.IsDxf ? new List<Segment2>() : p.SegmentsNear(world, reach);
+        }
+
+        internal static bool IsPlanTool(SketchTool t) => t == SketchTool.Calibrate || t == SketchTool.PlanStraighten || t == SketchTool.PlanMove;
     }
 }

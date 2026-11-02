@@ -100,7 +100,7 @@ namespace BuildingModel.Sketch
             ctx.DrawRectangle(PaperBrush, null, bounds);
             if (Building == null || ActiveLevel == null) return;
             if (ShowGrid) DrawGrid(ctx);
-            if (ShowUnderlay) UnderlayOf(ActiveLevel)?.Draw(ctx, this);
+            if (ShowUnderlay) PlanOf(ActiveLevel)?.Draw(ctx, this);
             DrawUnder?.Invoke(this, new SketchDrawEventArgs(ctx, this));
 
             var b = Building;
@@ -331,7 +331,11 @@ namespace BuildingModel.Sketch
                         break;
                     case SketchTool.Measure:
                     case SketchTool.Calibrate:
+                    case SketchTool.PlanStraighten:
                         DrawMeasure(ctx, a, Ortho ? Snapper.Ortho(cursor, a) : cursor);
+                        break;
+                    case SketchTool.PlanMove:
+                        Line(ctx, RubberPen, a, cursor);
                         break;
                     case SketchTool.Move:
                     case SketchTool.Copy:

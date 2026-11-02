@@ -10,7 +10,7 @@ using System.Windows.Media;
 namespace BuildingModel.Sketch
 {
     /// <summary>One polyline of a CAD drawing, in drawing units (x right, y up).</summary>
-    internal sealed class DxfPath
+    public sealed class DxfPath
     {
         public string Layer { get; set; }
         public bool Closed { get; set; }
@@ -18,7 +18,7 @@ namespace BuildingModel.Sketch
     }
 
     /// <summary>What was read from a DXF file: the model-space linework, the drawing units and the layers.</summary>
-    internal sealed class DxfDrawing
+    public sealed class DxfDrawing
     {
         public List<DxfPath> Paths { get; } = new List<DxfPath>();
 
@@ -49,7 +49,7 @@ namespace BuildingModel.Sketch
     /// bulges become short straight segments. Model space only; text, dimensions and hatches are skipped. The units
     /// come from $INSUNITS. No outside library: DXF is Autodesk's published text format (group code / value pairs).
     /// </summary>
-    internal static class DxfReader
+    public static class DxfReader
     {
         /// <summary>Feet per drawing unit for an $INSUNITS code; NaN when unitless or unknown.</summary>
         public static double FeetPerUnit(int insUnits)

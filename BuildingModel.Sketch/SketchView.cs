@@ -68,6 +68,7 @@ namespace BuildingModel.Sketch
             Tool(SketchTool.Measure, "", "", "Measure (T)");
             toolbar.Children.Add(Ui.Separator());
             toolbar.Children.Add(Ui.GroupLabel("Building"));
+            toolbar.Children.Add(Ui.Button("", "From size", "New from size: a box L × B with its stories, a diaphragm on each level and the outside shear walls (replaces the drawing; Undo puts it back)", (s, e) => NewFromSize()));
             toolbar.Children.Add(Ui.Button("", "Roof", "The roof over the top story: flat, gable or hip, its slope and ridge, the parapet and the eaves", (s, e) => EditRoof()));
             toolbar.Children.Add(Ui.Separator());
             toolbar.Children.Add(Ui.GroupLabel("View"));
@@ -191,6 +192,32 @@ namespace BuildingModel.Sketch
                 Canvas.Focus();
                 e.Handled = true;
             }
+        }
+
+        /// <summary>The most stories the host handles in "New from size" (null: no limit).</summary>
+        public int? MaxStories { get; set; }
+
+        /// <summary>NEW FROM SIZE: the window, then the box replaces the drawing (one undo step).</summary>
+        private void NewFromSize()
+        {
+            var b = Canvas.Building;
+            if (b == null) return;
+            var q = QuickBuildingDialog.Ask(b, MaxStories, Window.GetWindow(this));
+            if (q == null) return;
+            BuildFromSize(q);
+        }
+
+        /// <summary>Builds the box (the window's result) in the model and shows its first floor. False when it cannot be built.</summary>
+        public bool BuildFromSize(BuildingEdits.QuickBuilding q)
+        {
+            var b = Canvas.Building;
+            if (b == null || !BuildingEdits.BuildFromSize(b, q)) return false;
+            var first = b.LevelsBottomUp.FirstOrDefault(l => l.Elevation > 0);
+            Canvas.ClearSelection();
+            Canvas.Commit($"New from size: {q.Length:0.##} × {q.Width:0.##} ft, {q.StoryHeights.Count} stor{(q.StoryHeights.Count == 1 ? "y" : "ies")}.");
+            if (first != null) Canvas.ShowLevel(first.Id);
+            Canvas.ZoomExtents();
+            return true;
         }
 
         /// <summary>ROOF: the roof window; OK changes the model's roof (one undo step).</summary>

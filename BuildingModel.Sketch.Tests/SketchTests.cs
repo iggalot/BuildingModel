@@ -167,6 +167,41 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(0, b.Diaphragms.Count);
         }
 
+        /// <summary>New from size: the window reads the inputs, the editor builds the box in one undo step, the host's limit holds.</summary>
+        [STATestMethod]
+        public void NewFromSize_PanelAndBuild_OneUndo()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            b.AddDiaphragm(l2, new Rect2(0, 0, 20, 20));
+            var p = new QuickBuildingPanel(b, maxStories: 3);
+            Assert.IsNotNull(p.Result, "starts from the building: 20 × 20, one 10 ft story");
+            Assert.AreEqual(20, p.Result.Length);
+            p.Type("length", "60");
+            p.Type("width", "40");
+            p.Type("stories", "3");
+            p.Type("heights", "15, 12");
+            Assert.IsNull(p.Result, "two heights for three stories");
+            StringAssert.Contains(p.Problem, "3 heights");
+            p.Type("heights", "15, 12, 12");
+            Assert.IsNotNull(p.Result);
+            p.Type("stories", "4");
+            Assert.IsNull(p.Result, "over the host's limit");
+            p.Type("stories", "3");
+            p.Type("heights", "14");
+            CollectionAssert.AreEqual(new[] { 14.0, 14.0, 14.0 }, p.Result.StoryHeights, "one height for every story");
+
+            var view = new SketchView();
+            view.Canvas.SetBuilding(b, l2.Id);
+            Assert.IsTrue(view.BuildFromSize(p.Result));
+            Assert.AreEqual(3, b.Levels.Count(l => l.Elevation > 0));
+            Assert.AreEqual(12, b.Walls.Count);
+            Assert.AreEqual("Level 2", view.Canvas.ActiveLevel.Name, "the first floor is shown");
+            view.Canvas.Undo();
+            Assert.AreEqual(1, view.Canvas.Building.Levels.Count(l => l.Elevation > 0), "one undo puts the old drawing back");
+            Assert.AreEqual(20, view.Canvas.Building.Footprint().Bounds.Width, 1e-9);
+        }
+
         /// <summary>The roof window: made sloped it takes the project's default slope; the model's checks disable OK.</summary>
         [STATestMethod]
         public void RoofPanel_DefaultSlope_ChecksFromTheModel_BuildingUnchanged()

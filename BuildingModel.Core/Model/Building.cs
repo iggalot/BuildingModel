@@ -156,6 +156,11 @@ namespace BuildingModel.Model
         /// <summary>A new roof's eaves (ft).</summary>
         [DataMember(Order = 4)] public double Overhang { get; set; }
 
+        /// <summary>"New from size": the plan it starts with, L W-E and B S-N (ft), and how many stories.</summary>
+        [DataMember(Order = 5)] public double NewLength { get; set; }
+        [DataMember(Order = 6)] public double NewWidth { get; set; }
+        [DataMember(Order = 7)] public int NewStories { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -165,6 +170,9 @@ namespace BuildingModel.Model
             RoofPitch = 18.43;
             Parapet = 0;
             Overhang = 0;
+            NewLength = 60;
+            NewWidth = 40;
+            NewStories = 1;
         }
 
         [OnDeserializing]

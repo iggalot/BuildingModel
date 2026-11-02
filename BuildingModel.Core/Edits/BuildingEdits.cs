@@ -332,6 +332,101 @@ namespace BuildingModel.Edits
             return true;
         }
 
+        /// <summary>
+        /// The standard story names, bottom up: Level 2, Level 3, ..., and Roof for the top of two or more (one story: Level 2).
+        /// A name the user gave (anything but "Level n" or "Roof") stays.
+        /// </summary>
+        public static void NameStories(Building b)
+        {
+            var up = b.LevelsBottomUp.Where(l => l.Elevation > 0).ToList();
+            for (int i = 0; i < up.Count; i++)
+            {
+                string name = up[i].Name ?? "";
+                bool standard = name.Length == 0 || name == "Roof" || (name.StartsWith("Level ", StringComparison.Ordinal) && int.TryParse(name.Substring(6), out _));
+                if (standard) up[i].Name = i == up.Count - 1 && up.Count > 1 ? "Roof" : $"Level {i + 2}";
+            }
+        }
+
+        // ------------------------------------------------------------------ a building from its size
+
+        /// <summary>What "New from size" builds: a rectangle L × B (ft) at the origin, its stories, and outside walls.</summary>
+        public sealed class QuickBuilding
+        {
+            /// <summary>L: W-E (ft).</summary>
+            public double Length { get; set; }
+
+            /// <summary>B: S-N (ft).</summary>
+            public double Width { get; set; }
+
+            /// <summary>The story heights, bottom up (ft); one per story.</summary>
+            public List<double> StoryHeights { get; set; } = new List<double>();
+
+            /// <summary>Put shear walls on the four outside walls of every story.</summary>
+            public bool OutsideShearWalls { get; set; } = true;
+
+            /// <summary>Why it cannot be built (null when it can).</summary>
+            public string Problem()
+            {
+                if (!(Length > 0) || !(Width > 0)) return "L and B must be more than 0 ft.";
+                if (StoryHeights == null || StoryHeights.Count == 0) return "Give at least one story.";
+                if (StoryHeights.Any(h => !(h > 0))) return "Every story height must be more than 0 ft.";
+                return null;
+            }
+
+            /// <summary>The model's defaults as a starting point: one story of the default height, the default plan.</summary>
+            public static QuickBuilding FromDefaults(ModelDefaults d) => new QuickBuilding
+            {
+                Length = d.NewLength, Width = d.NewWidth,
+                StoryHeights = Enumerable.Repeat(d.StoryHeight, Math.Max(1, d.NewStories)).ToList(),
+            };
+
+            /// <summary>The building as it is now, where it is a plain box (else the defaults): to start the window from.</summary>
+            public static QuickBuilding Of(Building b)
+            {
+                var q = FromDefaults(b.Defaults);
+                var up = b.LevelsBottomUp.Where(l => l.Elevation > 0).ToList();
+                var fp = b.Footprint();
+                if (up.Count > 0) q.StoryHeights = up.Select(l => b.StoryHeight(l)).ToList();
+                if (!fp.IsEmpty) { q.Length = fp.Bounds.Width; q.Width = fp.Bounds.Height; }
+                return q;
+            }
+        }
+
+        /// <summary>
+        /// Replaces the building's drawing with a plain box: the ground and one level per story, a diaphragm L × B on each,
+        /// and (when asked) shear walls on the four outside walls of each story. The building's name, roof, defaults and
+        /// its own data stay; walls, diaphragms, openings and notes on every level go. False (nothing changed) when the
+        /// size cannot be built. One undo step for the caller.
+        /// </summary>
+        public static bool BuildFromSize(Building b, QuickBuilding q)
+        {
+            if (b == null || q == null || q.Problem() != null) return false;
+            b.Walls.Clear();
+            b.Diaphragms.Clear();
+            b.Openings.Clear();
+            b.Notes.Clear();
+            var ground = b.Ground;
+            b.Levels.RemoveAll(l => l != ground);
+            if (ground == null) b.Levels.Add(ground = new Level { Id = b.NewId("L"), Name = "Ground", Elevation = 0 });
+            var rect = new Rect2(0, 0, q.Length, q.Width);
+            var below = ground;
+            foreach (double h in q.StoryHeights)
+            {
+                var l = AddStory(b, h);
+                b.AddDiaphragm(l, rect);
+                if (q.OutsideShearWalls)
+                {
+                    b.AddWall(below, l, 0, 0, q.Length, 0);
+                    b.AddWall(below, l, 0, q.Width, q.Length, q.Width);
+                    b.AddWall(below, l, 0, 0, 0, q.Width);
+                    b.AddWall(below, l, q.Length, 0, q.Length, q.Width);
+                }
+                below = l;
+            }
+            NameStories(b);
+            return true;
+        }
+
         // ------------------------------------------------------------------ cut
 
         /// <summary>What a cut did: diaphragms made smaller, taken away whole, and the new ones a cut split off.</summary>

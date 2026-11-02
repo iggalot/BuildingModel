@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BuildingModel.Core\BuildingModel.Core.csproj" />
+    <!-- the folder picker for project folders (part of the .NET Framework) -->
+    <Reference Include="System.Windows.Forms" />
   </ItemGroup>
 
 </Project>

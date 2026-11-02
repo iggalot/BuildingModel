@@ -118,6 +118,7 @@ namespace BuildingModel.Sketch
             if (changed)
             {
                 if (!string.IsNullOrEmpty(what)) Say(what);
+                BuildingModel.Diagnostics.Log.Info("Edit", string.IsNullOrEmpty(what) ? "Model changed." : what);
                 ModelChanged?.Invoke(this, EventArgs.Empty);
             }
             InvalidateVisual();
@@ -144,6 +145,7 @@ namespace BuildingModel.Sketch
             if (ActiveLevel?.Id != keep) ActiveLevelChanged?.Invoke(this, EventArgs.Empty);
             DropMissingSelection();
             Say((undo ? "Undone: " : "Redone: ") + what + $"   ({History.UndoSteps} to undo, {History.RedoSteps} to redo)");
+            BuildingModel.Diagnostics.Log.Info("Edit", (undo ? "Undone: " : "Redone: ") + what);
             ModelChanged?.Invoke(this, EventArgs.Empty);
             InvalidateVisual();
         }

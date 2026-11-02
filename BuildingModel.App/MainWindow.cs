@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using BuildingModel.Checks;
+using BuildingModel.Diagnostics;
 using BuildingModel.Edits;
 using BuildingModel.Model;
 using BuildingModel.Serialization;
@@ -18,9 +19,26 @@ namespace BuildingModel.App
         [STAThread]
         public static int Main(string[] args)
         {
+            // the log: %AppData%\BuildingModel\logs until a project is open, then the project's logs folder
+            Diagnostics.Log.Start("BuildingModel", "bldg");
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                Diagnostics.Log.Error("App", "Unhandled error (the program is closing)" + (e.IsTerminating ? "" : " (not terminating)"), e.ExceptionObject as Exception);
             var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            app.DispatcherUnhandledException += (s, e) =>
+            {
+                Diagnostics.Log.Error("App", "Unexpected error; the action was cancelled", e.Exception);
+                MessageBox.Show("Something went wrong and that action was cancelled, but your work is still open.\n\n" + e.Exception.Message +
+                                "\n\nThe details are in the log:\n" + Diagnostics.Log.TodayFile, "Unexpected problem", MessageBoxButton.OK, MessageBoxImage.Warning);
+                e.Handled = true;
+            };
+            app.Exit += (s, e) => Diagnostics.Log.Info("App", "Building Model closed.");
             var w = new MainWindow();
-            if (args.Length > 0 && File.Exists(args[0])) w.Open(args[0]);
+            if (args.Length > 0)
+            {
+                Diagnostics.Log.Info("App", "Started with " + args[0]);
+                if (File.Exists(args[0])) w.Open(args[0]);
+                else Diagnostics.Log.Warning("App", "The file to open does not exist: " + args[0], null);
+            }
             return app.Run(w);
         }
     }
@@ -172,15 +190,39 @@ namespace BuildingModel.App
             return r == MessageBoxResult.No || Save(false);
         }
 
+        /// <summary>
+        /// A new design project: the user picks (or makes) its folder; the model is saved there at once as
+        /// &lt;folder name&gt;.bldg.json, and the log moves to the folder's logs subfolder. At startup
+        /// (<paramref name="ask"/> false) the editor starts with an unsaved building, which gets its folder on its first save.
+        /// </summary>
         private void New(bool ask = true)
         {
-            if (ask && !ConfirmDiscard()) return;
-            var b = Building.New("New building");
+            string file = null;
+            if (ask)
+            {
+                if (!ConfirmDiscard()) return;
+                file = ProjectDialogs.NewProjectPath(this, out bool openExisting);
+                if (file == null) return;
+                if (openExisting) { Open(file); return; }
+            }
+            var b = Building.New(file == null ? "New building" : Path.GetFileName(Path.GetDirectoryName(file)));
             var l2 = BuildingEdits.AddStory(b, b.Defaults.StoryHeight);
             doc = new ModelDocument { Building = b };
             path = null;
             Sketch.SetBuilding(b, l2.Id);
             dirty = false;
+            if (file != null)
+            {
+                path = file;
+                ProjectFolder.OpenFor(file);
+                Diagnostics.Log.Info("Project", "New project: " + file);
+                Save(false);
+            }
+            else
+            {
+                ProjectFolder.Close();
+                Diagnostics.Log.Info("App", "New building (not saved yet; it gets a project folder on its first save).");
+            }
             Update();
             Sketch.ZoomExtents();
         }
@@ -188,14 +230,15 @@ namespace BuildingModel.App
         private void OpenDialog()
         {
             if (!ConfirmDiscard()) return;
-            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = FileFilter, Title = "Open a building model" };
-            if (dlg.ShowDialog(this) == true) Open(dlg.FileName);
+            string file = ProjectDialogs.OpenModelPath(this);
+            if (file != null) Open(file);
         }
 
         public void Open(string file)
         {
             try
             {
+                ProjectFolder.OpenFor(file); // first, so the open itself is in the project's log
                 doc = ModelFile.Load(file);
                 path = file;
                 Sketch.SetBuilding(doc.Building, null);
@@ -209,14 +252,20 @@ namespace BuildingModel.App
             }
         }
 
+        /// <summary>
+        /// Saves the model in its project folder. A building without one (or Save as) asks for the folder: the model is
+        /// saved there as &lt;folder name&gt;.bldg.json and the folder becomes the project's.
+        /// </summary>
         private bool Save(bool saveAs)
         {
             if (saveAs || string.IsNullOrEmpty(path))
             {
-                var dlg = new Microsoft.Win32.SaveFileDialog { Filter = FileFilter, FileName = string.IsNullOrWhiteSpace(Sketch.Building.Name) ? "Building" : Sketch.Building.Name, DefaultExt = ".bldg.json" };
-                if (dlg.ShowDialog(this) != true) return false;
-                path = dlg.FileName;
-                if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) path += ".bldg.json";
+                string file = ProjectDialogs.NewProjectPath(this, out bool existing);
+                if (file == null) return false;
+                if (existing && MessageBox.Show(this, $"Replace {Path.GetFileName(file)} in that folder with this building?", "Save",
+                                                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return false;
+                path = file;
+                ProjectFolder.OpenFor(file);
             }
             try
             {
@@ -330,7 +379,7 @@ namespace BuildingModel.App
 
         private void ApplyChanges()
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Change set (*.bldgchanges.json)|*.bldgchanges.json|JSON (*.json)|*.json|All files (*.*)|*.*", Title = "Apply a change set" };
+            var dlg = new Microsoft.Win32.OpenFileDialog { InitialDirectory = ProjectFolder.DialogFolder, Filter = "Change set (*.bldgchanges.json)|*.bldgchanges.json|JSON (*.json)|*.json|All files (*.*)|*.*", Title = "Apply a change set" };
             if (dlg.ShowDialog(this) != true) return;
             ChangeSet cs;
             try { cs = ChangeSet.FromJson(File.ReadAllText(dlg.FileName)); }

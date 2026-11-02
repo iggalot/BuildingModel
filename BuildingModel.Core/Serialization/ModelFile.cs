@@ -63,10 +63,34 @@ namespace BuildingModel.Serialization
         {
             if (doc == null) throw new ArgumentNullException(nameof(doc));
             doc.Revision++;
-            File.WriteAllText(path, ToJson(doc), new UTF8Encoding(false));
+            try
+            {
+                File.WriteAllText(path, ToJson(doc), new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Log.Error("File", "Could not save " + path, ex);
+                throw;
+            }
+            var b = doc.Building;
+            Diagnostics.Log.Info("File", $"Saved {path}: revision {doc.Revision}, {b?.Levels.Count ?? 0} levels, {b?.Walls.Count ?? 0} walls, {b?.Diaphragms.Count ?? 0} diaphragms" +
+                                         (b == null || b.Data.Count == 0 ? "." : $"; sections {string.Join(", ", b.Data.Keys)}."));
         }
 
-        public static ModelDocument Load(string path) => FromJson(File.ReadAllText(path));
+        public static ModelDocument Load(string path)
+        {
+            try
+            {
+                var doc = FromJson(File.ReadAllText(path));
+                Diagnostics.Log.Info("File", $"Opened {path}: format {doc.Version}, revision {doc.Revision}, {doc.Building?.Levels.Count ?? 0} levels, {doc.Building?.Walls.Count ?? 0} walls.");
+                return doc;
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Log.Error("File", "Could not open " + path, ex);
+                throw;
+            }
+        }
 
         private static DataContractJsonSerializer BuildingSerializer() =>
             new DataContractJsonSerializer(typeof(Building), new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true });

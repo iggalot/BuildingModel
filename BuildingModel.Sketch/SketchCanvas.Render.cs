@@ -496,7 +496,7 @@ namespace BuildingModel.Sketch
             Label(ctx, $"{Snapper.Dist(a, b):0.00} ft", new Point((sa.X + sb.X) / 2 + 6, (sa.Y + sb.Y) / 2 - 18), B(Palette.Measure));
         }
 
-        /// <summary>The words of the level tag (the host's own naming), or null for the default.</summary>
+        /// <summary>The words of the level tag (the host's own naming), null for the default, "" for no tag.</summary>
         public Func<Level, string> LevelCaption { get; set; }
 
         /// <summary>The level being drawn, top-left: it must always be clear which level is being edited.</summary>
@@ -505,6 +505,7 @@ namespace BuildingModel.Sketch
             var l = ActiveLevel;
             double h = Building.StoryHeight(l);
             string text = LevelCaption?.Invoke(l) ?? (l.Elevation == 0 ? $"{l.Name} · 0 ft" : $"{l.Name} · {l.Elevation:0.##} ft · story under it {h:0.##} ft");
+            if (text.Length == 0) return; // the host shows the level its own way
             var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                                        new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 12, Brushes.White, Dpi);
             var box = new Rect(8, 8, ft.Width + 16, ft.Height + 8);

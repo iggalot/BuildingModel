@@ -31,6 +31,7 @@ namespace BuildingModel.Sketch
             SizeToContent = SizeToContent.WidthAndHeight;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            WindowFit.Fit(this); // on screen whatever the content
             FontFamily = new System.Windows.Media.FontFamily("Segoe UI");
             Background = DialogUi.Surface;
 

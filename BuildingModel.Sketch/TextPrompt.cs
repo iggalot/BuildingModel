@@ -30,6 +30,7 @@ namespace BuildingModel.Sketch
                 WindowStyle = WindowStyle.ToolWindow,
                 Owner = Application.Current?.MainWindow,
             };
+            WindowFit.Fit(w); // on screen whatever the content
             ok.Click += (s, e) => w.DialogResult = true;
             w.Loaded += (s, e) => { box.Focus(); box.SelectAll(); Keyboard.Focus(box); };
             return w.ShowDialog() == true ? box.Text : null;

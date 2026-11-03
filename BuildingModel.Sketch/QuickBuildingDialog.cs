@@ -156,6 +156,7 @@ namespace BuildingModel.Sketch
                 Owner = owner ?? Application.Current?.MainWindow,
                 Background = Brushes.White,
             };
+            WindowFit.Fit(w); // on screen whatever the content
             ok.Click += (s, e) => w.DialogResult = true;
             return w.ShowDialog() == true ? panel.Result : null;
         }

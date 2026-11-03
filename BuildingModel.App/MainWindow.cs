@@ -71,6 +71,7 @@ namespace BuildingModel.App
             MinWidth = 900;
             MinHeight = 560;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            WindowFit.Fit(this); // a smaller screen: fits, title bar on screen
             FontFamily = new FontFamily("Segoe UI");
             FontSize = 12;
             Background = Brushes.White;

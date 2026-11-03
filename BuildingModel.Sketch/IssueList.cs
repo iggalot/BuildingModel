@@ -27,6 +27,9 @@ namespace BuildingModel.Sketch
             Children.Add(new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         }
 
+        /// <summary>An issue clicked (after the sketch has gone to it): e.g. the host closes the popup holding the list.</summary>
+        public event EventHandler<ModelIssue> Picked;
+
         public void Show(IList<ModelIssue> issues)
         {
             rows.Children.Clear();
@@ -51,7 +54,7 @@ namespace BuildingModel.Sketch
                 DockPanel.SetDock(mark, System.Windows.Controls.Dock.Left);
                 row.Children.Add(mark);
                 row.Children.Add(text);
-                row.MouseLeftButtonUp += (s, a) => sketch.ShowIssue(issue);
+                row.MouseLeftButtonUp += (s, a) => { sketch.ShowIssue(issue); Picked?.Invoke(this, issue); };
                 row.MouseEnter += (s, a) => row.Background = Ui.Hover;
                 row.MouseLeave += (s, a) => row.Background = Brushes.Transparent;
                 rows.Children.Add(row);

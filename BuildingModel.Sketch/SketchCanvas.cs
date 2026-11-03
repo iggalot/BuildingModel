@@ -188,14 +188,55 @@ namespace BuildingModel.Sketch
         /// An issue picked in a list: shows its level, selects what it is about (every member it names) and brings its place
         /// into view.
         /// </summary>
-        public void ShowIssue(BuildingModel.Checks.ModelIssue issue)
+        public void ShowIssue(BuildingModel.Checks.ModelIssue issue) => ShowIssue(issue, true);
+
+        private void ShowIssue(BuildingModel.Checks.ModelIssue issue, bool retry)
         {
             if (issue == null) return;
             if (issue.LevelId != null && Building.Level(issue.LevelId) != null && issue.LevelId != ActiveLevel?.Id) ShowLevel(issue.LevelId);
             Select(issue.Ids.Where(id => !(Building.Find(id) is Level)));
-            var at = issue.At ?? issue.Ids.Select(id => BuildingEdits.Anchor(Building, id)).FirstOrDefault(a => a != null);
-            if (at != null) CenterOn(at.Value);
             Focus();
+            // the canvas was just brought on screen (another workspace, a closed panel): zoom once it has its size
+            if ((ActualWidth <= 0 || ActualHeight <= 0) && retry)
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowIssue(issue, false)), System.Windows.Threading.DispatcherPriority.Loaded);
+                return;
+            }
+            var box = IssueBounds(issue);
+            if (!box.IsEmpty) ZoomTo(box);
+        }
+
+        /// <summary>Smallest span (ft) an issue is zoomed to: a column or a short wall is seen with what is around it.</summary>
+        public const double IssueMinSpan = 25;
+
+        /// <summary>
+        /// The plan area (ft) to show for an issue: what it names (wall and beam ends, columns, diaphragm and opening pieces),
+        /// else its place, at least <see cref="IssueMinSpan"/> across and a little more than the members.
+        /// </summary>
+        public Rect IssueBounds(BuildingModel.Checks.ModelIssue issue)
+        {
+            var box = Rect.Empty;
+            void Add(Point2 p) => box.Union(new Point(p.X, p.Y));
+            foreach (var id in issue.Ids)
+            {
+                switch (Building.Find(id))
+                {
+                    case Wall w: Add(w.Start); Add(w.End); break;
+                    case Beam bm: Add(bm.Start); Add(bm.End); break;
+                    case Column c: Add(c.At); break;
+                    case Level _: break;
+                    case ModelObject o:
+                        var pieces = LevelView.PiecesOf(o).ToList();
+                        foreach (var r in pieces) { Add(new Point2(r.X0, r.Y0)); Add(new Point2(r.X1, r.Y1)); }
+                        if (pieces.Count == 0) { var a = BuildingEdits.Anchor(Building, id); if (a != null) Add(a.Value); }
+                        break;
+                }
+            }
+            if (box.IsEmpty && issue.At != null) Add(issue.At.Value);
+            if (box.IsEmpty) return box;
+            double cx = box.X + box.Width / 2, cy = box.Y + box.Height / 2;
+            double spanX = Math.Max(box.Width * 1.3, IssueMinSpan), spanY = Math.Max(box.Height * 1.3, IssueMinSpan);
+            return new Rect(cx - spanX / 2, cy - spanY / 2, spanX, spanY);
         }
 
         /// <summary>Brings a point into the middle of the view when it is off screen (or near the edge).</summary>

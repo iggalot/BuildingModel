@@ -136,7 +136,7 @@ namespace BuildingModel.Sketch
                 var cs = ToScreen(c.At);
                 double half = Math.Max(4, 0.25 * Zoom);
                 ctx.DrawRectangle(BeamBrush, ColumnEdge, new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half));
-                Label(ctx, c.Id, cs + new Vector(half + 3, -half - 12), BeamBrush, 10, true);
+                Label(ctx, c.Id, cs + new Vector(half + 3, -half - 2 - 13 * LabelScale), BeamBrush, 10, true);
             }
             // the columns standing on this level (on the ground: run down to the foundation): an outlined square, "C1 base"
             foreach (var c in b.ColumnsStandingOn(level))
@@ -205,7 +205,7 @@ namespace BuildingModel.Sketch
         {
             var ft = new FormattedText(text ?? "", CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                                        new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, bold ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal),
-                                       size, brush, Dpi);
+                                       size * LabelScale, brush, Dpi);
             if (back) ctx.DrawRoundedRectangle(LabelBack, null, new Rect(at.X - 2, at.Y - 1, ft.Width + 4, ft.Height + 2), 2, 2);
             ctx.DrawText(ft, at);
         }
@@ -214,7 +214,7 @@ namespace BuildingModel.Sketch
         {
             var m = ToScreen(w.Middle);
             bool horizontal = w.Direction != WallDirection.SouthNorth;
-            var at = horizontal ? m + new Vector(-14, 5) : m + new Vector(6, -7);
+            var at = horizontal ? m + new Vector(-14, 5) : m + new Vector(6, -7 * LabelScale);
             Label(ctx, $"{w.Id}  {w.Length:0.##}'", at, w.IsShearWall ? B(Palette.ShearWall) : MutedBrush, 10);
         }
 
@@ -256,7 +256,7 @@ namespace BuildingModel.Sketch
         {
             var s = ToScreen(n.At);
             string text = n.Text.Length > 48 ? n.Text.Substring(0, 47) + "…" : n.Text;
-            var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, InkBrush, Dpi);
+            var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11 * LabelScale, InkBrush, Dpi);
             var box = new Rect(s.X + 8, s.Y - ft.Height - 10, ft.Width + 10, ft.Height + 6);
             ctx.DrawLine(NotePen, s, new Point(box.X, box.Bottom));
             ctx.DrawRoundedRectangle(NoteBrush, selected ? SelectPen : NotePen, box, 3, 3);

@@ -271,6 +271,12 @@ namespace BuildingModel.Sketch
         public double GridSpacing { get; set; } = 1;
         public bool ShowGrid { get; set; } = true;
         public bool ShowLabels { get; set; } = true;
+
+        /// <summary>
+        /// The size of the text on the plan (IDs, lengths, notes) against the base sizes; the apps' own overlays on the plan read it
+        /// too, so one number sets them all. 1.5: the labels were too small to read.
+        /// </summary>
+        public double LabelScale { get; set; } = 1.5;
         public bool ShowLevelBelow { get; set; } = true;
         public bool ShowIssues { get; set; } = true;
         public bool ShowUnderlay { get; set; } = true;

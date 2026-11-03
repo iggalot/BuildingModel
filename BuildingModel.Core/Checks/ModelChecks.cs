@@ -136,6 +136,7 @@ namespace BuildingModel.Checks
             BeamColumnChecks(b, issues);
             RoofChecks(b, Add);
             ShearWallChecks(b, Add);
+            OverlapChecks(b, Add);
             foreach (var i in issues) Locate(b, i);
             return issues;
         }
@@ -194,6 +195,62 @@ namespace BuildingModel.Checks
                     add(Severity.Error, "WallOverlap", $"Shear walls {a.Id} and {c.Id} overlap over {hi - lo:0.##} ft: the same wall is counted twice.", new[] { a.Id, c.Id });
                 }
         }
+
+        /// <summary>
+        /// Objects drawn twice (a warning: one is probably left over from an edit). A wall that is not a shear wall on another
+        /// wall (two shear walls: <c>WallOverlap</c>, an error); two beams on one level along the same line; two columns at one
+        /// point (within the bearing tolerance) over the same height, where a load may land on the one that carries nothing.
+        /// </summary>
+        private static void OverlapChecks(Building b, Action<Severity, string, string, string[]> add)
+        {
+            const double tol = 1e-6;
+            // walls (a shear wall pair is ShearWallChecks')
+            var walls = b.Walls.Where(w => w.Direction != WallDirection.NotOrthogonal && b.Level(w.BaseLevelId) != null && b.Level(w.TopLevelId) != null).ToList();
+            for (int i = 0; i < walls.Count; i++)
+                for (int j = i + 1; j < walls.Count; j++)
+                {
+                    var a = walls[i]; var c = walls[j];
+                    if ((a.IsShearWall && c.IsShearWall) || a.Direction != c.Direction) continue;
+                    bool we = a.Direction == WallDirection.WestEast;
+                    if (Math.Abs(we ? a.Start.Y - c.Start.Y : a.Start.X - c.Start.X) > tol) continue;
+                    double lo = Math.Max(Lo(a, we), Lo(c, we)), hi = Math.Min(Hi(a, we), Hi(c, we));
+                    if (hi - lo <= tol) continue;
+                    if (!HeightsOverlap(b.Level(a.BaseLevelId).Elevation, b.Level(a.TopLevelId).Elevation, b.Level(c.BaseLevelId).Elevation, b.Level(c.TopLevelId).Elevation)) continue;
+                    add(Severity.Warning, "WallsOverlap", $"Walls {a.Id} and {c.Id} overlap over {hi - lo:0.##} ft: one is drawn on top of the other. Delete one, or move it.", new[] { a.Id, c.Id });
+                }
+
+            // beams on one level along one line
+            var beams = b.Beams.Where(x => b.Level(x.LevelId) != null && x.Length > 0.1).ToList();
+            for (int i = 0; i < beams.Count; i++)
+                for (int j = i + 1; j < beams.Count; j++)
+                {
+                    var a = beams[i]; var c = beams[j];
+                    if (a.LevelId != c.LevelId) continue;
+                    double L = a.Length, ux = (a.End.X - a.Start.X) / L, uy = (a.End.Y - a.Start.Y) / L;
+                    double Off(Point2 p) => Math.Abs(ux * (p.Y - a.Start.Y) - uy * (p.X - a.Start.X)); // distance off a's line
+                    double Along(Point2 p) => ux * (p.X - a.Start.X) + uy * (p.Y - a.Start.Y);
+                    if (Off(c.Start) > BuildingEdits.BearingTolerance || Off(c.End) > BuildingEdits.BearingTolerance) continue;
+                    double t0 = Along(c.Start), t1 = Along(c.End);
+                    double over = Math.Min(L, Math.Max(t0, t1)) - Math.Max(0, Math.Min(t0, t1));
+                    if (over <= BuildingEdits.BearingTolerance) continue; // end to end is fine
+                    add(Severity.Warning, "BeamsOverlap", $"Beams {a.Id} and {c.Id} overlap over {over:0.##} ft on {b.Level(a.LevelId).Name}: one is drawn on top of the other. Delete one, or shorten it.", new[] { a.Id, c.Id });
+                }
+
+            // columns at one point
+            var cols = b.Columns.Where(x => b.Level(x.BaseLevelId) != null && b.Level(x.TopLevelId) != null).ToList();
+            for (int i = 0; i < cols.Count; i++)
+                for (int j = i + 1; j < cols.Count; j++)
+                {
+                    var a = cols[i]; var c = cols[j];
+                    if (Snapper.Dist(a.At, c.At) > BuildingEdits.BearingTolerance) continue;
+                    if (!HeightsOverlap(b.Level(a.BaseLevelId).Elevation, b.Level(a.TopLevelId).Elevation, b.Level(c.BaseLevelId).Elevation, b.Level(c.TopLevelId).Elevation)) continue;
+                    add(Severity.Warning, "ColumnsOverlap", $"Columns {a.Id} and {c.Id} stand at the same point ({a.At.X:0.##}, {a.At.Y:0.##}) over the same height: a load may land on " +
+                                                            "one and not the other. Delete one.", new[] { a.Id, c.Id });
+                }
+        }
+
+        /// <summary>Two elevation ranges share some height (end to end, one on the other, does not count).</summary>
+        private static bool HeightsOverlap(double a0, double a1, double c0, double c1) => Math.Min(a1, c1) - Math.Max(a0, c0) > 1e-6;
 
         private static double Lo(Wall w, bool we) => we ? Math.Min(w.Start.X, w.End.X) : Math.Min(w.Start.Y, w.End.Y);
         private static double Hi(Wall w, bool we) => we ? Math.Max(w.Start.X, w.End.X) : Math.Max(w.Start.Y, w.End.Y);

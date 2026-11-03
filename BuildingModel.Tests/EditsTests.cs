@@ -339,5 +339,33 @@ namespace BuildingModel.Tests
             b.AddNote(new Level { Id = "L99" }, 0, 0, "lost");
             Assert.IsTrue(ModelChecks.Run(b).Any(i => i.Code == "BadReference" && i.Message.StartsWith("Note")));
         }
+
+        [TestMethod]
+        public void Checks_ObjectsDrawnTwice_AreFlagged()
+        {
+            var b = TwoStory(out var l2, out var roof);
+            // two columns at one point over the same story; a third on top of them (end to end) is fine
+            var c1 = b.AddColumn(b.Ground, l2, 20, 15);
+            var c2 = b.AddColumn(b.Ground, l2, 20.1, 15);
+            b.AddColumn(l2, roof, 20, 15);
+            // two beams on one line overlapping 6 ft; a third end to end with the second is fine
+            var m1 = b.AddBeam(l2, 0, 10, 20, 10);
+            var m2 = b.AddBeam(l2, 14, 10, 30, 10);
+            b.AddBeam(l2, 30, 10, 40, 10);
+            // a partition drawn on the south shear wall
+            var p = b.AddWall(b.Ground, l2, 5, 0, 15, 0, shearWall: false);
+            var issues = ModelChecks.Run(b);
+
+            var col = issues.Single(i => i.Code == "ColumnsOverlap");
+            Assert.AreEqual(Severity.Warning, col.Severity);
+            CollectionAssert.AreEquivalent(new[] { c1.Id, c2.Id }, col.Ids);
+            var bm = issues.Single(i => i.Code == "BeamsOverlap");
+            CollectionAssert.AreEquivalent(new[] { m1.Id, m2.Id }, bm.Ids);
+            StringAssert.Contains(bm.Message, "6 ft");
+            var w = issues.Single(i => i.Code == "WallsOverlap");
+            Assert.IsTrue(w.Ids.Contains(p.Id));
+            StringAssert.Contains(w.Message, "10 ft");
+            Assert.AreEqual(Severity.Warning, w.Severity);
+        }
     }
 }

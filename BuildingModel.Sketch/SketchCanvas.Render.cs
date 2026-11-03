@@ -99,8 +99,13 @@ namespace BuildingModel.Sketch
             return brush;
         }
 
+        /// <summary>The wall, beam and column labels drawn this frame (screen bounds): a host keeps its own labels off them.</summary>
+        public IReadOnlyList<Rect> MemberLabelBoxes => memberLabels;
+        private readonly List<Rect> memberLabels = new List<Rect>();
+
         protected override void OnRender(DrawingContext ctx)
         {
+            memberLabels.Clear();
             var bounds = new Rect(0, 0, ActualWidth, ActualHeight);
             ctx.DrawRectangle(PaperBrush, null, bounds);
             if (Building == null || ActiveLevel == null) return;
@@ -129,14 +134,14 @@ namespace BuildingModel.Sketch
             foreach (var bm in b.BeamsOn(level))
             {
                 Line(ctx, BeamPen, bm.Start, bm.End);
-                Label(ctx, bm.Id, ToScreen(bm.Middle) + new Vector(4, 2), BeamBrush, 10, true);
+                BeamLabel(ctx, bm);
             }
             foreach (var c in b.ColumnsUnder(level))
             {
                 var cs = ToScreen(c.At);
                 double half = Math.Max(4, 0.25 * Zoom);
                 ctx.DrawRectangle(BeamBrush, ColumnEdge, new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half));
-                Label(ctx, c.Id, cs + new Vector(half + 3, -half - 2 - 13 * LabelScale), BeamBrush, 10, true);
+                ColumnLabel(ctx, cs, half, c.Id, above: true);
             }
             // the columns standing on this level (on the ground: run down to the foundation): an outlined square, "C1 base"
             foreach (var c in b.ColumnsStandingOn(level))
@@ -146,7 +151,7 @@ namespace BuildingModel.Sketch
                 ctx.DrawRectangle(Brushes.White, ColumnBasePen, new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half));
                 ctx.DrawLine(ColumnBasePen, new Point(cs.X - half, cs.Y - half), new Point(cs.X + half, cs.Y + half));
                 ctx.DrawLine(ColumnBasePen, new Point(cs.X - half, cs.Y + half), new Point(cs.X + half, cs.Y - half));
-                Label(ctx, $"{c.Id} base", cs + new Vector(half + 3, half + 1), BeamBrush, 10, true);
+                ColumnLabel(ctx, cs, half, $"{c.Id} base", above: false);
             }
 
             // selection under the labels
@@ -154,7 +159,7 @@ namespace BuildingModel.Sketch
 
             if (ShowLabels)
             {
-                foreach (var w in walls) WallLabel(ctx, w);
+                if (ShowWallLabels) foreach (var w in walls) WallLabel(ctx, w);
                 foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id, ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
                 foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true); }
             }
@@ -210,13 +215,76 @@ namespace BuildingModel.Sketch
             ctx.DrawText(ft, at);
         }
 
-        private void WallLabel(DrawingContext ctx, Wall w)
+        /// <summary>A wall's name and length along the wall, beside its middle (below a level wall, right of an upright one).</summary>
+        private void WallLabel(DrawingContext ctx, Wall w) =>
+            AlongLabel(ctx, $"{w.Id}  {w.Length:0.##}'", ToScreen(w.Start), ToScreen(w.End), w.IsShearWall ? B(Palette.ShearWall) : MutedBrush);
+
+        /// <summary>A beam's name along the beam, beside its middle.</summary>
+        private void BeamLabel(DrawingContext ctx, Beam bm) => AlongLabel(ctx, bm.Id, ToScreen(bm.Start), ToScreen(bm.End), BeamBrush);
+
+        /// <summary>
+        /// A label turned to run along the line a–b (screen), beside its middle: read left to right, or bottom to top on a
+        /// line running up the screen (as the walls' design tags), on the side below or right of the line.
+        /// </summary>
+        private void AlongLabel(DrawingContext ctx, string text, Point a, Point b, Brush brush)
         {
-            var m = ToScreen(w.Middle);
-            bool horizontal = w.Direction != WallDirection.SouthNorth;
-            var at = horizontal ? m + new Vector(-14, 5) : m + new Vector(6, -7 * LabelScale);
-            Label(ctx, $"{w.Id}  {w.Length:0.##}'", at, w.IsShearWall ? B(Palette.ShearWall) : MutedBrush, 10);
+            var along = b - a;
+            if (along.Length < 1) return;
+            double ang = MemberLabelAngle(along);
+            double t = ang * Math.PI / 180;
+            var n = new Vector(-Math.Sin(t), Math.Cos(t)); // the label's "down": below a level line, right of an upright one
+            var ft = new FormattedText(text ?? "", CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10 * LabelScale, brush, Dpi);
+            var c = a + along / 2 + n * (ft.Height / 2 + 4);
+            var box = new Rect(c.X - ft.Width / 2 - 2, c.Y - ft.Height / 2 - 1, ft.Width + 4, ft.Height + 2);
+            var turn = new RotateTransform(ang, c.X, c.Y);
+            ctx.PushTransform(turn);
+            ctx.DrawRoundedRectangle(LabelBack, null, box, 2, 2);
+            ctx.DrawText(ft, new Point(box.X + 2, box.Y + 1));
+            ctx.Pop();
+            memberLabels.Add(turn.TransformBounds(box));
         }
+
+        /// <summary>The angle (degrees, screen) a label along <paramref name="along"/> is turned by: within [-90, 90), so it reads left to right or bottom to top.</summary>
+        public static double MemberLabelAngle(Vector along)
+        {
+            double ang = Math.Atan2(along.Y, along.X) * 180 / Math.PI;
+            if (ang >= 90 - 1e-9) ang -= 180;
+            else if (ang < -90 - 1e-9) ang += 180;
+            return ang;
+        }
+
+        /// <summary>
+        /// A column's name set off its square (up and right; "C1 base" down and right) with a short leader ending in an arrow
+        /// at the square's corner.
+        /// </summary>
+        private void ColumnLabel(DrawingContext ctx, Point cs, double half, string text, bool above)
+        {
+            var ft = new FormattedText(text ?? "", CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10 * LabelScale, BeamBrush, Dpi);
+            var corner = cs + new Vector(half, above ? -half : half);
+            const double off = 11;
+            var at = new Point(corner.X + off, above ? corner.Y - off - ft.Height : corner.Y + off);
+            var box = new Rect(at.X - 2, at.Y - 1, ft.Width + 4, ft.Height + 2);
+            var end = new Point(box.Left, above ? box.Bottom : box.Top);
+            var d = corner - end;
+            d.Normalize();
+            var nrm = new Vector(-d.Y, d.X);
+            ctx.DrawLine(ColumnLeaderPen, end, corner - d * 4);
+            var head = new StreamGeometry();
+            using (var g = head.Open())
+            {
+                g.BeginFigure(corner, true, true);
+                g.PolyLineTo(new[] { corner - d * 5 + nrm * 2.5, corner - d * 5 - nrm * 2.5 }, true, false);
+            }
+            head.Freeze();
+            ctx.DrawGeometry(BeamBrush, null, head);
+            ctx.DrawRoundedRectangle(LabelBack, null, box, 2, 2);
+            ctx.DrawText(ft, at);
+            var reach = box;
+            reach.Union(corner);
+            memberLabels.Add(reach);
+        }
+
+        private static readonly Pen ColumnLeaderPen = P(BeamColor, 1);
 
         private void DrawSelected(DrawingContext ctx, ModelObject o)
         {

@@ -311,6 +311,9 @@ namespace BuildingModel.Sketch
         public bool Ortho { get; set; }
         public double GridSpacing { get; set; } = 1;
         public bool ShowGrid { get; set; } = true;
+
+        /// <summary>The walls' name and length along each wall ("W9  39'"); a host whose walls open a card when clicked may leave them off.</summary>
+        public bool ShowWallLabels { get; set; } = true;
         public bool ShowLabels { get; set; } = true;
 
         /// <summary>

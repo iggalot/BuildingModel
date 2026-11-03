@@ -48,7 +48,7 @@ namespace BuildingModel.Tests
             Assert.AreEqual("{\"Exposure\":\"C\"}", back.GetData("Wind"));
             Assert.AreEqual("Check the stair opening", back.Notes.Single().Text);
             Assert.AreEqual(5, back.Notes.Single().At.X, Tol);
-            Assert.AreEqual(5, ModelDocument.CurrentVersion);
+            Assert.AreEqual(6, ModelDocument.CurrentVersion);
         }
 
         [TestMethod]

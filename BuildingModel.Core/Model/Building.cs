@@ -49,12 +49,32 @@ namespace BuildingModel.Model
         public override string ToString() => $"{Name} ({Elevation:0.##} ft)";
     }
 
+    /// <summary>Which way a floor's joists (or a flat roof's rafters) span in plan. Auto: across the shorter side of the diaphragm.</summary>
+    public enum SpanDirection { Auto = 0, WestEast = 1, SouthNorth = 2 }
+
     /// <summary>A floor or roof on one level: rectangles that merge into one outline (it can cover part of the footprint).</summary>
     [DataContract]
     public sealed class Diaphragm : ModelObject
     {
         [DataMember(Order = 1)] public string LevelId { get; set; }
         [DataMember(Order = 2)] public List<Rect2> Pieces { get; set; } = new List<Rect2>();
+
+        /// <summary>
+        /// Which way its joists or rafters span (format version 6): they bear on the walls and beams across them. Auto: the
+        /// shorter way of the rectangle enclosing its pieces. A sloped roof's framing spans across the ridge instead.
+        /// </summary>
+        [DataMember(Order = 3, EmitDefaultValue = false)] public SpanDirection Span { get; set; }
+
+        /// <summary>The span to use: <see cref="Span"/>, or for Auto the shorter way of its pieces (W-E when square).</summary>
+        public SpanDirection EffectiveSpan
+        {
+            get
+            {
+                if (Span != SpanDirection.Auto || Pieces == null || Pieces.Count == 0) return Span == SpanDirection.Auto ? SpanDirection.WestEast : Span;
+                double w = Pieces.Max(p => p.X1) - Pieces.Min(p => p.X0), h = Pieces.Max(p => p.Y1) - Pieces.Min(p => p.Y0);
+                return w <= h ? SpanDirection.WestEast : SpanDirection.SouthNorth;
+            }
+        }
     }
 
     /// <summary>

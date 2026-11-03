@@ -507,6 +507,14 @@ namespace BuildingModel.Edits
             return true;
         }
 
+        /// <summary>Sets which way a diaphragm's joists or rafters span (Auto: its shorter way). False when nothing changed.</summary>
+        public static bool SetDiaphragmSpan(Building b, string diaphragmId, SpanDirection span)
+        {
+            if (!(b.Find(diaphragmId) is Diaphragm d) || d.Span == span) return false;
+            d.Span = span;
+            return true;
+        }
+
         /// <summary>
         /// The standard story names, bottom up: Level 2, Level 3, ..., and Roof for the top of two or more (one story: Level 2).
         /// A name the user gave (anything but "Level n" or "Roof") stays.

@@ -345,17 +345,32 @@ namespace BuildingModel.Sketch
             Rect box = r == null ? Rect.Empty : new Rect(r.Value.X0, r.Value.Y0, r.Value.Width, r.Value.Height);
             if (u != null && u.Visible && ShowUnderlay) { var ub = u.WorldBounds(); if (!ub.IsEmpty) box.Union(ub); }
             if (box.IsEmpty) box = new Rect(0, 0, 60, 40);
-            ZoomTo(box);
+            ZoomTo(box, FitPadding?.Invoke() ?? new Thickness());
         }
 
-        public void ZoomTo(Rect world)
+        /// <summary>
+        /// Room (pixels) the host's own marks need around the drawing when it is fitted (Zoom to the drawing): labels are a
+        /// fixed size on screen, so a margin in feet cannot hold them at every zoom.
+        /// </summary>
+        public Func<Thickness> FitPadding { get; set; }
+
+        public void ZoomTo(Rect world) => ZoomTo(world, new Thickness());
+
+        /// <summary>Fits <paramref name="world"/> in view, inside <paramref name="pad"/> pixels on each side.</summary>
+        public void ZoomTo(Rect world, Thickness pad)
         {
-            double w = ActualWidth, h = ActualHeight;
-            if (w <= 0 || h <= 0) return;
+            double w = ActualWidth - pad.Left - pad.Right, h = ActualHeight - pad.Top - pad.Bottom;
+            if (ActualWidth <= 0 || ActualHeight <= 0) return;
+            if (w < ActualWidth * 0.4) w = ActualWidth * 0.4;    // never squeeze the drawing to nothing for its labels
+            if (h < ActualHeight * 0.4) h = ActualHeight * 0.4;
             viewSet = true;
-            Zoom = Math.Max(0.05, Math.Min(w / (Math.Max(world.Width, 1) * 1.2), h / (Math.Max(world.Height, 1) * 1.2)));
-            OriginX = w / 2 - (world.X + world.Width / 2) * Zoom;
-            OriginY = h / 2 + (world.Y + world.Height / 2) * Zoom;
+            double m = pad.Left + pad.Right + pad.Top + pad.Bottom > 0 ? 1.05 : 1.2; // the padding is the margin when given
+            Zoom = Math.Max(0.05, Math.Min(w / (Math.Max(world.Width, 1) * m), h / (Math.Max(world.Height, 1) * m)));
+            double cx = pad.Left + w / 2, cy = pad.Top + h / 2;
+            if (w + pad.Left + pad.Right > ActualWidth) cx = ActualWidth / 2;
+            if (h + pad.Top + pad.Bottom > ActualHeight) cy = ActualHeight / 2;
+            OriginX = cx - (world.X + world.Width / 2) * Zoom;
+            OriginY = cy + (world.Y + world.Height / 2) * Zoom;
             InvalidateVisual();
         }
 

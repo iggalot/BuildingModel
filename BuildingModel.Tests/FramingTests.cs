@@ -91,6 +91,33 @@ namespace BuildingModel.Tests
         }
 
         [TestMethod]
+        public void TopLoads_SetRoundTripAndClear()
+        {
+            var b = TwoStory(out var first, out _, out var l2, out _);
+            Assert.IsNull(Building.TopLoadOf(first, l2.Id));
+            Assert.IsTrue(BuildingEdits.SetTopLoad(b, first.Id, l2.Id, new WallTopLoad { Dead = 300, Live = 400, Snow = -5 }));
+            var t = Building.TopLoadOf(first, l2.Id);
+            Assert.AreEqual(300, t.Dead);
+            Assert.AreEqual(0, t.Snow);                                   // negative taken as 0
+            Assert.IsFalse(BuildingEdits.SetTopLoad(b, first.Id, l2.Id, new WallTopLoad { Dead = 300, Live = 400 }));
+
+            var back = ModelFile.FromJson(ModelFile.ToJson(new ModelDocument { Building = b })).Building;
+            Assert.AreEqual(400, Building.TopLoadOf(back.Walls.Single(x => x.Id == first.Id), l2.Id).Live);
+
+            Assert.IsTrue(BuildingEdits.SetTopLoad(b, first.Id, l2.Id, new WallTopLoad()));
+            Assert.IsNull(first.TopLoads);
+        }
+
+        [TestMethod]
+        public void Defaults_StudLumberAndDeflection()
+        {
+            var d = new ModelDefaults();
+            Assert.AreEqual("DouglasFirLarch", d.StudSpecies);
+            Assert.AreEqual("No2", d.StudGrade);
+            Assert.AreEqual(240, d.WallDeflectionLimit);
+        }
+
+        [TestMethod]
         public void Version4File_ReadsTheStudDefaults()
         {
             const string v4 = "{\"Format\":\"BuildingModel\",\"Version\":4,\"Revision\":1,\"Building\":{\"Name\":\"Old\"," +

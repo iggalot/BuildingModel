@@ -508,6 +508,27 @@ namespace BuildingModel.Edits
         }
 
         /// <summary>
+        /// Sets the gravity loads on a wall's top on the story under <paramref name="topLevelId"/> (plf; negative values
+        /// are taken as 0). All zero removes the entry (and the dictionary with its last one). False when there is no such
+        /// wall or nothing changed.
+        /// </summary>
+        public static bool SetTopLoad(Building b, string wallId, string topLevelId, WallTopLoad load)
+        {
+            if (!(b.Find(wallId) is Wall w) || string.IsNullOrEmpty(topLevelId)) return false;
+            double P(double v) => v > 0 ? v : 0;
+            var next = new WallTopLoad { Dead = P(load?.Dead ?? 0), Live = P(load?.Live ?? 0), RoofLive = P(load?.RoofLive ?? 0), Snow = P(load?.Snow ?? 0) };
+            var now = Building.TopLoadOf(w, topLevelId) ?? new WallTopLoad();
+            if (now.SameAs(next)) return false;
+            if (next.IsEmpty)
+            {
+                w.TopLoads.Remove(topLevelId);
+                if (w.TopLoads.Count == 0) w.TopLoads = null;
+            }
+            else (w.TopLoads = w.TopLoads ?? new Dictionary<string, WallTopLoad>())[topLevelId] = next;
+            return true;
+        }
+
+        /// <summary>
         /// The standard story names, bottom up: Level 2, Level 3, ..., and Roof for the top of two or more (one story: Level 2).
         /// A name the user gave (anything but "Level n" or "Roof") stays.
         /// </summary>

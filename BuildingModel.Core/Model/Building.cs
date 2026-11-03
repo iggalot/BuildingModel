@@ -85,6 +85,23 @@ namespace BuildingModel.Model
         public StudFraming Clone() => (StudFraming)MemberwiseClone();
     }
 
+    /// <summary>
+    /// The gravity loads on top of a wall on one story (plf, service level, format version 5): dead, floor live, roof live
+    /// and snow (as ASCE 7 gives it). Entered by hand for now; the gravity load path will write them.
+    /// </summary>
+    [DataContract]
+    public sealed class WallTopLoad
+    {
+        [DataMember(Order = 1, EmitDefaultValue = false)] public double Dead { get; set; }
+        [DataMember(Order = 2, EmitDefaultValue = false)] public double Live { get; set; }
+        [DataMember(Order = 3, EmitDefaultValue = false)] public double RoofLive { get; set; }
+        [DataMember(Order = 4, EmitDefaultValue = false)] public double Snow { get; set; }
+
+        public bool IsEmpty => !(Dead > 0) && !(Live > 0) && !(RoofLive > 0) && !(Snow > 0);
+        public WallTopLoad Clone() => (WallTopLoad)MemberwiseClone();
+        public bool SameAs(WallTopLoad o) => o != null && Dead == o.Dead && Live == o.Live && RoofLive == o.RoofLive && Snow == o.Snow;
+    }
+
     /// <summary>A wall in plan (W-E or S-N) from its base level to its top level; it can span several levels.</summary>
     [DataContract]
     public sealed class Wall : ModelObject
@@ -101,6 +118,9 @@ namespace BuildingModel.Model
         /// defaults (<see cref="ModelDefaults"/>, <see cref="Building.StudSizeOf"/>).
         /// </summary>
         [DataMember(Order = 6, EmitDefaultValue = false)] public Dictionary<string, StudFraming> Framing { get; set; }
+
+        /// <summary>The gravity loads on the wall's top on a story, by the story's top level ID as <see cref="Framing"/> (none: not entered).</summary>
+        [DataMember(Order = 7, EmitDefaultValue = false)] public Dictionary<string, WallTopLoad> TopLoads { get; set; }
 
         public double Length => new Segment2(Start, End).Length;
 
@@ -222,6 +242,15 @@ namespace BuildingModel.Model
         [DataMember(Order = 9)] public string StudSizeAbove { get; set; }
         [DataMember(Order = 10)] public double StudSpacing { get; set; }
 
+        /// <summary>
+        /// The studs' lumber (format version 5): species ("DouglasFirLarch", "HemFir", "SprucePineFir", "SouthernPine") and
+        /// grade ("No2", "No3", "Stud"), as the NDS library names them; and the walls' deflection limit L/n under wind
+        /// (IBC Table 1604.3: 240 with brittle finishes).
+        /// </summary>
+        [DataMember(Order = 11)] public string StudSpecies { get; set; }
+        [DataMember(Order = 12)] public string StudGrade { get; set; }
+        [DataMember(Order = 13)] public double WallDeflectionLimit { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -237,6 +266,9 @@ namespace BuildingModel.Model
             StudSizeFirstStory = "2x6";
             StudSizeAbove = "2x4";
             StudSpacing = 16;
+            StudSpecies = "DouglasFirLarch";
+            StudGrade = "No2";
+            WallDeflectionLimit = 240;
         }
 
         [OnDeserializing]
@@ -342,6 +374,10 @@ namespace BuildingModel.Model
         public string StudSizeOf(Wall w, string topLevelId) =>
             OwnFraming(w, topLevelId)?.StudSize is string s && s.Length > 0 ? s
             : IsFirstStory(topLevelId) ? Defaults.StudSizeFirstStory : Defaults.StudSizeAbove;
+
+        /// <summary>The gravity loads on the wall's top on the story under <paramref name="topLevelId"/>, or null (none entered).</summary>
+        public static WallTopLoad TopLoadOf(Wall w, string topLevelId) =>
+            w?.TopLoads != null && topLevelId != null && w.TopLoads.TryGetValue(topLevelId, out var t) ? t : null;
 
         /// <summary>The wall's stud spacing (in) on the story: its own, else the project's.</summary>
         public double StudSpacingOf(Wall w, string topLevelId) =>

@@ -185,7 +185,7 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(new Point2(0, 14), back.Beams[0].End);
             Assert.AreEqual(1, back.Columns.Count);
             Assert.AreEqual(l2.Id, back.Columns[0].TopLevelId);
-            Assert.AreEqual(4, ModelDocument.CurrentVersion);
+            Assert.IsTrue(ModelDocument.CurrentVersion >= 4); // beams and columns came in version 4
         }
 
         [TestMethod]

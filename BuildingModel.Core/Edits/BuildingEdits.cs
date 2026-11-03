@@ -485,6 +485,28 @@ namespace BuildingModel.Edits
             return true;
         }
 
+        // ------------------------------------------------------------------ wall framing
+
+        /// <summary>
+        /// Sets a wall's own stud size and spacing on the story under <paramref name="topLevelId"/>. A null or empty size
+        /// and a spacing of 0 (or less) mean "the project's default"; an entry left with neither is removed (and the
+        /// dictionary with its last entry). False when there is no such wall or nothing changed.
+        /// </summary>
+        public static bool SetStudFraming(Building b, string wallId, string topLevelId, string studSize, double spacing)
+        {
+            if (!(b.Find(wallId) is Wall w) || string.IsNullOrEmpty(topLevelId)) return false;
+            var now = Building.OwnFraming(w, topLevelId) ?? new StudFraming();
+            var next = new StudFraming { StudSize = string.IsNullOrEmpty(studSize) ? null : studSize, StudSpacing = spacing > 0 ? spacing : 0 };
+            if (now.StudSize == next.StudSize && now.StudSpacing == next.StudSpacing) return false;
+            if (next.IsEmpty)
+            {
+                w.Framing.Remove(topLevelId);
+                if (w.Framing.Count == 0) w.Framing = null;
+            }
+            else (w.Framing = w.Framing ?? new Dictionary<string, StudFraming>())[topLevelId] = next;
+            return true;
+        }
+
         /// <summary>
         /// The standard story names, bottom up: Level 2, Level 3, ..., and Roof for the top of two or more (one story: Level 2).
         /// A name the user gave (anything but "Level n" or "Roof") stays.

@@ -71,6 +71,20 @@ namespace BuildingModel.Model
 
     public enum WallDirection { WestEast, SouthNorth, NotOrthogonal }
 
+    /// <summary>A wall's studs on one story, where they differ from the project's defaults (null or 0: the default).</summary>
+    [DataContract]
+    public sealed class StudFraming
+    {
+        /// <summary>Nominal stud size ("2x4", "2x6", "2x8"); the plates are as wide.</summary>
+        [DataMember(Order = 1, EmitDefaultValue = false)] public string StudSize { get; set; }
+
+        /// <summary>Stud spacing on centre (in).</summary>
+        [DataMember(Order = 2, EmitDefaultValue = false)] public double StudSpacing { get; set; }
+
+        public bool IsEmpty => string.IsNullOrEmpty(StudSize) && !(StudSpacing > 0);
+        public StudFraming Clone() => (StudFraming)MemberwiseClone();
+    }
+
     /// <summary>A wall in plan (W-E or S-N) from its base level to its top level; it can span several levels.</summary>
     [DataContract]
     public sealed class Wall : ModelObject
@@ -80,6 +94,13 @@ namespace BuildingModel.Model
         [DataMember(Order = 3)] public string BaseLevelId { get; set; }
         [DataMember(Order = 4)] public string TopLevelId { get; set; }
         [DataMember(Order = 5)] public bool IsShearWall { get; set; } = true;
+
+        /// <summary>
+        /// The wall's own framing on a story (format version 5), by the ID of the level at the story's top (the level it
+        /// carries, as the apps key their per-story data). A story not listed, or a value not set, takes the project's
+        /// defaults (<see cref="ModelDefaults"/>, <see cref="Building.StudSizeOf"/>).
+        /// </summary>
+        [DataMember(Order = 6, EmitDefaultValue = false)] public Dictionary<string, StudFraming> Framing { get; set; }
 
         public double Length => new Segment2(Start, End).Length;
 
@@ -196,6 +217,11 @@ namespace BuildingModel.Model
         [DataMember(Order = 6)] public double NewWidth { get; set; }
         [DataMember(Order = 7)] public int NewStories { get; set; }
 
+        /// <summary>Wall studs (format version 5): the nominal size on the first story (on the foundation) and above, and the spacing (in).</summary>
+        [DataMember(Order = 8)] public string StudSizeFirstStory { get; set; }
+        [DataMember(Order = 9)] public string StudSizeAbove { get; set; }
+        [DataMember(Order = 10)] public double StudSpacing { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -208,6 +234,9 @@ namespace BuildingModel.Model
             NewLength = 60;
             NewWidth = 40;
             NewStories = 1;
+            StudSizeFirstStory = "2x6";
+            StudSizeAbove = "2x4";
+            StudSpacing = 16;
         }
 
         [OnDeserializing]
@@ -293,6 +322,30 @@ namespace BuildingModel.Model
 
         /// <summary>The object with this ID (the building itself for its own ID), or null.</summary>
         public ModelObject Find(string id) => id == null ? null : id == Id ? this : Objects().FirstOrDefault(o => o.Id == id);
+
+        // ------------------------------------------------------------------ wall framing (the wall's own, else the project's)
+
+        /// <summary>The story under <paramref name="topLevelId"/> stands on the lowest level (the foundation).</summary>
+        public bool IsFirstStory(string topLevelId)
+        {
+            var top = Levels.FirstOrDefault(l => l.Id == topLevelId);
+            if (top == null) return false;
+            var below = Levels.Where(l => l.Elevation < top.Elevation).OrderByDescending(l => l.Elevation).FirstOrDefault();
+            return below != null && !Levels.Any(l => l.Elevation < below.Elevation);
+        }
+
+        /// <summary>The wall's own framing on the story under <paramref name="topLevelId"/>, or null.</summary>
+        public static StudFraming OwnFraming(Wall w, string topLevelId) =>
+            w?.Framing != null && topLevelId != null && w.Framing.TryGetValue(topLevelId, out var f) ? f : null;
+
+        /// <summary>The wall's stud size on the story under <paramref name="topLevelId"/>: its own, else the project's default for the story.</summary>
+        public string StudSizeOf(Wall w, string topLevelId) =>
+            OwnFraming(w, topLevelId)?.StudSize is string s && s.Length > 0 ? s
+            : IsFirstStory(topLevelId) ? Defaults.StudSizeFirstStory : Defaults.StudSizeAbove;
+
+        /// <summary>The wall's stud spacing (in) on the story: its own, else the project's.</summary>
+        public double StudSpacingOf(Wall w, string topLevelId) =>
+            OwnFraming(w, topLevelId)?.StudSpacing is double s && s > 0 ? s : Defaults.StudSpacing;
 
         // ------------------------------------------------------------------ editing helpers (each returns what it added)
 

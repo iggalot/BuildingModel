@@ -513,10 +513,21 @@ namespace BuildingModel.Sketch
             ctx.DrawText(ft, new Point(16, 12));
         }
 
+        /// <summary>The scale bar's length (feet), the shortest round length at least 60 px long; 0: none.</summary>
+        private double ScaleBarFeet => new double[] { 1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000 }.FirstOrDefault(n => n * Zoom >= 60);
+
+        /// <summary>Where the scale bar and its "10 ft" are drawn (screen), for a host keeping its labels off it; Empty: none.</summary>
+        public Rect ScaleBarArea()
+        {
+            double len = ScaleBarFeet;
+            if (len == 0) return Rect.Empty;
+            double px = len * Zoom;
+            return new Rect(ActualWidth - px - 58, ActualHeight - 44, px + 58, 18);
+        }
+
         private void DrawScaleBar(DrawingContext ctx)
         {
-            double[] nice = { 1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000 };
-            double len = nice.FirstOrDefault(n => n * Zoom >= 60);
+            double len = ScaleBarFeet;
             if (len == 0) return;
             // bottom right, a row above the grid's numbers (ActualHeight - 15): clear of them and of the line tags along the bottom left
             double px = len * Zoom, x = ActualWidth - px - 56, y = ActualHeight - 34;

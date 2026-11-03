@@ -518,7 +518,8 @@ namespace BuildingModel.Sketch
             double[] nice = { 1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000 };
             double len = nice.FirstOrDefault(n => n * Zoom >= 60);
             if (len == 0) return;
-            double px = len * Zoom, x = 12, y = ActualHeight - 14;
+            // bottom right, a row above the grid's numbers (ActualHeight - 15): clear of them and of the line tags along the bottom left
+            double px = len * Zoom, x = ActualWidth - px - 56, y = ActualHeight - 34;
             var pen = P(Palette.Muted, 1.5);
             ctx.DrawLine(pen, new Point(x, y), new Point(x + px, y));
             ctx.DrawLine(pen, new Point(x, y - 4), new Point(x, y + 1));

@@ -12,7 +12,7 @@ using BuildingModel.Model;
 namespace BuildingModel.Sketch
 {
     /// <summary>
-    /// The building in 3D from what was drawn: each level's net diaphragm as a slab (openings show as holes), the walls
+    /// The building in 3D from what was drawn: each level's net diaphragm as a slab (openings show as holes), the roof, the walls
     /// from their base to their top (shear walls blue). Drag to turn, wheel to zoom, double-click to fit. Plan x east,
     /// y north and z up become 3D X, -Z and Y.
     /// </summary>
@@ -59,9 +59,14 @@ namespace BuildingModel.Sketch
             };
             MouseLeftButtonUp += (s, e) => { dragFrom = null; ReleaseMouseCapture(); };
             MouseWheel += (s, e) => { distance *= e.Delta > 0 ? 0.88 : 1 / 0.88; PlaceCamera(); };
+            // fitted again once it has a size (shown in a page or window after Show), until the user turns or zooms
+            SizeChanged += (s, e) => { if (!moved) Fit(); };
+            PreviewMouseDown += (s, e) => moved = true;
+            PreviewMouseWheel += (s, e) => moved = true;
         }
 
         private Building building;
+        private bool moved; // the user has turned or zoomed: keep their view
 
         /// <summary>Builds the 3D model again (after every change).</summary>
         public void Show(Building b)
@@ -108,6 +113,7 @@ namespace BuildingModel.Sketch
                     double h = ColumnSize / 2;
                     group.Children.Add(Box(c.At.X - h, c.At.Y - h, lo.Elevation, c.At.X + h, c.At.Y + h, hi.Elevation - SlabThickness - BeamDepthUnder(b, hi, c.At), timber));
                 }
+                AddRoof(group, b);
                 var ext = b.Footprint();
                 if (!ext.IsEmpty)
                 {
@@ -120,15 +126,22 @@ namespace BuildingModel.Sketch
             if (first) Fit(); else PlaceCamera();
         }
 
+        /// <summary>The 3D model's extent (3D X east, Y up, -Z north), for checks.</summary>
+        public Rect3D ModelBounds => content.Content?.Bounds ?? Rect3D.Empty;
+
         public void Fit()
         {
             if (building == null) return;
             var fp = building.Footprint();
             var bb = fp.IsEmpty ? new Rect2(0, 0, 60, 40) : fp.Bounds;
-            double h = building.Levels.Count == 0 ? 10 : Math.Max(10, building.Levels.Max(l => l.Elevation));
+            double h = building.Levels.Count == 0 ? 10 : Math.Max(10, Math.Max(building.Levels.Max(l => l.Elevation), building.RidgeHeight()));
             target = new Point3D((bb.X0 + bb.X1) / 2, h / 2, -(bb.Y0 + bb.Y1) / 2);
-            double size = Math.Max(Math.Max(bb.Width, bb.Height), h);
-            distance = size * 2.6;
+            // far enough that the building's bounding sphere fits both across and up (FieldOfView is the horizontal angle)
+            double radius = 0.5 * Math.Sqrt(bb.Width * bb.Width + bb.Height * bb.Height + h * h);
+            double aspect = ActualWidth > 0 && ActualHeight > 0 ? ActualHeight / ActualWidth : 0.7;
+            double half = camera.FieldOfView / 2 * Math.PI / 180;
+            double halfV = Math.Atan(Math.Tan(half) * aspect);
+            distance = 1.1 * radius / Math.Sin(Math.Min(half, halfV));
             PlaceCamera();
         }
 
@@ -139,6 +152,57 @@ namespace BuildingModel.Sketch
             camera.Position = target + dir * distance;
             camera.LookDirection = -dir * distance;
             camera.UpDirection = new Vector3D(0, 1, 0);
+        }
+
+        /// <summary>The model's roof (Building.Roof) over the top level: a gable or hip from the roof plan widened by the eaves,
+        /// rising to the ridge height; a flat roof's parapet as a low wall around the plan.</summary>
+        public const double ParapetThickness = 0.5;
+
+        private static void AddRoof(Model3DGroup group, Building b)
+        {
+            var roof = b.Roof;
+            var plan = b.RoofPlan();
+            if (roof == null || plan.Width <= 0 || plan.Height <= 0) return;
+            double eave = b.EaveHeight();
+            var roofMat = Material(Color.FromArgb(0xE8, 0x7A, 0x6A, 0x5A));
+            if (!roof.IsSloped)
+            {
+                if (roof.Parapet <= 0) return;
+                double t = ParapetThickness, z1 = eave + roof.Parapet;
+                group.Children.Add(Box(plan.X0, plan.Y0, eave, plan.X1, plan.Y0 + t, z1, roofMat));
+                group.Children.Add(Box(plan.X0, plan.Y1 - t, eave, plan.X1, plan.Y1, z1, roofMat));
+                group.Children.Add(Box(plan.X0, plan.Y0, eave, plan.X0 + t, plan.Y1, z1, roofMat));
+                group.Children.Add(Box(plan.X1 - t, plan.Y0, eave, plan.X1, plan.Y1, z1, roofMat));
+                return;
+            }
+            double rise = b.RoofRise();
+            if (rise <= 0) return;
+            double o = Math.Max(0, roof.Overhang), slope = Math.Tan(roof.Pitch * Math.PI / 180);
+            double x0 = plan.X0 - o, x1 = plan.X1 + o, y0 = plan.Y0 - o, y1 = plan.Y1 + o;
+            double ze = eave - o * slope, zr = eave + rise; // the eaves' edge drops below the wall top by the overhang's slope
+            bool alongX = b.EffectiveRidge() != RidgeAxis.SouthNorth;
+            // work in a frame where the ridge runs along u (x when W-E); v across it
+            double u0 = alongX ? x0 : y0, u1 = alongX ? x1 : y1, v0 = alongX ? y0 : x0, v1 = alongX ? y1 : x1, vc = (v0 + v1) / 2;
+            Point3D P(double u, double v, double z) => alongX ? new Point3D(u, z, -v) : new Point3D(v, z, -u);
+            double ua = u0, ub = u1;
+            if (roof.Shape == RoofShape.Hip)
+            {
+                double half = (v1 - v0) / 2;
+                ua = Math.Min(u0 + half, (u0 + u1) / 2); ub = Math.Max(u1 - half, (u0 + u1) / 2);
+            }
+            var mesh = new MeshGeometry3D();
+            void Face(params Point3D[] pts)
+            {
+                int i = mesh.Positions.Count;
+                foreach (var p in pts) mesh.Positions.Add(p);
+                for (int k = 1; k + 1 < pts.Length; k++) { mesh.TriangleIndices.Add(i); mesh.TriangleIndices.Add(i + k); mesh.TriangleIndices.Add(i + k + 1); }
+            }
+            Face(P(u0, v0, ze), P(u1, v0, ze), P(ub, vc, zr), P(ua, vc, zr));   // one slope
+            Face(P(u1, v1, ze), P(u0, v1, ze), P(ua, vc, zr), P(ub, vc, zr));   // the other
+            Face(P(u0, v1, ze), P(u0, v0, ze), P(ua, vc, zr));                  // the ends: a hip's slopes, a gable's triangles
+            Face(P(u1, v0, ze), P(u1, v1, ze), P(ub, vc, zr));
+            mesh.Freeze();
+            group.Children.Add(new GeometryModel3D(mesh, roofMat) { BackMaterial = roofMat });
         }
 
         private static Material Material(Color c)

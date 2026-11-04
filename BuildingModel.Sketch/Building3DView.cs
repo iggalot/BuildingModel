@@ -31,6 +31,12 @@ namespace BuildingModel.Sketch
         /// <summary>The level shown in the plan, drawn stronger.</summary>
         public string HighlightLevelId { get; set; }
 
+        /// <summary>The building drawn see-through (the host's own models in <see cref="Extra"/> are the subject).</summary>
+        public bool Ghost { get; set; }
+
+        /// <summary>The host's own models, drawn with the building's on every <see cref="Show"/> (3D X east, Y up, -Z north).</summary>
+        public Func<Building, Model3D> Extra { get; set; }
+
         public Building3DView()
         {
             Background = new LinearGradientBrush(Color.FromRgb(0xF7, 0xF9, 0xFC), Color.FromRgb(0xE4, 0xE9, 0xF0), 90);
@@ -74,6 +80,9 @@ namespace BuildingModel.Sketch
             bool first = building == null;
             building = b;
             var group = new Model3DGroup();
+            ghost = Ghost;
+            // the host's first: see-through surfaces drawn after them
+            if (b != null && Extra != null) { var x = Extra(b); if (x != null) group.Children.Add(x); }
             if (b != null)
             {
                 foreach (var l in b.LevelsBottomUp.Where(l => l.Elevation > 0))
@@ -205,8 +214,17 @@ namespace BuildingModel.Sketch
             group.Children.Add(new GeometryModel3D(mesh, roofMat) { BackMaterial = roofMat });
         }
 
+        /// <summary>While <see cref="Show"/> builds: <see cref="Ghost"/> (one view builds at a time, on the UI thread).</summary>
+        [ThreadStatic] private static bool ghost;
+
         private static Material Material(Color c)
         {
+            if (ghost)
+            {
+                // see-through and grey: the host's own colours are the subject
+                byte g = (byte)Math.Min(255, 0.3 * c.R + 0.59 * c.G + 0.11 * c.B + 40);
+                c = Color.FromArgb((byte)(c.A * 0.16), g, g, g);
+            }
             var m = new DiffuseMaterial(new SolidColorBrush(c));
             m.Freeze();
             return m;

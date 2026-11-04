@@ -250,6 +250,9 @@ namespace BuildingModel.Model
         [DataMember(Order = 12)] public string StudGrade { get; set; }
         [DataMember(Order = 13)] public double WallDeflectionLimit { get; set; }
 
+        /// <summary>The roof's rafters or trusses: their spacing (in), for the wind uplift on each one's tie to the wall.</summary>
+        [DataMember(Order = 14)] public double RafterSpacing { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -268,6 +271,7 @@ namespace BuildingModel.Model
             StudSpecies = "DouglasFirLarch";
             StudGrade = "No2";
             WallDeflectionLimit = 240;
+            RafterSpacing = 24;
         }
 
         [OnDeserializing]

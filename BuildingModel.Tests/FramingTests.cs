@@ -97,6 +97,7 @@ namespace BuildingModel.Tests
             Assert.AreEqual("DouglasFirLarch", d.StudSpecies);
             Assert.AreEqual("No2", d.StudGrade);
             Assert.AreEqual(240, d.WallDeflectionLimit);
+            Assert.AreEqual(24, d.RafterSpacing);                           // in., the roof framing (wind uplift on the ties)
         }
 
         [TestMethod]
@@ -112,6 +113,7 @@ namespace BuildingModel.Tests
             Assert.AreEqual(9, b.Defaults.StoryHeight);
             Assert.AreEqual("2x6", b.StudSizeOf(w, "L2"));
             Assert.AreEqual(16, b.StudSpacingOf(w, "L2"));
+            Assert.AreEqual(24, b.Defaults.RafterSpacing);                  // missing from the file: the starting value
         }
     }
 }

@@ -53,7 +53,7 @@ namespace BuildingModel.Sketch
             switch (o)
             {
                 case Wall w: WallProps(w); break;
-                case Diaphragm d: RectProps(d, d.Pieces); Levels("Level", d.LevelId, id => d.LevelId = id); break;
+                case Diaphragm d: RectProps(d, d.Pieces); Levels("Level", d.LevelId, id => d.LevelId = id); SpanProps(d); break;
                 case Opening op:
                     RectProps(op, op.Pieces);
                     Levels("Open from", op.BottomLevelId, id => op.BottomLevelId = id);
@@ -128,6 +128,32 @@ namespace BuildingModel.Sketch
             Number("Width", r.Width, v => { if (v > 0) pieces[0] = new Rect2(pieces[0].X0, pieces[0].Y0, pieces[0].X0 + v, pieces[0].Y1); });
             Number("Depth", r.Height, v => { if (v > 0) pieces[0] = new Rect2(pieces[0].X0, pieces[0].Y0, pieces[0].X1, pieces[0].Y0 + v); });
             Hint($"{Region.Of(pieces).Area:0} sq ft" + (pieces.Count > 1 ? $" in {pieces.Count} rectangles" : ""));
+        }
+
+        /// <summary>Which way the diaphragm's joists or rafters span (the gravity load path's tributary widths).</summary>
+        private void SpanProps(Diaphragm d)
+        {
+            var roof = B.RoofLevel();
+            bool slopedRoof = roof != null && d.LevelId == roof.Id && B.Roof != null && B.Roof.IsSloped;
+            string Dir(SpanDirection s) => s == SpanDirection.WestEast ? "W-E" : "S-N";
+            var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1), IsEnabled = !slopedRoof };
+            var choices = new[]
+            {
+                (SpanDirection.Auto, $"Auto ({Dir(new Diaphragm { Pieces = d.Pieces }.EffectiveSpan)}, the shorter way)"),
+                (SpanDirection.WestEast, "W-E (bearing on N-S walls)"),
+                (SpanDirection.SouthNorth, "S-N (bearing on W-E walls)"),
+            };
+            foreach (var (s, text) in choices) c.Items.Add(new ComboBoxItem { Content = text, Tag = s, IsSelected = s == d.Span });
+            c.SelectionChanged += (o, e) =>
+            {
+                if (c.SelectedItem is ComboBoxItem i && (SpanDirection)i.Tag != d.Span)
+                    sketch.Edit($"{d.Id} spans {((SpanDirection)i.Tag == SpanDirection.Auto ? "the shorter way" : Dir((SpanDirection)i.Tag))}.", b => BuildingEdits.SetDiaphragmSpan(b, d.Id, (SpanDirection)i.Tag));
+            };
+            System.Windows.Automation.AutomationProperties.SetName(c, "Span");
+            Row("Span", c);
+            Hint(slopedRoof
+                ? $"The sloped roof's rafters span across the ridge ({(B.EffectiveRidge() == RidgeAxis.WestEast ? "S-N" : "W-E")}); this setting is not used."
+                : "Which way the joists or rafters run: each bearing wall or beam takes half the span on each side.");
         }
 
         private void LevelProps(Level l)

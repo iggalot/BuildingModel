@@ -160,7 +160,7 @@ namespace BuildingModel.Sketch
             if (ShowLabels)
             {
                 if (ShowWallLabels) foreach (var w in walls) WallLabel(ctx, w);
-                foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id, ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
+                foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
                 foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true); }
             }
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
@@ -204,6 +204,16 @@ namespace BuildingModel.Sketch
         public Rect ScreenRect(Rect2 r) => new Rect(ToScreen(new Point2(r.X0, r.Y1)), ToScreen(new Point2(r.X1, r.Y0)));
 
         private double Dpi => VisualTreeHelper.GetDpi(this).PixelsPerDip;
+
+        /// <summary>" · spans W-E" after a diaphragm's ID (a sloped roof's rafters: across the ridge).</summary>
+        private static string SpanTag(Building b, Diaphragm d)
+        {
+            var roof = b.RoofLevel();
+            SpanDirection s = roof != null && d.LevelId == roof.Id && b.Roof != null && b.Roof.IsSloped
+                ? (b.EffectiveRidge() == RidgeAxis.WestEast ? SpanDirection.SouthNorth : SpanDirection.WestEast)
+                : d.EffectiveSpan;
+            return s == SpanDirection.WestEast ? " · spans W-E" : " · spans S-N";
+        }
 
         /// <summary>A label at a screen point (top-left), on a light back when asked.</summary>
         public void Label(DrawingContext ctx, string text, Point at, Brush brush, double size = 11, bool back = true, bool bold = false)

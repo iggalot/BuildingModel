@@ -37,6 +37,46 @@ namespace BuildingModel.Sketch
         /// <summary>The host's own models, drawn with the building's on every <see cref="Show"/> (3D X east, Y up, -Z north).</summary>
         public Func<Building, Model3D> Extra { get; set; }
 
+        /// <summary>
+        /// Draw only this element (a wall, beam or column ID), whole and solid, with the host's <see cref="Extra"/>: no slabs, roof
+        /// or ground (a free body). Null: the whole building.
+        /// </summary>
+        public string Only { get; set; }
+
+        /// <summary>With <see cref="Only"/>: draw the element itself (see-through), or leave it to the host (its framing drawn in <see cref="Extra"/>).</summary>
+        public bool DrawOnly { get; set; } = true;
+
+        /// <summary>A wall, beam or column was clicked (not dragged): its ID; null when the click was on none of them.</summary>
+        public event Action<string> Picked;
+
+        /// <summary>
+        /// The host's say on a click, before <see cref="Picked"/>: given the click (in this view's pixels), it answers true when it
+        /// takes it (e.g. it is near one of its own <see cref="Extra"/> models, found with <see cref="Project"/>). Its models win
+        /// over the see-through building in front of them; a click it takes raises no <see cref="Picked"/>.
+        /// </summary>
+        public Func<Point, bool> PickScreen { get; set; }
+
+        /// <summary>Where a 3D point (X east, Y up, -Z north) is drawn in this view (pixels); null when behind the camera.</summary>
+        public Point? Project(Point3D p)
+        {
+            var v = OrbitMath.Project(camera, p, new Size(viewport.ActualWidth, viewport.ActualHeight));
+            return v.HasValue ? viewport.TranslatePoint(v.Value, this) : (Point?)null;
+        }
+
+        private Point? panFrom;
+        private Grid stage; // the view under the bottom bar: the mouse turns, pans and zooms it
+
+        private void EndPan()
+        {
+            panFrom = null;
+            Cursor = null;
+            if (dragFrom == null) stage.ReleaseMouseCapture();
+        }
+
+        // what each drawn element's model is, for picking
+        private readonly Dictionary<Model3D, string> ids = new Dictionary<Model3D, string>();
+        private Point? downAt;
+
         public Building3DView()
         {
             Background = new LinearGradientBrush(Color.FromRgb(0xF7, 0xF9, 0xFC), Color.FromRgb(0xE4, 0xE9, 0xF0), 90);
@@ -47,14 +87,30 @@ namespace BuildingModel.Sketch
             lights.Children.Add(new DirectionalLight(Color.FromRgb(0x50, 0x50, 0x50), new Vector3D(0.6, -0.3, 0.8)));
             viewport.Children.Add(new ModelVisual3D { Content = lights });
             viewport.Children.Add(content);
-            Child = new Grid { Children = { viewport, new TextBlock { Text = "Drag to turn · wheel to zoom · double-click to fit", Foreground = Ui.Muted, FontSize = 11, Margin = new Thickness(10, 8, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top } } };
-            MouseLeftButtonDown += (s, e) =>
+            // the view over the bottom bar (VIEW, zoom to all, the mouse hint), laid out as on every plan; the mouse works on the view only
+            stage = new Grid { Background = Brushes.Transparent, Children = { viewport, new Canvas { IsHitTestVisible = false, Children = { northLabel } } } };
+            var bar = Ui.ViewBar(Fit, Ui.View3DHint, "Fit the model in the view (or double-click). The wheel zooms at the pointer, the middle button pans.");
+            DockPanel.SetDock(bar, Dock.Bottom);
+            Child = new DockPanel { Children = { bar, stage } };
+            stage.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.ClickCount == 2) { Fit(); return; }
                 dragFrom = e.GetPosition(this);
-                CaptureMouse();
+                downAt = dragFrom;
+                stage.CaptureMouse();
             };
-            MouseMove += (s, e) =>
+            // a click that did not turn the view picks what is under it
+            stage.MouseLeftButtonUp += (s, e) =>
+            {
+                var p = e.GetPosition(this);
+                if (downAt is Point d && Math.Abs(p.X - d.X) < 4 && Math.Abs(p.Y - d.Y) < 4)
+                {
+                    if (PickScreen != null && PickScreen(p)) { downAt = null; return; }
+                    Picked?.Invoke(HitsAt(e.GetPosition(viewport)).element);
+                }
+                downAt = null;
+            };
+            stage.MouseMove += (s, e) =>
             {
                 if (dragFrom == null) return;
                 var p = e.GetPosition(this);
@@ -63,12 +119,36 @@ namespace BuildingModel.Sketch
                 dragFrom = p;
                 PlaceCamera();
             };
-            MouseLeftButtonUp += (s, e) => { dragFrom = null; ReleaseMouseCapture(); };
-            MouseWheel += (s, e) => { distance *= e.Delta > 0 ? 0.88 : 1 / 0.88; PlaceCamera(); };
+            stage.MouseLeftButtonUp += (s, e) => { dragFrom = null; stage.ReleaseMouseCapture(); };
+            // the middle button pans (double-click: fit), the wheel zooms toward the pointer: as on the plan
+            stage.MouseDown += (s, e) =>
+            {
+                if (e.ChangedButton != MouseButton.Middle) return;
+                if (e.ClickCount == 2) { Fit(); return; }
+                panFrom = e.GetPosition(this);
+                stage.CaptureMouse();
+                Cursor = Cursors.SizeAll;
+                e.Handled = true;
+            };
+            stage.MouseMove += (s, e) =>
+            {
+                if (panFrom == null) return;
+                if (e.MiddleButton != MouseButtonState.Pressed) { EndPan(); return; }
+                var p = e.GetPosition(this);
+                target = OrbitMath.Pan(camera, target, distance, p.X - panFrom.Value.X, p.Y - panFrom.Value.Y, viewport.ActualWidth);
+                panFrom = p;
+                PlaceCamera();
+            };
+            stage.MouseUp += (s, e) => { if (e.ChangedButton == MouseButton.Middle) EndPan(); };
+            stage.MouseWheel += (s, e) =>
+            {
+                (target, distance) = OrbitMath.ZoomAt(camera, target, distance, e.Delta > 0 ? 0.88 : 1 / 0.88, e.GetPosition(viewport), new Size(viewport.ActualWidth, viewport.ActualHeight));
+                PlaceCamera();
+            };
             // fitted again once it has a size (shown in a page or window after Show), until the user turns or zooms
-            SizeChanged += (s, e) => { if (!moved) Fit(); };
-            PreviewMouseDown += (s, e) => moved = true;
-            PreviewMouseWheel += (s, e) => moved = true;
+            SizeChanged += (s, e) => { if (!moved) Fit(); else PlaceCamera(); };
+            stage.PreviewMouseDown += (s, e) => moved = true;
+            stage.PreviewMouseWheel += (s, e) => moved = true;
         }
 
         private Building building;
@@ -80,21 +160,27 @@ namespace BuildingModel.Sketch
             bool first = building == null;
             building = b;
             var group = new Model3DGroup();
+            ids.Clear();
+            string only = Only;
+            // a free body: the element see-through grey too (a little stronger), the host's forces on it seen through it
             ghost = Ghost;
+            ghostAlpha = only == null ? 0.16 : 0.32;
+            bool Drawn(string id) => only == null || (id == only && DrawOnly);
             // the host's first: see-through surfaces drawn after them
             if (b != null && Extra != null) { var x = Extra(b); if (x != null) group.Children.Add(x); }
             if (b != null)
             {
-                foreach (var l in b.LevelsBottomUp.Where(l => l.Elevation > 0))
-                {
-                    bool hi = l.Id == HighlightLevelId;
-                    var mat = Material(hi ? Color.FromArgb(0xE8, 0xC9, 0xA8, 0x62) : Color.FromArgb(0xB0, 0xE2, 0xD2, 0xAE));
-                    foreach (var c in b.NetDiaphragm(l).Cells())
-                        group.Children.Add(Box(c.X0, c.Y0, l.Elevation - SlabThickness, c.X1, c.Y1, l.Elevation, mat));
-                }
+                if (only == null)
+                    foreach (var l in b.LevelsBottomUp.Where(l => l.Elevation > 0))
+                    {
+                        bool hi = l.Id == HighlightLevelId;
+                        var mat = Material(hi ? Color.FromArgb(0xE8, 0xC9, 0xA8, 0x62) : Color.FromArgb(0xB0, 0xE2, 0xD2, 0xAE));
+                        foreach (var c in b.NetDiaphragm(l).Cells())
+                            group.Children.Add(Box(c.X0, c.Y0, l.Elevation - SlabThickness, c.X1, c.Y1, l.Elevation, mat));
+                    }
                 var shear = Material(Color.FromArgb(0xF0, 0x1D, 0x4E, 0xD8));
                 var other = Material(Color.FromArgb(0xD0, 0xB8, 0xBD, 0xC6));
-                foreach (var w in b.Walls)
+                foreach (var w in b.Walls.Where(w => Drawn(w.Id)))
                 {
                     var lo = b.Level(w.BaseLevelId);
                     var top = b.Level(w.TopLevelId);
@@ -103,36 +189,99 @@ namespace BuildingModel.Sketch
                     var r = w.Direction == WallDirection.SouthNorth
                         ? new Rect2(w.Start.X - t, w.Start.Y, w.End.X + t, w.End.Y)
                         : new Rect2(w.Start.X, w.Start.Y - t, w.End.X, w.End.Y + t);
-                    group.Children.Add(Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, top.Elevation - SlabThickness, w.IsShearWall ? shear : other));
+                    Add(group, Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, top.Elevation - SlabThickness, w.IsShearWall ? shear : other), w.Id);
                 }
                 // beams: a box under the floor they frame; columns: a square post from base to top (rectangles for now)
                 var timber = Material(Color.FromArgb(0xF0, 0x8B, 0x4A, 0x14));
-                foreach (var bm in b.Beams)
+                foreach (var bm in b.Beams.Where(x => Drawn(x.Id)))
                 {
                     var l = b.Level(bm.LevelId);
                     if (l == null || bm.Length <= 0) continue;
                     double top = l.Elevation - SlabThickness;
-                    group.Children.Add(Along(bm.Start, bm.End, BeamWidth, top - BeamDepth, top, timber));
+                    Add(group, Along(bm.Start, bm.End, BeamWidth, top - BeamDepth, top, timber), bm.Id);
                 }
-                foreach (var c in b.Columns)
+                foreach (var c in b.Columns.Where(x => Drawn(x.Id)))
                 {
                     var lo = b.Level(c.BaseLevelId);
                     var hi = b.Level(c.TopLevelId);
                     if (lo == null || hi == null || !(hi.Elevation > lo.Elevation)) continue;
                     double h = ColumnSize / 2;
-                    group.Children.Add(Box(c.At.X - h, c.At.Y - h, lo.Elevation, c.At.X + h, c.At.Y + h, hi.Elevation - SlabThickness - BeamDepthUnder(b, hi, c.At), timber));
+                    Add(group, Box(c.At.X - h, c.At.Y - h, lo.Elevation, c.At.X + h, c.At.Y + h, ColumnTop(b, c), timber), c.Id);
                 }
-                AddRoof(group, b);
-                var ext = b.Footprint();
-                if (!ext.IsEmpty)
+                if (only == null)
                 {
-                    var bb = ext.Bounds;
-                    var ground = Material(Color.FromArgb(0x60, 0x9C, 0xA3, 0xAF));
-                    group.Children.Add(Box(bb.X0 - 5, bb.Y0 - 5, -0.2, bb.X1 + 5, bb.Y1 + 5, 0, ground));
+                    AddRoof(group, b);
+                    var ext = b.Footprint();
+                    if (!ext.IsEmpty)
+                    {
+                        var bb = ext.Bounds;
+                        var ground = Material(Color.FromArgb(0x60, 0x9C, 0xA3, 0xAF));
+                        group.Children.Add(Box(bb.X0 - 5, bb.Y0 - 5, -0.2, bb.X1 + 5, bb.Y1 + 5, 0, ground));
+                    }
                 }
             }
+            // the north arrow, the building model's one (as in every view): off the building's north-west corner, or a free body's
+            var north = b == null ? null : only == null ? NorthArrow.For(b) : ElementBounds(b, only) is Rect2 eb ? NorthArrow.For(eb) : null;
+            if (north != null) group.Children.Add(NorthArrowDrawing.Model(north, p => NorthArrowDrawing.OnGround(p)));
+            northAt = north == null ? (Point3D?)null : NorthArrowDrawing.OnGround(north.LabelAt);
             content.Content = group;
-            if (first) Fit(); else PlaceCamera();
+            if (first || only != shownOnly) Fit(); else PlaceCamera();
+            shownOnly = only;
+        }
+
+        private readonly TextBlock northLabel = NorthArrowDrawing.NewLabel();
+        private Point3D? northAt;
+
+        /// <summary>A wall's, beam's or column's plan extent (ft).</summary>
+        private static Rect2? ElementBounds(Building b, string id)
+        {
+            Rect2 Of(Point2 a, Point2 c) => new Rect2(Math.Min(a.X, c.X), Math.Min(a.Y, c.Y), Math.Max(a.X, c.X), Math.Max(a.Y, c.Y));
+            var w = b.Walls.FirstOrDefault(x => x.Id == id);
+            if (w != null) return Of(w.Start, w.End);
+            var bm = b.Beams.FirstOrDefault(x => x.Id == id);
+            if (bm != null) return Of(bm.Start, bm.End);
+            var c = b.Columns.FirstOrDefault(x => x.Id == id);
+            if (c != null) return Of(new Point2(c.At.X - 0.5, c.At.Y - 0.5), new Point2(c.At.X + 0.5, c.At.Y + 0.5));
+            return null;
+        }
+
+        private string shownOnly;
+
+        /// <summary>The top of a column as drawn (ft): the level it reaches, less the slab and any beam it stops under.</summary>
+        public static double ColumnTop(Building b, Column c)
+        {
+            var hi = b?.Level(c.TopLevelId);
+            return hi == null ? 0 : hi.Elevation - SlabThickness - BeamDepthUnder(b, hi, c.At);
+        }
+
+        /// <summary>The top of a wall as drawn (ft): under the slab of the level it reaches.</summary>
+        public static double WallTop(Building b, Wall w) => (b?.Level(w.TopLevelId)?.Elevation ?? 0) - SlabThickness;
+
+        /// <summary>The top of a beam as drawn (ft): under its level's slab (it is <see cref="BeamDepth"/> deep).</summary>
+        public static double BeamTop(Building b, Beam bm) => (b?.Level(bm.LevelId)?.Elevation ?? 0) - SlabThickness;
+
+        private void Add(Model3DGroup g, GeometryModel3D m, string id)
+        {
+            g.Children.Add(m);
+            if (id != null) ids[m] = id;
+        }
+
+        /// <summary>The wall, beam or column under a point of the viewport (the nearest drawn one), or null.</summary>
+        /// <summary>Under a point: the nearest wall, beam or column (null: none) and every other model, nearest first (the host's).</summary>
+        private (string element, List<Model3D> extras) HitsAt(Point p)
+        {
+            string hit = null;
+            var extras = new List<Model3D>();
+            VisualTreeHelper.HitTest(viewport, null, r =>
+            {
+                if (r is RayMeshGeometry3DHitTestResult m && m.ModelHit is Model3D model)
+                {
+                    if (ids.TryGetValue(model, out var id)) { if (hit == null) hit = id; }
+                    else extras.Add(model);
+                }
+                return HitTestResultBehavior.Continue;
+            }, new PointHitTestParameters(p));
+            return (hit, extras);
         }
 
         /// <summary>The 3D model's extent (3D X east, Y up, -Z north), for checks.</summary>
@@ -141,13 +290,28 @@ namespace BuildingModel.Sketch
         public void Fit()
         {
             if (building == null) return;
+            if (Only != null && content.Content != null && !content.Content.Bounds.IsEmpty)
+            {
+                // a free body: the element and the host's forces on it
+                var r = content.Content.Bounds;
+                target = new Point3D(r.X + r.SizeX / 2, r.Y + r.SizeY / 2, r.Z + r.SizeZ / 2);
+                double rad = 0.5 * Math.Sqrt(r.SizeX * r.SizeX + r.SizeY * r.SizeY + r.SizeZ * r.SizeZ);
+                double asp = viewport.ActualWidth > 0 && viewport.ActualHeight > 0 ? viewport.ActualHeight / viewport.ActualWidth : 0.7;
+                double hf = camera.FieldOfView / 2 * Math.PI / 180;
+                distance = 1.1 * Math.Max(1, rad) / Math.Sin(Math.Min(hf, Math.Atan(Math.Tan(hf) * asp)));
+                PlaceCamera();
+                return;
+            }
             var fp = building.Footprint();
             var bb = fp.IsEmpty ? new Rect2(0, 0, 60, 40) : fp.Bounds;
+            // the north arrow kept in view
+            if (NorthArrow.For(building)?.Extent() is Rect2 ne)
+                bb = new Rect2(Math.Min(bb.X0, ne.X0), Math.Min(bb.Y0, ne.Y0), Math.Max(bb.X1, ne.X1), Math.Max(bb.Y1, ne.Y1));
             double h = building.Levels.Count == 0 ? 10 : Math.Max(10, Math.Max(building.Levels.Max(l => l.Elevation), building.RidgeHeight()));
             target = new Point3D((bb.X0 + bb.X1) / 2, h / 2, -(bb.Y0 + bb.Y1) / 2);
             // far enough that the building's bounding sphere fits both across and up (FieldOfView is the horizontal angle)
             double radius = 0.5 * Math.Sqrt(bb.Width * bb.Width + bb.Height * bb.Height + h * h);
-            double aspect = ActualWidth > 0 && ActualHeight > 0 ? ActualHeight / ActualWidth : 0.7;
+            double aspect = viewport.ActualWidth > 0 && viewport.ActualHeight > 0 ? viewport.ActualHeight / viewport.ActualWidth : 0.7;
             double half = camera.FieldOfView / 2 * Math.PI / 180;
             double halfV = Math.Atan(Math.Tan(half) * aspect);
             distance = 1.1 * radius / Math.Sin(Math.Min(half, halfV));
@@ -161,6 +325,7 @@ namespace BuildingModel.Sketch
             camera.Position = target + dir * distance;
             camera.LookDirection = -dir * distance;
             camera.UpDirection = new Vector3D(0, 1, 0);
+            NorthArrowDrawing.Pin(northLabel, northAt is Point3D n ? OrbitMath.Project(camera, n, new Size(viewport.ActualWidth, viewport.ActualHeight)) : null);
         }
 
         /// <summary>The model's roof (Building.Roof) over the top level: a gable or hip from the roof plan widened by the eaves,
@@ -216,6 +381,7 @@ namespace BuildingModel.Sketch
 
         /// <summary>While <see cref="Show"/> builds: <see cref="Ghost"/> (one view builds at a time, on the UI thread).</summary>
         [ThreadStatic] private static bool ghost;
+        [ThreadStatic] private static double ghostAlpha;
 
         private static Material Material(Color c)
         {
@@ -223,7 +389,7 @@ namespace BuildingModel.Sketch
             {
                 // see-through and grey: the host's own colours are the subject
                 byte g = (byte)Math.Min(255, 0.3 * c.R + 0.59 * c.G + 0.11 * c.B + 40);
-                c = Color.FromArgb((byte)(c.A * 0.16), g, g, g);
+                c = Color.FromArgb((byte)(c.A * ghostAlpha), g, g, g);
             }
             var m = new DiffuseMaterial(new SolidColorBrush(c));
             m.Freeze();

@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -106,6 +107,38 @@ namespace BuildingModel.Sketch
         /// <summary>A thin vertical line between groups of buttons.</summary>
         public static FrameworkElement Separator() =>
             new Border { Width = 1, Margin = new Thickness(5, 4, 5, 4), Background = Line };
+
+        /// <summary>What the mouse does on a plan, the same words in every app.</summary>
+        public const string PlanHint = "Wheel to zoom at the pointer · middle-drag to pan · double-click the middle button to fit";
+
+        /// <summary>What the mouse does in a 3D view, the same words in every app.</summary>
+        public const string View3DHint = "Drag to turn · middle-drag to pan · wheel to zoom at the pointer · double-click to fit";
+
+        /// <summary>The zoom-to-all button: the same icon and place (first in the bottom bar, after VIEW) in every view.</summary>
+        public static Button ZoomAllButton(Action zoom, string tip = "Zoom to the drawing (Z, or double-click the middle button). The wheel zooms, the middle button pans.")
+        {
+            var b = Button("", "", tip, (s, e) => zoom());
+            b.Content = Icon(Icons16.ZoomAll);
+            return b;
+        }
+
+        /// <summary>
+        /// The bottom bar of a view, laid out as on the Building Model's plan: VIEW, the zoom-to-all button, then a line of text
+        /// (the mouse hint). Dock it at the bottom of the view.
+        /// </summary>
+        public static Border ViewBar(Action zoom, string hint, string tip = null)
+        {
+            var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            sp.Children.Add(GroupLabel("View"));
+            sp.Children.Add(tip == null ? ZoomAllButton(zoom) : ZoomAllButton(zoom, tip));
+            sp.Children.Add(Separator());
+            var text = new TextBlock { Text = hint, Foreground = Muted, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+            var dp = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(sp, System.Windows.Controls.Dock.Left);
+            dp.Children.Add(sp);
+            dp.Children.Add(text);
+            return new Border { Child = dp, Background = Bar, BorderBrush = Line, BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(4, 3, 8, 3) };
+        }
 
         /// <summary>A thin horizontal line between groups of a vertical toolbar.</summary>
         public static FrameworkElement HSeparator() =>

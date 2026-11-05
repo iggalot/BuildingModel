@@ -88,8 +88,7 @@ namespace BuildingModel.Sketch
 
             // BOTTOM: the view, then the typed point, the message and the coordinates
             viewBar.Children.Add(Ui.GroupLabel("View"));
-            var zoom = Ui.Button("", "", "Zoom to the drawing (Z, or double-click the middle button). The wheel zooms, the middle button pans.", (s, e) => Canvas.ZoomExtents());
-            zoom.Content = Ui.Icon(Ui.Icons16.ZoomAll);
+            var zoom = Ui.ZoomAllButton(Canvas.ZoomExtents);   // the same button, in the same place, as every view's bottom bar (Ui.ViewBar)
             viewBar.Children.Add(zoom);
             viewBar.Children.Add(Ui.Separator());
             snap = Ui.Toggle("", "Snap", "Object snaps (F3): points (columns, beam ends; hold-downs in Shear Walls), ends, middles, crossings, square to, grid", (s, e) => Canvas.ToggleSnap());

@@ -111,6 +111,8 @@ namespace BuildingModel.Sketch
             if (Building == null || ActiveLevel == null) return;
             if (ShowGrid) DrawGrid(ctx);
             if (ShowUnderlay) PlanOf(ActiveLevel)?.Draw(ctx, this);
+            // the north arrow, the building model's one (as in every view), under the drawing
+            if (ShowNorth) NorthArrowDrawing.Draw(ctx, NorthArrow.For(Building), ToScreen, VisualTreeHelper.GetDpi(this).PixelsPerDip);
             DrawUnder?.Invoke(this, new SketchDrawEventArgs(ctx, this));
 
             var b = Building;
@@ -160,9 +162,10 @@ namespace BuildingModel.Sketch
             if (ShowLabels)
             {
                 if (ShowWallLabels) foreach (var w in walls) WallLabel(ctx, w);
-                foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
+                if (!ShowSpans) foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
                 foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true); }
             }
+            if (ShowSpans) foreach (var d in b.DiaphragmsOn(level)) SpanMarker(ctx, b, d, ShowLabels);
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
 
             DrawOver?.Invoke(this, new SketchDrawEventArgs(ctx, this));
@@ -206,13 +209,86 @@ namespace BuildingModel.Sketch
         private double Dpi => VisualTreeHelper.GetDpi(this).PixelsPerDip;
 
         /// <summary>" · spans W-E" after a diaphragm's ID (a sloped roof's rafters: across the ridge).</summary>
-        private static string SpanTag(Building b, Diaphragm d)
+        private static string SpanTag(Building b, Diaphragm d) => SpanOf(b, d) == SpanDirection.WestEast ? " · spans W-E" : " · spans S-N";
+
+        /// <summary>The way a diaphragm's framing runs: a sloped roof's rafters across the ridge, else its own span (Auto: the shorter way).</summary>
+        private static SpanDirection SpanOf(Building b, Diaphragm d)
         {
             var roof = b.RoofLevel();
-            SpanDirection s = roof != null && d.LevelId == roof.Id && b.Roof != null && b.Roof.IsSloped
+            return roof != null && d.LevelId == roof.Id && b.Roof != null && b.Roof.IsSloped
                 ? (b.EffectiveRidge() == RidgeAxis.WestEast ? SpanDirection.SouthNorth : SpanDirection.WestEast)
                 : d.EffectiveSpan;
-            return s == SpanDirection.WestEast ? " · spans W-E" : " · spans S-N";
+        }
+
+        private static readonly Pen SpanPen = P(Palette.DiaphragmEdge, 1.6);
+        private static readonly Brush SpanInk = B(Palette.DiaphragmEdge);
+
+        /// <summary>
+        /// A framing zone's span marker, as on a framing plan: in the middle of its largest piece, a line the way its joists or
+        /// rafters run with an arrowhead and a bearing bar at each end, and its ID with the span ("D2 · joists S-N", "auto" where
+        /// the shorter way was taken, "rafters" across a sloped roof's ridge).
+        /// </summary>
+        private void SpanMarker(DrawingContext ctx, Building b, Diaphragm d, bool label)
+        {
+            if (d.Pieces == null || d.Pieces.Count == 0) return;
+            var r = d.Pieces.OrderByDescending(p => p.Width * p.Height).First();
+            if (r.IsEmpty) return;
+            var span = SpanOf(b, d);
+            bool we = span == SpanDirection.WestEast;
+            var sr = ScreenRect(r);
+            double room = we ? sr.Width : sr.Height;
+            double half = Math.Min(70, Math.Max(14, 0.3 * room));
+            // in the middle, or slid across the span to the first place clear of the walls and beams (an interior wall down the middle)
+            double hp = half / Math.Max(1e-9, Zoom);
+            var lines = b.WallsUnder(b.Level(d.LevelId)).Select(w => new Segment2(w.Start, w.End))
+                         .Concat(b.BeamsOn(b.Level(d.LevelId)).Select(m => new Segment2(m.Start, m.End))).ToList();
+            double clear = Math.Max(1.5, 14 / Math.Max(1e-9, Zoom));
+            Point2 mid = new Point2((r.X0 + r.X1) / 2, (r.Y0 + r.Y1) / 2);
+            foreach (double f in new[] { 0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8 })
+            {
+                var m = we ? new Point2((r.X0 + r.X1) / 2, r.Y0 + (r.Y1 - r.Y0) * f) : new Point2(r.X0 + (r.X1 - r.X0) * f, (r.Y0 + r.Y1) / 2);
+                bool ok = true;
+                for (int k = 0; k <= 4 && ok; k++)
+                {
+                    double t = -hp + 2 * hp * k / 4;
+                    var p = we ? new Point2(m.X + t, m.Y) : new Point2(m.X, m.Y + t);
+                    ok = lines.All(s => Snapper.DistanceToSegment(p, s) >= clear);
+                }
+                if (ok) { mid = m; break; }
+            }
+            var c = ToScreen(mid);
+            var u = we ? new Vector(1, 0) : new Vector(0, 1);
+            var n = new Vector(-u.Y, u.X);
+            var a = c - u * half; var e = c + u * half;
+            ctx.DrawLine(SpanPen, a, e);
+            double head = Math.Min(8, half * 0.35), bar = Math.Min(9, half * 0.4);
+            foreach (var (tip, dir) in new[] { (a, -u), (e, u) })
+            {
+                var g = new StreamGeometry();
+                using (var gc = g.Open())
+                {
+                    gc.BeginFigure(tip, true, true);
+                    gc.PolyLineTo(new[] { tip - dir * head + n * head * 0.5, tip - dir * head - n * head * 0.5 }, true, false);
+                }
+                g.Freeze();
+                ctx.DrawGeometry(SpanInk, null, g);
+                ctx.DrawLine(SpanPen, tip + n * bar, tip - n * bar);     // the bearing: the wall or beam it lands on
+            }
+            if (!label) return;
+            var roof = b.RoofLevel();
+            bool rafters = roof != null && d.LevelId == roof.Id;
+            bool across = rafters && b.Roof != null && b.Roof.IsSloped;
+            string text = $"{d.Id} · {(rafters ? "rafters" : "joists")} {(we ? "W-E" : "S-N")}" + (across ? " (across the ridge)" : d.Span == SpanDirection.Auto ? " (auto)" : "");
+            // beside the marker where it is clear of the walls, beams and wall labels: right, left, under, over
+            var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10 * LabelScale, SpanInk, Dpi);
+            double tw = ft.Width + 4, th = ft.Height + 2;
+            var tries = we
+                ? new[] { new Point(c.X - tw / 2, c.Y + bar + 3), new Point(c.X - tw / 2, c.Y - bar - th - 3), new Point(e.X + 6, c.Y - th / 2), new Point(a.X - tw - 6, c.Y - th / 2) }
+                : new[] { new Point(c.X + bar + 4, c.Y - th / 2), new Point(c.X - bar - tw - 4, c.Y - th / 2), new Point(c.X - tw / 2, e.Y + 6), new Point(c.X - tw / 2, a.Y - th - 6) };
+            var blocks = lines.Select(s => { var p = ToScreen(s.A); var q = ToScreen(s.B); var rr = new Rect(p, q); rr.Inflate(4, 4); return rr; }).Concat(memberLabels).ToList();
+            var at = tries.FirstOrDefault(t => !blocks.Any(x => x.IntersectsWith(new Rect(t.X, t.Y, tw, th))));
+            if (at == default(Point)) at = tries[0];
+            Label(ctx, text, new Point(at.X + 2, at.Y + 1), SpanInk, 10, true);
         }
 
         /// <summary>A label at a screen point (top-left), on a light back when asked.</summary>

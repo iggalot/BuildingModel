@@ -316,6 +316,9 @@ namespace BuildingModel.Sketch
         public bool ShowWallLabels { get; set; } = true;
         public bool ShowLabels { get; set; } = true;
 
+        /// <summary>A span marker in every framing zone (each floor or roof diaphragm): the way its joists or rafters run, as on a framing plan.</summary>
+        public bool ShowSpans { get; set; } = true;
+
         /// <summary>
         /// The size of the text on the plan (IDs, lengths, notes) against the base sizes; the apps' own overlays on the plan read it
         /// too, so one number sets them all. 1.2: the original was too small to read, 1.5 crowded the plan.
@@ -388,9 +391,15 @@ namespace BuildingModel.Sketch
             var u = PlanOf(ActiveLevel);
             Rect box = r == null ? Rect.Empty : new Rect(r.Value.X0, r.Value.Y0, r.Value.Width, r.Value.Height);
             if (u != null && u.Visible && ShowUnderlay) { var ub = u.WorldBounds(); if (!ub.IsEmpty) box.Union(ub); }
+            // the north arrow kept in view
+            var n = ShowNorth && !box.IsEmpty ? NorthArrow.For(Building) : null;
+            if (n != null) { var e = n.Extent(); box.Union(new Rect(e.X0, e.Y0, e.Width, e.Height)); }
             if (box.IsEmpty) box = new Rect(0, 0, 60, 40);
             ZoomTo(box, FitPadding?.Invoke() ?? new Thickness());
         }
+
+        /// <summary>Draw the building model's north arrow (off the north-west corner, as in every view). On by default.</summary>
+        public bool ShowNorth { get; set; } = true;
 
         /// <summary>
         /// Room (pixels) the host's own marks need around the drawing when it is fitted (Zoom to the drawing): labels are a

@@ -77,6 +77,15 @@ namespace BuildingModel.Sketch
         private readonly Dictionary<Model3D, string> ids = new Dictionary<Model3D, string>();
         private Point? downAt;
 
+        private readonly FrameworkElement viewBar;
+
+        /// <summary>The bar under the view (VIEW, zoom to all, the mouse hint). Off for a small preview (the hub's, New project's): the mouse still turns, zooms and double-click fits.</summary>
+        public bool ShowViewBar
+        {
+            get => viewBar.Visibility == Visibility.Visible;
+            set => viewBar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         public Building3DView()
         {
             Background = new LinearGradientBrush(Color.FromRgb(0xF7, 0xF9, 0xFC), Color.FromRgb(0xE4, 0xE9, 0xF0), 90);
@@ -89,9 +98,9 @@ namespace BuildingModel.Sketch
             viewport.Children.Add(content);
             // the view over the bottom bar (VIEW, zoom to all, the mouse hint), laid out as on every plan; the mouse works on the view only
             stage = new Grid { Background = Brushes.Transparent, Children = { viewport, new Canvas { IsHitTestVisible = false, Children = { northLabel } } } };
-            var bar = Ui.ViewBar(Fit, Ui.View3DHint, "Fit the model in the view (or double-click). The wheel zooms at the pointer, the middle button pans.");
-            DockPanel.SetDock(bar, Dock.Bottom);
-            Child = new DockPanel { Children = { bar, stage } };
+            viewBar = Ui.ViewBar(Fit, Ui.View3DHint, "Fit the model in the view (or double-click). The wheel zooms at the pointer, the middle button pans.");
+            DockPanel.SetDock(viewBar, Dock.Bottom);
+            Child = new DockPanel { Children = { viewBar, stage } };
             stage.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.ClickCount == 2) { Fit(); return; }

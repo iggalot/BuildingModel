@@ -16,6 +16,17 @@
 - **Shared pieces the other apps use:**
   - `ProjectFolder` and `Log`: the project folder and its `logs\`.
   - `ProjectDialogs`, `Ui`, `WindowFit`, `QuickBuildingPanel` ("New from size"), `ModelChecks`.
-- **Known issue:** `MainWindow.Save` writes the whole file from memory. If another app saved the file meanwhile, its
-  sections are lost. The Design Hub works around this (one app at a time per project). The fix, merge on save, is in
-  `..\ShearWallCalculator\ROADMAP.md`.
+- **Several apps, one file** (`BuildingModel.Core\Serialization`; 2026-11-05):
+  - `ModelFile.Save` is atomic. It writes `<model>.saving`, then replaces the model, keeping the old one as
+    `<model>.bak`. Watchers see a rename, so handle `Renamed` as well as `Changed`.
+  - `ModelMerge` is a three-way merge (by object ID, and by data key on each object). `ModelFile.SaveMerged(path,
+    doc, base, owns)` is used by the Building Model: its own keys (`Sketch.*` plan images) merge, and every other key
+    is always the file's. A stale copy in memory or in undo can never overwrite another app's data.
+  - `ModelFile.SaveOwnData(path, mine, owns)` is for an app that writes no geometry (the Shear Wall Calculator). It
+    re-reads the file and copies only its keys.
+  - `ProjectLock` is `<model>.<appId>.lock` (hidden), held open while an app has the project. There is one copy per
+    app per project; a second copy is refused. `Holders(model)` lists who has it, on any PC sharing the folder. A lock
+    left by a crash is stale and taken over. The app ids are `building`, `wind`, `shearwalls` and `loads`.
+  - `SketchCanvas.GeometryLocked`: a host that only shows the building (the Shear Wall Calculator) gets any edit that
+    moves, adds or deletes something put back. The apps' data on objects still changes.
+- **Geometry is edited only here.** The other apps show it, and open this app on the project (Edit building).

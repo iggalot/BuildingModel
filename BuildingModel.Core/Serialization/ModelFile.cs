@@ -117,10 +117,12 @@ namespace BuildingModel.Serialization
         /// it is saved. The building, the other apps' sections and their data stay as the file has them. Returns the saved
         /// document; <paramref name="lost"/> names objects of <paramref name="mine"/> whose data had no object left in the file.
         /// </summary>
-        public static ModelDocument SaveOwnData(string path, Building mine, Func<string, bool> owns, out System.Collections.Generic.List<string> lost)
+        public static ModelDocument SaveOwnData(string path, Building mine, Func<string, bool> owns, out System.Collections.Generic.List<string> lost,
+                                                Action<ModelDocument> beforeSave = null)
         {
             var latest = FromJson(File.ReadAllText(path));
             lost = ModelMerge.CopyOwnData(mine, latest.Building, owns);
+            beforeSave?.Invoke(latest); // e.g. data stamped with the revision this save gives the file (latest.Revision + 1)
             latest.Version = ModelDocument.CurrentVersion;
             Save(path, latest);
             if (lost.Count > 0) Diagnostics.Log.Warning("File", "Data for objects no longer in the model was not saved: " + string.Join(", ", lost), null);

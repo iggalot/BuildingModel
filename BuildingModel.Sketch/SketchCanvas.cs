@@ -119,6 +119,17 @@ namespace BuildingModel.Sketch
         /// </summary>
         public bool Commit(string what)
         {
+            // a host that only shows the building (the Shear Wall Calculator): its geometry is edited in the Building Model
+            if (GeometryLocked && History.GeometryChanged(Building))
+            {
+                History.Revert(Building);
+                DropMissingSelection();
+                Say(GeometryLockedMessage);
+                BuildingModel.Diagnostics.Log.Info("Edit", "Refused (the geometry is edited in the Building Model): " + (what ?? ""));
+                GeometryEditRefused?.Invoke(this, EventArgs.Empty);
+                InvalidateVisual();
+                return false;
+            }
             // columns follow what carries them (a beam drawn across one trims it; its support deleted runs it down again)
             var followed = BuildingEdits.FollowSupports(Building);
             if (followed.Count > 0) what = (string.IsNullOrEmpty(what) ? "" : what + " ") + string.Join(" ", followed) + " (Ctrl+Z undoes it.)";
@@ -139,6 +150,18 @@ namespace BuildingModel.Sketch
             InvalidateVisual();
             return changed;
         }
+
+        /// <summary>
+        /// The geometry is shown, not edited (a host such as the Shear Wall Calculator, where Edit building opens the Building
+        /// Model): an edit that would move, add or delete anything is put back with <see cref="GeometryLockedMessage"/>.
+        /// The apps' data on the objects still changes (a wall's design).
+        /// </summary>
+        public bool GeometryLocked { get; set; }
+
+        public string GeometryLockedMessage { get; set; } = "The building is edited in the Building Model (Edit building).";
+
+        /// <summary>Raised when an edit is put back because <see cref="GeometryLocked"/>.</summary>
+        public event EventHandler GeometryEditRefused;
 
         /// <summary>Runs an edit on the building and commits it.</summary>
         public bool Edit(string what, Action<Building> edit)

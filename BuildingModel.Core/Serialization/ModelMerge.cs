@@ -148,6 +148,17 @@ namespace BuildingModel.Serialization
             return lost;
         }
 
+        /// <summary>The building as JSON without any app's data: two buildings with the same geometry give the same text.</summary>
+        public static string GeometryJson(Building b)
+        {
+            var c = ModelFile.Clone(b);
+            c.Data.Clear();
+            foreach (var o in c.Levels.Cast<ModelObject>().Concat(c.Diaphragms).Concat(c.Openings).Concat(c.Walls).Concat(c.Notes ?? new List<Note>())
+                               .Concat(c.Beams ?? new List<Beam>()).Concat(c.Columns ?? new List<Column>()))
+                o?.Data.Clear();
+            return ModelFile.BuildingToJson(c);
+        }
+
         // ------------------------------------------------------------------ shapes: an object as JSON without the apps' data
 
         private static string Shape(ModelObject o)

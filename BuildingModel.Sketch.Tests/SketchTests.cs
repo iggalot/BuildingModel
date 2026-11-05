@@ -135,6 +135,33 @@ namespace BuildingModel.Sketch.Tests
         }
 
         [STATestMethod]
+        public void GeometryLocked_DrawingAndMovingArePutBack_DataStillChanges()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            BuildingEdits.BuildFromSize(b, new BuildingEdits.QuickBuilding { Length = 30, Width = 20, StoryHeights = { 10 } });
+            var s = new SketchCanvas();
+            s.SetBuilding(b, b.LevelsBottomUp.Last().Id);
+            s.GeometryLocked = true;
+            int refused = 0;
+            s.GeometryEditRefused += (o, e) => refused++;
+            int walls = b.Walls.Count;
+            var start = b.Walls[0].Start;
+
+            Assert.IsFalse(s.Edit("moved", x => x.Walls[0].Start = new BuildingModel.Geometry.Point2(start.X - 5, start.Y)));
+            Assert.AreEqual(start, s.Building.Walls[0].Start, "put back");
+            Assert.IsTrue(s.HandleKey(Key.W, ModifierKeys.None));
+            s.TypePoint("100,100");
+            s.TypePoint("@10,0");
+            Assert.AreEqual(walls, s.Building.Walls.Count, "no wall drawn");
+            Assert.IsTrue(refused >= 2);
+            StringAssert.Contains(s.GeometryLockedMessage, "Building Model");
+
+            Assert.IsTrue(s.Edit("designed", x => x.Walls[0].SetData("ShearWall", "7/16 OSB")), "a wall's design is data: it changes");
+            Assert.AreEqual("7/16 OSB", s.Building.Walls[0].GetData("ShearWall"));
+        }
+
+        [STATestMethod]
         public void TypedPoints_DrawWallsAndDiaphragms_UndoRedo()
         {
             var b = Building.New();

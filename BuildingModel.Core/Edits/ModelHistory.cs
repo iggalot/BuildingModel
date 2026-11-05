@@ -61,6 +61,16 @@ namespace BuildingModel.Edits
             return true;
         }
 
+        /// <summary>True when the building's geometry (not only the apps' data) differs from the last step.</summary>
+        public bool GeometryChanged(Building b) =>
+            current >= 0 && ModelMerge.GeometryJson(b) != ModelMerge.GeometryJson(ModelFile.BuildingFromJson(states[current]));
+
+        /// <summary>Puts the last step back into <paramref name="b"/> (an edit that is refused), without a step of its own.</summary>
+        public void Revert(Building b)
+        {
+            if (current >= 0) Assign(b, ModelFile.BuildingFromJson(states[current]));
+        }
+
         /// <summary>Puts the previous step back. Returns what was undone ("W3 added"), or null when there is nothing to undo.</summary>
         public string Undo(Building b)
         {

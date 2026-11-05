@@ -22,7 +22,17 @@ namespace BuildingModel.Sketch
         private readonly PerspectiveCamera camera = new PerspectiveCamera { FieldOfView = 40 };
         private readonly ModelVisual3D content = new ModelVisual3D();
         private Point3D target = new Point3D();
-        private double yaw = -35, pitch = 28, distance = 120;
+        private const double StartYaw = -35, StartPitch = 28;
+        private double yaw = StartYaw, pitch = StartPitch, distance = 120;
+
+        /// <summary>Back to the first view: the starting angle, the whole building and its north arrow fitted (and fitted again on resize).</summary>
+        public void ResetView()
+        {
+            yaw = StartYaw;
+            pitch = StartPitch;
+            moved = false;
+            Fit();
+        }
         private Point? dragFrom;
 
         public const double SlabThickness = 0.75;

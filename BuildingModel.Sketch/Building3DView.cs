@@ -166,6 +166,7 @@ namespace BuildingModel.Sketch
             {
                 (target, distance) = OrbitMath.ZoomAt(camera, target, distance, e.Delta > 0 ? 0.88 : 1 / 0.88, e.GetPosition(viewport), new Size(viewport.ActualWidth, viewport.ActualHeight));
                 PlaceCamera();
+                e.Handled = true; // the wheel is the view's: a page around it must not scroll too
             };
             // fitted again once it has a size (shown in a page or window after Show), until the user turns or zooms
             SizeChanged += (s, e) => { if (!moved) Fit(); else PlaceCamera(); };

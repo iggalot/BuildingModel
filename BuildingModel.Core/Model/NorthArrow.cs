@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BuildingModel.Geometry;
 
 namespace BuildingModel.Model
@@ -62,6 +63,24 @@ namespace BuildingModel.Model
             var fp = b?.Footprint();
             if (fp == null || fp.IsEmpty) return null;
             return For(fp.Bounds, b.RidgeHeight());
+        }
+
+        /// <summary>
+        /// The same arrow <paramref name="k"/> times as big, from the same tail (for a small view, where the usual size is a few
+        /// pixels). The shape stays this one.
+        /// </summary>
+        public NorthArrow Scaled(double k)
+        {
+            if (!(k > 0) || k == 1) return this;
+            Point2 S(Point2 p) => new Point2(Tail.X + k * (p.X - Tail.X), Tail.Y + k * (p.Y - Tail.Y));
+            return new NorthArrow
+            {
+                Length = k * Length,
+                Tail = Tail,
+                Shaft = Shaft.Select(S).ToArray(),
+                Head = Head.Select(S).ToArray(),
+                LabelAt = S(LabelAt),
+            };
         }
 
         /// <summary>Every point of the arrow and its N (plan ft), for a view to keep them in when it zooms to the drawing.</summary>

@@ -80,6 +80,9 @@ namespace BuildingModel.Sketch
         private readonly FrameworkElement viewBar;
 
         /// <summary>The bar under the view (VIEW, zoom to all, the mouse hint). Off for a small preview (the hub's, New project's): the mouse still turns, zooms and double-click fits.</summary>
+        /// <summary>How much bigger than usual the north arrow is drawn (1: as in every view). A small preview sets about 2.5, or the arrow is a few pixels.</summary>
+        public double NorthArrowScale { get; set; } = 1;
+
         public bool ShowViewBar
         {
             get => viewBar.Visibility == Visibility.Visible;
@@ -231,15 +234,38 @@ namespace BuildingModel.Sketch
             }
             // the north arrow, the building model's one (as in every view): off the building's north-west corner, or a free body's
             var north = b == null ? null : only == null ? NorthArrow.For(b) : ElementBounds(b, only) is Rect2 eb ? NorthArrow.For(eb) : null;
+            north = north?.Scaled(NorthArrowScale);
             if (north != null) group.Children.Add(NorthArrowDrawing.Model(north, p => NorthArrowDrawing.OnGround(p)));
             northAt = north == null ? (Point3D?)null : NorthArrowDrawing.OnGround(north.LabelAt);
+            northTip = north == null ? (Point3D?)null : NorthArrowDrawing.OnGround(north.Tip);
+            northTail = north == null ? (Point3D?)null : NorthArrowDrawing.OnGround(north.Tail);
             content.Content = group;
             if (first || only != shownOnly) Fit(); else PlaceCamera();
             shownOnly = only;
         }
 
         private readonly TextBlock northLabel = NorthArrowDrawing.NewLabel();
-        private Point3D? northAt;
+        private Point3D? northAt, northTip, northTail;
+
+        /// <summary>
+        /// Where the N goes on the screen: past the arrow's tip, along the arrow as drawn, by half the N's size and a little more,
+        /// so the N (a fixed size on the screen) never covers the arrow however far the view is zoomed out. Null: not in view.
+        /// </summary>
+        private Point? NorthLabelOnScreen()
+        {
+            var size = new Size(viewport.ActualWidth, viewport.ActualHeight);
+            Point? Of(Point3D? p) => p is Point3D q ? OrbitMath.Project(camera, q, size) : null;
+            if (Of(northTip) is Point tip && Of(northTail) is Point tail)
+            {
+                var along = tip - tail;
+                if (along.Length > 0.5)
+                {
+                    along.Normalize();
+                    return tip + along * (NorthArrow.LabelSize * 0.75 + 3);
+                }
+            }
+            return Of(northAt);
+        }
 
         /// <summary>A wall's, beam's or column's plan extent (ft).</summary>
         private static Rect2? ElementBounds(Building b, string id)
@@ -314,7 +340,7 @@ namespace BuildingModel.Sketch
             var fp = building.Footprint();
             var bb = fp.IsEmpty ? new Rect2(0, 0, 60, 40) : fp.Bounds;
             // the north arrow kept in view
-            if (NorthArrow.For(building)?.Extent() is Rect2 ne)
+            if (NorthArrow.For(building)?.Scaled(NorthArrowScale).Extent() is Rect2 ne)
                 bb = new Rect2(Math.Min(bb.X0, ne.X0), Math.Min(bb.Y0, ne.Y0), Math.Max(bb.X1, ne.X1), Math.Max(bb.Y1, ne.Y1));
             double h = building.Levels.Count == 0 ? 10 : Math.Max(10, Math.Max(building.Levels.Max(l => l.Elevation), building.RidgeHeight()));
             target = new Point3D((bb.X0 + bb.X1) / 2, h / 2, -(bb.Y0 + bb.Y1) / 2);
@@ -334,7 +360,7 @@ namespace BuildingModel.Sketch
             camera.Position = target + dir * distance;
             camera.LookDirection = -dir * distance;
             camera.UpDirection = new Vector3D(0, 1, 0);
-            NorthArrowDrawing.Pin(northLabel, northAt is Point3D n ? OrbitMath.Project(camera, n, new Size(viewport.ActualWidth, viewport.ActualHeight)) : null);
+            NorthArrowDrawing.Pin(northLabel, NorthLabelOnScreen());
         }
 
         /// <summary>The model's roof (Building.Roof) over the top level: a gable or hip from the roof plan widened by the eaves,

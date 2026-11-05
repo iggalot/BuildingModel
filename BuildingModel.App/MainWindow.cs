@@ -60,6 +60,35 @@ namespace BuildingModel.App
 
         private ModelDocument doc = new ModelDocument();
         private string path;
+        /// <summary>The building as last opened or saved: the base of the merge at the next save (another app may have saved meanwhile).</summary>
+        private Building savedBase;
+        /// <summary>This app's hold on the open project (one Building Model per project).</summary>
+        private ProjectLock projectLock;
+
+        /// <summary>The data keys the Building Model writes (the plan images); every other app's data is kept as the file has it.</summary>
+        private static bool OwnsData(string key) => key.StartsWith("Sketch.", StringComparison.Ordinal) || key == PlanImage.OldShearWallKey;
+
+        /// <summary>Takes this app's lock on the project; false (and says so) when another Building Model has it open.</summary>
+        private bool HoldProject(string file)
+        {
+            if (projectLock != null && string.Equals(projectLock.ModelPath, file, StringComparison.OrdinalIgnoreCase)) return true;
+            var taken = ProjectLock.TryTake(file, "building", "Building Model", out var heldBy);
+            if (taken == null && heldBy != null)
+            {
+                MessageBox.Show(this, $"This project is already open in another Building Model: {heldBy.Describe()}.\n\nSwitch to that window, or close it first.",
+                                "Building Model", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+            projectLock?.Dispose();
+            projectLock = taken;
+            return true;
+        }
+
+        private void LetGoOfProject()
+        {
+            projectLock?.Dispose();
+            projectLock = null;
+        }
         private bool dirty;
 
         private SketchCanvas Sketch => view.Canvas;
@@ -180,6 +209,7 @@ namespace BuildingModel.App
                 else if (e.Key == System.Windows.Input.Key.N) { New(); e.Handled = true; }
             };
             Closing += (s, e) => { if (!ConfirmDiscard()) e.Cancel = true; };
+            Closed += (s, e) => LetGoOfProject();
             New(ask: false);
             ShowPlan(true);
         }
@@ -247,7 +277,10 @@ namespace BuildingModel.App
             }
             var b = Building.New(file == null ? "New building" : Path.GetFileName(Path.GetDirectoryName(file)));
             var l2 = BuildingEdits.AddStory(b, b.Defaults.StoryHeight);
+            if (file != null && !HoldProject(file)) return;
+            if (file == null) LetGoOfProject();
             doc = new ModelDocument { Building = b };
+            savedBase = null;
             path = null;
             Sketch.SetBuilding(b, l2.Id);
             dirty = false;
@@ -278,8 +311,10 @@ namespace BuildingModel.App
         {
             try
             {
+                if (!HoldProject(file)) return;
                 ProjectFolder.OpenFor(file); // first, so the open itself is in the project's log
                 doc = ModelFile.Load(file);
+                savedBase = ModelFile.Clone(doc.Building);
                 path = file;
                 Sketch.SetBuilding(doc.Building, null);
                 dirty = false;
@@ -304,14 +339,23 @@ namespace BuildingModel.App
                 if (file == null) return false;
                 if (existing && MessageBox.Show(this, $"Replace {Path.GetFileName(file)} in that folder with this building?", "Save",
                                                 MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return false;
+                if (!HoldProject(file)) return false;
                 path = file;
+                savedBase = null; // a new file, or one this building replaces: written as it is
                 ProjectFolder.OpenFor(file);
             }
             try
             {
                 doc.Building = Sketch.Building;
                 doc.Version = ModelDocument.CurrentVersion;
-                ModelFile.Save(path, doc);
+                // merged with what another app saved meanwhile (the wind, the loads, the shear walls): their work is kept
+                var report = ModelFile.SaveMerged(path, doc, savedBase, OwnsData);
+                savedBase = ModelFile.Clone(doc.Building);
+                if (report.GeometryTaken) Sketch.SetBuilding(ModelFile.Clone(doc.Building), Sketch.ActiveLevel?.Id);
+                else doc.Building = Sketch.Building;
+                if (report.FileChanged) Diagnostics.Log.Info("Project", report.Summary());
+                if (report.Conflicts.Count > 0)
+                    MessageBox.Show(this, report.Summary(), "Save", MessageBoxButton.OK, MessageBoxImage.Information);
                 dirty = false;
                 Update();
                 return true;

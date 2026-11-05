@@ -40,13 +40,6 @@ namespace BuildingModel.Sketch
             if (ids.Count > 1)
             {
                 Title($"{ids.Count} selected");
-                var walls = ids.Select(B.Find).OfType<Wall>().ToList();
-                if (walls.Count > 0)
-                {
-                    var cb = new CheckBox { Content = "Shear walls", IsThreeState = false, IsChecked = walls.All(w => w.IsShearWall), Margin = new Thickness(0, 4, 0, 0) };
-                    cb.Click += (s, e) => sketch.Edit($"{walls.Count} walls set as {(cb.IsChecked == true ? "shear walls" : "other walls")}.", b => walls.ForEach(w => w.IsShearWall = cb.IsChecked == true));
-                    Children.Add(cb);
-                }
                 return;
             }
             var o = ids.Count == 1 ? B.Find(ids[0]) : null;
@@ -98,9 +91,7 @@ namespace BuildingModel.Sketch
         private void WallProps(Wall w)
         {
             Title($"Wall {w.Id}");
-            var cb = new CheckBox { Content = "Shear wall", IsChecked = w.IsShearWall, Margin = new Thickness(0, 2, 0, 6) };
-            cb.Click += (s, e) => sketch.Edit($"{w.Id} {(cb.IsChecked == true ? "is a shear wall" : "is not a shear wall")}.", b => w.IsShearWall = cb.IsChecked == true);
-            Children.Add(cb);
+            Hint("A wall carries its gravity load. Shear walls (the part of a wall that counts, its sheathing and hold-downs) are declared in the Shear Wall Calculator.");
             Number("Start x", w.Start.X, v => w.Start = new Point2(v, w.Start.Y));
             Number("Start y", w.Start.Y, v => w.Start = new Point2(w.Start.X, v));
             Number("End x", w.End.X, v => w.End = new Point2(v, w.End.Y));
@@ -166,7 +157,7 @@ namespace BuildingModel.Sketch
             var h = B.StoryHeight(l);
             Number("Story height", h, v => BuildingEdits.SetStoryHeight(B, l, v), "the levels above move with it");
             var net = B.NetDiaphragm(l);
-            Hint($"Diaphragm {net.Area:0} sq ft net; {B.WallsUnder(l).Count(w => w.IsShearWall)} shear walls under it.");
+            Hint($"Diaphragm {net.Area:0} sq ft net; {B.WallsUnder(l).Count()} walls under it.");
         }
 
         // ------------------------------------------------------------------ rows

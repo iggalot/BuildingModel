@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -78,7 +79,7 @@ namespace BuildingModel.Sketch.Tests
             Render(v, "sketch-level2");
             v.Canvas.ZoomExtents();
             var bmp = Render(v, "sketch-level2");
-            Assert.IsTrue(Count(bmp, SketchCanvas.Palette.ShearWall) > 500, "shear walls drawn");
+            Assert.IsTrue(Count(bmp, SketchCanvas.Palette.Wall) > 200, "the walls drawn");
             Assert.IsTrue(Count(bmp, SketchCanvas.Palette.NoteFill, 4) > 300, "the note drawn");
             Assert.AreEqual(l2, v.Canvas.ActiveLevel);
         }
@@ -123,10 +124,11 @@ namespace BuildingModel.Sketch.Tests
         public void IssueMarkers_OnTheirLevel()
         {
             var b = Sample(out var l2, out var roof);
-            b.AddWall(b.Ground, l2, 10, 80, 30, 80); // reaches no diaphragm
+            var w = b.AddWall(b.Ground, l2, 10, 80, 30, 80);
             var v = new SketchView();
             v.Canvas.SetBuilding(b, l2.Id);
-            v.Canvas.Issues = ModelChecks.Run(b);
+            // a host's issue (the Shear Wall Calculator's "no diaphragm reaches it") on Level 2
+            v.Canvas.Issues = new List<ModelIssue> { new ModelIssue { Severity = Severity.Warning, Code = "ShearWallNotReached", Message = "reaches no diaphragm", Ids = { w.Id }, LevelId = l2.Id, At = w.Middle } };
             Assert.IsTrue(v.Canvas.IssuesHere().Any(i => i.Code == "ShearWallNotReached"));
             v.Canvas.ShowLevel(roof.Id);
             Assert.IsFalse(v.Canvas.IssuesHere().Any(i => i.Code == "ShearWallNotReached"));
@@ -372,21 +374,16 @@ namespace BuildingModel.Sketch.Tests
         }
 
         [STATestMethod]
-        public void Properties_ChangeTheModelAsOneUndoStep()
+        public void Properties_Wall_HasNoShearWallSwitch()
         {
             var b = Sample(out var l2, out _);
             var s = new SketchCanvas();
             s.SetBuilding(b, l2.Id);
             var p = new ObjectProperties(s);
             s.Select(new[] { b.Walls[0].Id });
-            Assert.IsTrue(p.Children.OfType<System.Windows.Controls.CheckBox>().Any(c => (string)c.Content == "Shear wall"));
+            Assert.IsFalse(p.Children.OfType<System.Windows.Controls.CheckBox>().Any(c => ((string)c.Content).Contains("Shear wall")), "no shear wall switch: declared in the Shear Wall Calculator");
             s.Select(new[] { b.Walls[0].Id, b.Walls[1].Id });
-            var cb = p.Children.OfType<System.Windows.Controls.CheckBox>().Single();
-            cb.IsChecked = false;
-            cb.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-            Assert.IsFalse(b.Walls[0].IsShearWall || b.Walls[1].IsShearWall);
-            s.Undo();
-            Assert.IsTrue(b.Walls[0].IsShearWall && b.Walls[1].IsShearWall);
+            Assert.IsFalse(p.Children.OfType<System.Windows.Controls.CheckBox>().Any());
         }
 
         [STATestMethod]
@@ -396,7 +393,7 @@ namespace BuildingModel.Sketch.Tests
             var v = new Building3DView { HighlightLevelId = l2.Id };
             v.Show(b);
             var bmp = Render(v, "building-3d");
-            Assert.IsTrue(Count(bmp, Color.FromRgb(0x1D, 0x4E, 0xD8), 60) > 200, "shear walls in blue");
+            Assert.IsTrue(Count(bmp, Color.FromRgb(0xB8, 0xBD, 0xC6), 60) > 200, "the walls, all one grey (shear walls are the Shear Wall Calculator's)");
         }
 
         [STATestMethod]
@@ -417,11 +414,11 @@ namespace BuildingModel.Sketch.Tests
         public void IssueList_CountsAndSelects()
         {
             var b = Sample(out var l2, out _);
-            b.AddWall(b.Ground, l2, 10, 80, 30, 80);
+            var w = b.AddWall(b.Ground, l2, 10, 80, 30, 80);
             var s = new SketchCanvas();
             s.SetBuilding(b, l2.Id);
             var list = new IssueList(s);
-            list.Show(ModelChecks.Run(b));
+            list.Show(new List<ModelIssue> { new ModelIssue { Severity = Severity.Warning, Code = "ShearWallNotReached", Message = "reaches no diaphragm", Ids = { w.Id }, LevelId = l2.Id, At = w.Middle } });
             var header = list.Children.OfType<System.Windows.Controls.TextBlock>().First();
             StringAssert.Contains(header.Text, "warning");
         }

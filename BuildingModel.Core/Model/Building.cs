@@ -113,7 +113,12 @@ namespace BuildingModel.Model
         [DataMember(Order = 2)] public Point2 End { get; set; }
         [DataMember(Order = 3)] public string BaseLevelId { get; set; }
         [DataMember(Order = 4)] public string TopLevelId { get; set; }
-        [DataMember(Order = 5)] public bool IsShearWall { get; set; } = true;
+        /// <summary>
+        /// Only from older files: the wall was marked a shear wall here. The shear walls are declared in the Shear Wall Calculator
+        /// (the part of a wall that counts, with its sheathing, in its own data), which reads this once when it adopts an older project.
+        /// Nothing here sets it: a wall is a wall (it carries its gravity load) until it is declared a shear wall there.
+        /// </summary>
+        [DataMember(Order = 5)] public bool IsShearWall { get; set; }
 
         /// <summary>
         /// The wall's own framing on a story (format version 5), by the ID of the level at the story's top (the level it
@@ -406,7 +411,7 @@ namespace BuildingModel.Model
             return o;
         }
 
-        public Wall AddWall(Level baseLevel, Level top, double x0, double y0, double x1, double y1, bool shearWall = true)
+        public Wall AddWall(Level baseLevel, Level top, double x0, double y0, double x1, double y1, bool shearWall = false)
         {
             var w = new Wall { Id = NewId("W"), Start = new Point2(x0, y0), End = new Point2(x1, y1), BaseLevelId = baseLevel.Id, TopLevelId = top.Id, IsShearWall = shearWall };
             Walls.Add(w);

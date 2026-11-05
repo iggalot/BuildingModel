@@ -544,7 +544,7 @@ namespace BuildingModel.Edits
             /// <summary>The story heights, bottom up (ft); one per story.</summary>
             public List<double> StoryHeights { get; set; } = new List<double>();
 
-            /// <summary>Put shear walls on the four outside walls of every story.</summary>
+            /// <summary>Draw the four outside walls of every story (plain walls: the shear walls are declared in the Shear Wall Calculator).</summary>
             public bool OutsideShearWalls { get; set; } = true;
 
             /// <summary>Why it cannot be built (null when it can).</summary>

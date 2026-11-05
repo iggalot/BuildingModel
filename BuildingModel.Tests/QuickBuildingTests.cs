@@ -24,7 +24,7 @@ namespace BuildingModel.Tests
             Assert.AreEqual(3, b.Diaphragms.Count);
             Assert.IsTrue(up.All(l => b.GrossDiaphragm(l).Area == 80 * 36));
             Assert.AreEqual(12, b.Walls.Count);
-            Assert.IsTrue(b.Walls.All(w => w.IsShearWall && b.IsExterior(w)), "all outside shear walls");
+            Assert.IsTrue(b.Walls.All(w => !w.IsShearWall && b.IsExterior(w)), "all outside walls, plain: the shear walls are declared in the Shear Wall Calculator");
             Assert.AreEqual(4, b.Walls.Count(w => w.TopLevelId == up[1].Id && w.BaseLevelId == up[0].Id), "one story each");
             Assert.AreEqual("Clinic", b.Name);
             Assert.IsFalse(ModelChecksErrors(b), "a clean model");

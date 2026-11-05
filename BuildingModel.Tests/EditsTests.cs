@@ -327,14 +327,11 @@ namespace BuildingModel.Tests
         public void Checks_LocatedOnTheirLevel()
         {
             var b = TwoStory(out var l2, out var roof);
-            var free = b.AddWall(b.Ground, l2, 20, 50, 30, 50); // outside the diaphragm
             b.AddWall(b.Ground, l2, 10, 0, 30, 0);              // on top of the south wall
             var issues = ModelChecks.Run(b);
-            var nr = issues.Single(i => i.Code == "ShearWallNotReached");
-            Assert.AreEqual(l2.Id, nr.LevelId);
-            Assert.AreEqual(new Point2(25, 50), nr.At.Value);
-            var ov = issues.Single(i => i.Code == "WallOverlap");
-            Assert.AreEqual(Severity.Error, ov.Severity);
+            Assert.IsFalse(issues.Any(i => i.Code == "NoLateralSupport" || i.Code == "ShearWallNotReached"), "the shear wall checks are the Shear Wall Calculator's");
+            var ov = issues.Single(i => i.Code == "WallsOverlap");
+            Assert.AreEqual(Severity.Warning, ov.Severity, "a wall drawn twice: a warning here (two declared shear walls: the Shear Wall Calculator's error)");
             StringAssert.Contains(ov.Message, "20 ft");
             b.AddNote(new Level { Id = "L99" }, 0, 0, "lost");
             Assert.IsTrue(ModelChecks.Run(b).Any(i => i.Code == "BadReference" && i.Message.StartsWith("Note")));

@@ -30,3 +30,6 @@
   - `SketchCanvas.GeometryLocked`: a host that only shows the building (the Shear Wall Calculator) gets any edit that
     moves, adds or deletes something put back. The apps' data on objects still changes.
 - **Geometry is edited only here.** The other apps show it, and open this app on the project (Edit building).
+- **Walls are just walls here** (2026-11-05): no shear-wall switch, all drawn alike. The shear walls (the part of a wall
+  that counts, its sheathing) are declared in the Shear Wall Calculator, which also does the shear-wall checks.
+  `Wall.IsShearWall` is only read from older files.

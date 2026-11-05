@@ -65,7 +65,6 @@ namespace BuildingModel.Sketch
         private static readonly Pen BeamPen = P(BeamColor, 3.5, 4, 1.5, 0.1, 1.5);
         private static readonly Pen ColumnEdge = P(Colors.White, 1.2);
         private static readonly Pen ColumnBasePen = P(BeamColor, 1.8);
-        private static readonly Pen ShearPen = P(Palette.ShearWall, 4);
         private static readonly Pen WallPen = P(Palette.Wall, 2.5);
         private static readonly Pen BelowPen = P(Palette.Below, 3);
         private static readonly Pen AbovePen = P(Palette.Above, 1.2, 4, 3);
@@ -130,7 +129,7 @@ namespace BuildingModel.Sketch
 
             foreach (var w in b.WallsOver(level)) Line(ctx, AbovePen, w.Start, w.End);
             var walls = b.WallsUnder(level).ToList();
-            foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? (w.IsShearWall ? ShearPen : WallPen), w.Start, w.End);
+            foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? WallPen, w.Start, w.End);
 
             // beams in this level's framing (brown, dash-dot as on framing plans) and the columns under it (filled squares)
             foreach (var bm in b.BeamsOn(level))
@@ -303,7 +302,7 @@ namespace BuildingModel.Sketch
 
         /// <summary>A wall's name and length along the wall, beside its middle (below a level wall, right of an upright one).</summary>
         private void WallLabel(DrawingContext ctx, Wall w) =>
-            AlongLabel(ctx, $"{w.Id}  {w.Length:0.##}'", ToScreen(w.Start), ToScreen(w.End), w.IsShearWall ? B(Palette.ShearWall) : MutedBrush);
+            AlongLabel(ctx, $"{w.Id}  {w.Length:0.##}'", ToScreen(w.Start), ToScreen(w.End), MutedBrush);
 
         /// <summary>A beam's name along the beam, beside its middle.</summary>
         private void BeamLabel(DrawingContext ctx, Beam bm) => AlongLabel(ctx, bm.Id, ToScreen(bm.Start), ToScreen(bm.End), BeamBrush);

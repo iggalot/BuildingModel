@@ -42,7 +42,7 @@ namespace BuildingModel.Sketch
             stories = Box(start.StoryHeights.Count.ToString(CultureInfo.CurrentCulture));
             heights = Box(start.StoryHeights.Distinct().Count() == 1 ? Num(start.StoryHeights[0]) : string.Join(", ", start.StoryHeights.Select(Num)));
             heights.Width = 160;
-            walls = new CheckBox { Content = "Shear walls on the four outside walls", IsChecked = start.OutsideShearWalls, Margin = new Thickness(0, 4, 0, 0) };
+            walls = new CheckBox { Content = "Walls on the four outside edges", IsChecked = start.OutsideShearWalls, Margin = new Thickness(0, 4, 0, 0) };
             walls.Click += (s, e) => Update();
 
             Children.Add(Row("L (W-E)", length, "ft"));
@@ -74,7 +74,7 @@ namespace BuildingModel.Sketch
                 var h = Result.StoryHeights;
                 summary.Text = $"{Result.Length:0.##} × {Result.Width:0.##} ft, {h.Count} stor{(h.Count == 1 ? "y" : "ies")} " +
                                $"({string.Join(", ", h.Select(x => x.ToString("0.##", CultureInfo.CurrentCulture)))} ft; eave {h.Sum():0.##} ft), " +
-                               $"a diaphragm on each level{(Result.OutsideShearWalls ? $" and {4 * h.Count} outside shear walls" : "")}. " +
+                               $"a diaphragm on each level{(Result.OutsideShearWalls ? $" and {4 * h.Count} outside walls" : "")}. " +
                                "It replaces what is drawn on every floor; the roof and the project defaults stay. Undo puts it back.";
             }
             else summary.Text = "";

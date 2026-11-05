@@ -201,7 +201,6 @@ namespace BuildingModel.Sketch
                         foreach (var c in b.NetDiaphragm(l).Cells())
                             group.Children.Add(Box(c.X0, c.Y0, l.Elevation - SlabThickness, c.X1, c.Y1, l.Elevation, mat));
                     }
-                var shear = Material(Color.FromArgb(0xF0, 0x1D, 0x4E, 0xD8));
                 var other = Material(Color.FromArgb(0xD0, 0xB8, 0xBD, 0xC6));
                 foreach (var w in b.Walls.Where(w => Drawn(w.Id)))
                 {
@@ -212,7 +211,7 @@ namespace BuildingModel.Sketch
                     var r = w.Direction == WallDirection.SouthNorth
                         ? new Rect2(w.Start.X - t, w.Start.Y, w.End.X + t, w.End.Y)
                         : new Rect2(w.Start.X, w.Start.Y - t, w.End.X, w.End.Y + t);
-                    Add(group, Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, top.Elevation - SlabThickness, w.IsShearWall ? shear : other), w.Id);
+                    Add(group, Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, top.Elevation - SlabThickness, other), w.Id);
                 }
                 // beams: a box under the floor they frame; columns: a square post from base to top (rectangles for now)
                 var timber = Material(Color.FromArgb(0xF0, 0x8B, 0x4A, 0x14));

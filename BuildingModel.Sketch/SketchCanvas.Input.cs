@@ -559,7 +559,7 @@ namespace BuildingModel.Sketch
             switch (b.Find(id))
             {
                 case Wall w:
-                    return $"{w.Id} · {(w.IsShearWall ? "shear wall" : "wall")} · {w.Length:0.##} ft {(w.Direction == WallDirection.WestEast ? "W-E" : w.Direction == WallDirection.SouthNorth ? "S-N" : "angled")} · " +
+                    return $"{w.Id} · wall · {w.Length:0.##} ft {(w.Direction == WallDirection.WestEast ? "W-E" : w.Direction == WallDirection.SouthNorth ? "S-N" : "angled")} · " +
                            $"{b.Level(w.BaseLevelId)?.Name} → {b.Level(w.TopLevelId)?.Name}";
                 case Diaphragm d:
                     var r = Region.Of(d.Pieces);

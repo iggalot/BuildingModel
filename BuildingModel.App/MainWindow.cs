@@ -234,7 +234,7 @@ namespace BuildingModel.App
             var above = b.LevelsBottomUp.Where(l => l.Elevation > 0).ToList();
             summary.Text = (string.IsNullOrWhiteSpace(b.Name) ? "" : b.Name + "\n") + (fp.IsEmpty ? "No diaphragm yet." : $"Footprint {fp.Bounds.Width:0.##} × {fp.Bounds.Height:0.##} ft ({fp.Area:0} sq ft).") +
                            $"\n{above.Count} level{(above.Count == 1 ? "" : "s")} above the ground" + (above.Count > 0 ? $", top at {above.Last().Elevation:0.##} ft" : "") +
-                           $"\n{b.Walls.Count(w => w.IsShearWall)} shear walls, {b.Walls.Count(w => !w.IsShearWall)} other walls, {b.Openings.Count} openings, {b.Notes.Count} notes." +
+                           $"\n{b.Walls.Count} walls, {b.Openings.Count} openings, {b.Notes.Count} notes." +
                            $"\nRevision {doc.Revision}{(dirty ? " (not saved)" : "")}";
             Title = $"{(string.IsNullOrEmpty(path) ? "New building" : Path.GetFileName(path))}{(dirty ? " *" : "")} — Building Model";
             view3D.HighlightLevelId = Sketch.ActiveLevel?.Id;

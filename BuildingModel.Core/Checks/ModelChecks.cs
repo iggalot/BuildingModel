@@ -66,10 +66,6 @@ namespace BuildingModel.Checks
                     Add(Severity.Warning, "DiaphragmDiscontinuity",
                         $"{l.Name}: openings take {open:0} of {gross.Area:0} sq ft ({open / gross.Area:P0}), over 50 % of the diaphragm " +
                         "(ASCE 7-22 Table 12.3-1, horizontal irregularity type 3).", l.Id);
-                foreach (var dir in new[] { WallDirection.WestEast, WallDirection.SouthNorth })
-                    if (b.ShearWallsUnder(l, dir).Count == 0)
-                        Add(Severity.Error, "NoLateralSupport",
-                            $"{l.Name}: no shear wall {(dir == WallDirection.WestEast ? "running W-E" : "running S-N")} below it reaches its diaphragm.", l.Id);
             }
 
             // openings
@@ -135,7 +131,6 @@ namespace BuildingModel.Checks
 
             BeamColumnChecks(b, issues);
             RoofChecks(b, Add);
-            ShearWallChecks(b, Add);
             OverlapChecks(b, Add);
             foreach (var i in issues) Locate(b, i);
             return issues;
@@ -170,47 +165,21 @@ namespace BuildingModel.Checks
                 add(Severity.Warning, "HipRidge", "A hip roof's ridge runs along the longer side; the ridge direction chosen is not used.", at);
         }
 
-        /// <summary>Shear walls that carry nothing, and shear walls drawn twice.</summary>
-        private static void ShearWallChecks(Building b, Action<Severity, string, string, string[]> add)
-        {
-            var shear = b.Walls.Where(w => w.IsShearWall && w.Direction != WallDirection.NotOrthogonal && b.Level(w.BaseLevelId) != null && b.Level(w.TopLevelId) != null).ToList();
-            foreach (var w in shear)
-            {
-                var top = b.Level(w.TopLevelId);
-                if (top.Elevation > b.Level(w.BaseLevelId).Elevation && b.NetDiaphragm(top).LengthAlong(w.Start, w.End, BuildingQueries.WallTolerance) <= 0)
-                    add(Severity.Warning, "ShearWallNotReached", $"Shear wall {w.Id}: no diaphragm at its top ({top.Name}) reaches it, so it takes no load there.", new[] { w.Id });
-            }
-            for (int i = 0; i < shear.Count; i++)
-                for (int j = i + 1; j < shear.Count; j++)
-                {
-                    var a = shear[i]; var c = shear[j];
-                    if (a.Direction != c.Direction) continue;
-                    bool we = a.Direction == WallDirection.WestEast;
-                    if (Math.Abs(we ? a.Start.Y - c.Start.Y : a.Start.X - c.Start.X) > 1e-6) continue;
-                    double lo = Math.Max(Lo(a, we), Lo(c, we)), hi = Math.Min(Hi(a, we), Hi(c, we));
-                    if (hi - lo <= 1e-6) continue;
-                    double a0 = b.Level(a.BaseLevelId).Elevation, a1 = b.Level(a.TopLevelId).Elevation;
-                    double c0 = b.Level(c.BaseLevelId).Elevation, c1 = b.Level(c.TopLevelId).Elevation;
-                    if (Math.Min(a1, c1) - Math.Max(a0, c0) <= 1e-6) continue;
-                    add(Severity.Error, "WallOverlap", $"Shear walls {a.Id} and {c.Id} overlap over {hi - lo:0.##} ft: the same wall is counted twice.", new[] { a.Id, c.Id });
-                }
-        }
-
         /// <summary>
-        /// Objects drawn twice (a warning: one is probably left over from an edit). A wall that is not a shear wall on another
-        /// wall (two shear walls: <c>WallOverlap</c>, an error); two beams on one level along the same line; two columns at one
+        /// Objects drawn twice (a warning: one is probably left over from an edit). A wall on another wall (two declared shear walls
+        /// overlapping are the Shear Wall Calculator's error); two beams on one level along the same line; two columns at one
         /// point (within the bearing tolerance) over the same height, where a load may land on the one that carries nothing.
         /// </summary>
         private static void OverlapChecks(Building b, Action<Severity, string, string, string[]> add)
         {
             const double tol = 1e-6;
-            // walls (a shear wall pair is ShearWallChecks')
+            // walls
             var walls = b.Walls.Where(w => w.Direction != WallDirection.NotOrthogonal && b.Level(w.BaseLevelId) != null && b.Level(w.TopLevelId) != null).ToList();
             for (int i = 0; i < walls.Count; i++)
                 for (int j = i + 1; j < walls.Count; j++)
                 {
                     var a = walls[i]; var c = walls[j];
-                    if ((a.IsShearWall && c.IsShearWall) || a.Direction != c.Direction) continue;
+                    if (a.Direction != c.Direction) continue;
                     bool we = a.Direction == WallDirection.WestEast;
                     if (Math.Abs(we ? a.Start.Y - c.Start.Y : a.Start.X - c.Start.X) > tol) continue;
                     double lo = Math.Max(Lo(a, we), Lo(c, we)), hi = Math.Min(Hi(a, we), Hi(c, we));

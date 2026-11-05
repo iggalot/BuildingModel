@@ -83,9 +83,11 @@ walls can come later.
 | `OpeningCutsNothing` | warning | An opening is not inside any diaphragm it should cut. |
 | `OpeningAtEdge` | warning | An opening reaches a diaphragm edge, so the chord is interrupted there. |
 | `DiaphragmDiscontinuity` | warning | Openings cut more than 50 % of a level's gross diaphragm area. This is ASCE 7-22 Table 12.3-1, horizontal irregularity type 3 (seismic). |
-| `NoLateralSupport` | error | A level's diaphragm has no shear wall below it, reaching it, in one direction. |
-| `ShearWallNotReached` | warning | A shear wall that no diaphragm reaches at its top or any level it passes: it carries no load. |
-| `WallOverlap` | error | Two walls of the same story lie on top of each other along a stretch. |
+| `WallsOverlap` | warning | Two walls of the same story lie on top of each other along a stretch. |
+
+The shear-wall checks (no shear wall reaching a level in a direction, a shear wall no diaphragm reaches, two shear walls
+overlapping) are the Shear Wall Calculator's, on the walls declared there (`ShearWallAdapter.Checks`). A wall here is just a wall:
+it carries its gravity load whether or not it is a shear wall.
 
 `BadReference` also covers notes. Each issue has the level whose plan shows it and, where there is one, the point to
 mark (`ModelIssue.LevelId`, `At`), so the sketcher draws error (red circle) and warning (amber triangle) markers there.

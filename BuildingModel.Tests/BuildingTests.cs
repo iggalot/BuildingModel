@@ -95,10 +95,7 @@ namespace BuildingModel.Tests
             b.AddWall(ground, roof, 60, 0, 60, 40);
             var east = b.AddWall(ground, roof, 30, 0, 30, 10, shearWall: false); // a column line, not a shear wall
             Assert.AreEqual(1200, b.NetDiaphragm(mezz).Area, Tol);
-            Assert.AreEqual(2, b.ShearWallsUnder(mezz, WallDirection.WestEast).Count, "the south and north walls reach it");
-            Assert.AreEqual(1, b.ShearWallsUnder(mezz, WallDirection.SouthNorth).Count, "the west wall");
             var issues = ModelChecks.Run(b);
-            Assert.IsFalse(issues.Any(i => i.Code == "NoLateralSupport"), string.Join("\n", issues));
             // the east wall passes the mezzanine level where there is no mezzanine
             Assert.IsTrue(issues.Any(i => i.Code == "TallWall" && i.Ids.Contains(b.Walls[3].Id)));
             Assert.AreEqual(18, b.UnbracedHeight(b.Walls[3]), Tol);

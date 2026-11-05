@@ -122,18 +122,5 @@ namespace BuildingModel.Model
             return worst;
         }
 
-        /// <summary>The shear walls that hold up a level's diaphragm in one direction: below it, reaching it, and reached by it.</summary>
-        public static List<Wall> ShearWallsUnder(this Building b, Level level, WallDirection direction)
-        {
-            var net = b.NetDiaphragm(level);
-            return b.Walls.Where(w =>
-            {
-                if (!w.IsShearWall || w.Direction != direction) return false;
-                var bottom = b.Level(w.BaseLevelId);
-                var top = b.Level(w.TopLevelId);
-                return bottom != null && top != null && bottom.Elevation < level.Elevation && top.Elevation >= level.Elevation
-                       && net.LengthAlong(w.Start, w.End, WallTolerance) > 0;
-            }).ToList();
-        }
     }
 }

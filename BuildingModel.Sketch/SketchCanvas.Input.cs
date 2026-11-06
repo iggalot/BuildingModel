@@ -386,7 +386,10 @@ namespace BuildingModel.Sketch
                 Say((issue.Severity == Severity.Error ? "Error: " : "Warning: ") + issue.Message, true);
                 return;
             }
-            string id = Snapper.Pick(Building, ActiveLevel, rawCursor, PixelsToFeet(6));
+            string id = HostPickFirst ? HostPick?.Invoke(rawCursor, PixelsToFeet(6)) : null; // the host's own object there first
+            if (id == null) id = Snapper.Pick(Building, ActiveLevel, rawCursor, PixelsToFeet(6));
+            if (id != null && !Selectable(id)) id = null;                    // not what the host lets be picked
+            if (id == null && !HostPickFirst) id = HostPick?.Invoke(rawCursor, PixelsToFeet(6)); // the host's own object there
             if (id != null)
             {
                 if (add && selection.Contains(id)) { selection.Remove(id); SelectionChanged?.Invoke(this, EventArgs.Empty); InvalidateVisual(); }
@@ -449,7 +452,7 @@ namespace BuildingModel.Sketch
                 if ((pos - from).Length < 4) { if (!add) ClearSelection(); return; }
                 var a = ToWorld(from);
                 var b = ToWorld(pos);
-                Select(Snapper.InWindow(Building, ActiveLevel, new Rect2(a.X, a.Y, b.X, b.Y)), add);
+                Select(InWindow(new Rect2(a.X, a.Y, b.X, b.Y)), add);
                 Say($"{selection.Count} selected.");
             }
         }
@@ -595,7 +598,7 @@ namespace BuildingModel.Sketch
         /// </summary>
         private IEnumerable<Grip> Grips()
         {
-            if (selection.Count == 0 || Building == null) yield break;
+            if (selection.Count == 0 || Building == null || GeometryLocked) yield break; // locked: nothing to drag (it would only be put back)
             int walls = 0;
             foreach (var id in selection)
             {
@@ -737,7 +740,7 @@ namespace BuildingModel.Sketch
                 {
                     case Key.Z: if ((mods & ModifierKeys.Shift) != 0) Redo(); else Undo(); return true;
                     case Key.Y: Redo(); return true;
-                    case Key.A: Select(Building.VisibleIds(ActiveLevel)); return true;
+                    case Key.A: Select(Building.VisibleIds(ActiveLevel).Concat(HostInWindow?.Invoke(new Rect2(-1e9, -1e9, 1e9, 1e9)) ?? Enumerable.Empty<string>())); return true;
                     case Key.C: CopyAndPlace(); return true;
                     case Key.D: CopyAndPlace(); return true;
                 }

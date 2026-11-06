@@ -410,6 +410,43 @@ namespace BuildingModel.Sketch.Tests
             Assert.IsTrue(Count(bmp, Color.FromRgb(0x8B, 0x4A, 0x14), 70) > 50, "the beam and the column in timber brown");
         }
 
+        /// <summary>
+        /// The one selection of every app: a host's own objects (here two "zones") join it beside the model's, the host's filter
+        /// keeps out what it does not pick, a window and Ctrl+A take both, and Delete hands the host its own.
+        /// </summary>
+        [STATestMethod]
+        public void Selection_HostObjects_JoinTheModels()
+        {
+            var b = Sample(out var l2, out _);
+            var s = new SketchCanvas();
+            s.SetBuilding(b, l2.Id);
+            var zones = new Dictionary<string, Rect2> { ["zone:0"] = new Rect2(5, 5, 15, 15), ["zone:1"] = new Rect2(40, 5, 55, 30) };
+            s.HostOwns = id => zones.ContainsKey(id);
+            s.HostInWindow = box => zones.Where(z => box.Contains(z.Value.X0, z.Value.Y0) && box.Contains(z.Value.X1, z.Value.Y1)).Select(z => z.Key).ToList();
+            s.PickFilter = o => o is Wall;
+            IReadOnlyList<string> deleted = null;
+            s.HostDeleteRequested += (o, ids) => deleted = ids;
+
+            s.Select(new[] { b.Walls[0].Id, "zone:1", "zone:9", b.Diaphragms[0].Id });
+            CollectionAssert.AreEquivalent(new[] { b.Walls[0].Id, "zone:1" }, s.Selection.ToArray(), "a zone the host does not have, and a diaphragm it does not pick, are left out");
+            Assert.AreEqual(1, s.SelectedOf<Wall>().Count);
+            CollectionAssert.AreEqual(new[] { "zone:1" }, s.SelectedHostIds);
+
+            var box = s.InWindow(new Rect2(-1, -1, 30, 41));
+            CollectionAssert.AreEquivalent(new[] { b.Walls[2].Id, "zone:0" }, box, "the west wall and the zone wholly inside; no diaphragm");
+
+            Assert.IsTrue(s.HandleKey(Key.A, ModifierKeys.Control));
+            Assert.AreEqual(2, s.SelectedHostIds.Count, "Ctrl+A: both zones");
+            Assert.IsTrue(s.SelectedOf<Wall>().Count >= 4, "and the walls");
+
+            s.Select(new[] { "zone:0", "zone:1" });
+            int walls = b.Walls.Count;
+            s.DeleteSelected();
+            CollectionAssert.AreEquivalent(new[] { "zone:0", "zone:1" }, deleted.ToArray(), "the host deletes its own");
+            Assert.AreEqual(0, s.Selection.Count);
+            Assert.AreEqual(walls, b.Walls.Count, "nothing of the model deleted");
+        }
+
         [STATestMethod]
         public void IssueList_CountsAndSelects()
         {

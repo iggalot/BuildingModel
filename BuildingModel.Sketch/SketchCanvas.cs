@@ -200,12 +200,60 @@ namespace BuildingModel.Sketch
         public void Select(IEnumerable<string> ids, bool add = false)
         {
             if (!add) selection.Clear();
-            foreach (var id in ids ?? Enumerable.Empty<string>()) if (Building.Find(id) != null) selection.Add(id);
+            foreach (var id in ids ?? Enumerable.Empty<string>()) if (Selectable(id)) selection.Add(id);
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             InvalidateVisual();
         }
 
         public void ClearSelection() => Select(null);
+
+        // ------------------------------------------------------------------ the host's own objects in the selection
+
+        /// <summary>
+        /// The host's own objects (a load zone, a foundation point...) take part in the selection like the model's: a click,
+        /// Shift+click or Ctrl+click, a window, Ctrl+A, Delete. Their IDs must not be model IDs (e.g. "zone:2"). True for one the
+        /// host has now; the host draws their highlight. Null: none.
+        /// </summary>
+        public Func<string, bool> HostOwns { get; set; }
+
+        /// <summary>The host's object at a point (ft; the pick tolerance in ft), when no model object is there; null: none.</summary>
+        public Func<Point2, double, string> HostPick { get; set; }
+
+        /// <summary>The host's objects wholly inside a box (ft): a window selection, and Ctrl+A (the whole plan).</summary>
+        public Func<Rect2, IEnumerable<string>> HostInWindow { get; set; }
+
+        /// <summary>The model objects the host lets be picked (null: all), e.g. only the walls.</summary>
+        public Func<ModelObject, bool> PickFilter { get; set; }
+
+        /// <summary>Delete with host objects selected: the host deletes these (the model's selected go as usual).</summary>
+        public event EventHandler<IReadOnlyList<string>> HostDeleteRequested;
+
+        /// <summary>A click picks the host's object before the model's (e.g. a foundation point standing on a wall).</summary>
+        public bool HostPickFirst { get; set; }
+
+        /// <summary>The selected model objects of one kind (e.g. the walls), in no set order.</summary>
+        public List<T> SelectedOf<T>() where T : ModelObject => selection.Select(id => Building?.Find(id)).OfType<T>().ToList();
+
+        /// <summary>The selected objects of the host (<see cref="HostOwns"/>).</summary>
+        public List<string> SelectedHostIds => selection.Where(IsHostObject).ToList();
+
+        public bool IsHostObject(string id) => id != null && Building?.Find(id) == null && HostOwns?.Invoke(id) == true;
+
+        private bool Pickable(string id)
+        {
+            var o = id == null ? null : Building?.Find(id);
+            return o != null && (PickFilter == null || PickFilter(o));
+        }
+
+        private bool Selectable(string id) => Pickable(id) || IsHostObject(id);
+
+        /// <summary>What a window (ft) takes: the model's objects wholly inside it that may be picked, and the host's.</summary>
+        public List<string> InWindow(Rect2 box)
+        {
+            var ids = Snapper.InWindow(Building, ActiveLevel, box).Where(Pickable).ToList();
+            if (HostInWindow != null) ids.AddRange(HostInWindow(box) ?? Enumerable.Empty<string>());
+            return ids;
+        }
 
         /// <summary>
         /// An issue picked in a list: shows its level, selects what it is about (every member it names) and brings its place
@@ -302,7 +350,7 @@ namespace BuildingModel.Sketch
         {
             int n = selection.Count;
             var visible = ActiveLevel == null ? new HashSet<string>() : Building.VisibleIds(ActiveLevel);
-            selection.RemoveWhere(id => Building.Find(id) == null || !visible.Contains(id));
+            selection.RemoveWhere(id => !(IsHostObject(id) || (Building.Find(id) != null && visible.Contains(id))));
             if (selection.Count != n) SelectionChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -310,6 +358,15 @@ namespace BuildingModel.Sketch
         {
             if (selection.Count == 0) { Say("Select something first, then Delete.", true); return; }
             var ids = selection.ToList();
+            var host = ids.Where(IsHostObject).ToList();
+            if (host.Count > 0)
+            {
+                // the host's own objects: the host deletes them (one step of its own); the model's go as below
+                foreach (var h in host) selection.Remove(h);
+                ids = ids.Except(host).ToList();
+                HostDeleteRequested?.Invoke(this, host);
+                if (ids.Count == 0) { SelectionChanged?.Invoke(this, EventArgs.Empty); InvalidateVisual(); return; }
+            }
             int n = ids.Count(id => BuildingEdits.Delete(Building, id));
             selection.Clear();
             SelectionChanged?.Invoke(this, EventArgs.Empty);

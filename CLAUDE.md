@@ -30,6 +30,11 @@
   - `SketchCanvas.GeometryLocked`: a host that only shows the building (the Shear Wall Calculator) gets any edit that
     moves, adds or deletes something put back. The apps' data on objects still changes.
 - **Geometry is edited only here.** The other apps show it, and open this app on the project (Edit building).
+- **One selection for every app** (`SketchCanvas`, 2026-11-05): click, Shift or Ctrl+click, a window, Ctrl+A, Esc, Delete,
+  `Selection` and `SelectionChanged`, `SelectedOf<T>()`. An app never builds its own picking: it says what it picks
+  (`PickFilter`), adds its own objects (`HostOwns`, `HostPick`, `HostPickFirst`, `HostInWindow`, `SelectedHostIds`) and
+  deletes them (`HostDeleteRequested`). With `GeometryLocked` there are no grips. The Shear Wall Calculator and the Load
+  Manager use it this way.
 - **Walls are just walls here** (2026-11-05): no shear-wall switch, all drawn alike. The shear walls (the part of a wall
   that counts, its sheathing) are declared in the Shear Wall Calculator, which also does the shear-wall checks.
   `Wall.IsShearWall` is only read from older files.

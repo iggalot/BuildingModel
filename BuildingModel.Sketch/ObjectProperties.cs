@@ -152,7 +152,7 @@ namespace BuildingModel.Sketch
             if (l == null) return;
             Title(l.Name);
             Text("Name", l.Name, v => l.Name = v);
-            if (l.Elevation == 0) { Hint("The ground (elevation 0): walls are drawn on the levels above it."); return; }
+            if (l.Elevation == 0) { Hint("The ground (elevation 0), the foundation plan: it shows the walls and columns standing on it, to select and edit. They are drawn on the level they carry."); return; }
             Number("Elevation", l.Elevation, v => l.Elevation = v);
             var h = B.StoryHeight(l);
             Number("Story height", h, v => BuildingEdits.SetStoryHeight(B, l, v), "the levels above move with it");

@@ -52,6 +52,21 @@ namespace BuildingModel.Sketch
             return p;
         }
 
+        /// <summary>A cut wall's band (square ends, so the end of the double line is closed).</summary>
+        private static Pen CutPenOf(Brush brush, bool freeze = true)
+        {
+            var p = new Pen(brush, 7) { StartLineCap = PenLineCap.Square, EndLineCap = PenLineCap.Square };
+            if (freeze) p.Freeze(); // never with a host's brush: freezing the pen would freeze the host's brush too
+            return p;
+        }
+
+        private static Pen Flat(Color c, double t)
+        {
+            var p = new Pen(B(c), t) { StartLineCap = PenLineCap.Flat, EndLineCap = PenLineCap.Flat };
+            p.Freeze();
+            return p;
+        }
+
         private static readonly Brush PaperBrush = B(Palette.Paper);
         private static readonly Pen GridMinorPen = P(Palette.GridMinor, 1);
         private static readonly Pen GridMajorPen = P(Palette.GridMajor, 1);
@@ -67,6 +82,9 @@ namespace BuildingModel.Sketch
         private static readonly Pen ColumnBasePen = P(BeamColor, 1.8);
         private static readonly Pen WallPen = P(Palette.Wall, 2.5);
         private static readonly Pen BelowPen = P(Palette.Below, 3);
+        // a wall cut at its base on the foundation plan: a dark band (closed, square ends) with a white core
+        private static readonly Pen CutWallPen = CutPenOf(B(Palette.Ink));
+        private static readonly Pen CutWallCore = Flat(Colors.White, 3);
         private static readonly Pen AbovePen = P(Palette.Above, 1.2, 4, 3);
         private static readonly Pen HaloPen = P(Color.FromArgb(0x80, 0x08, 0x91, 0xB2), 12);
         private static readonly Pen SelectPen = P(Palette.Select, 2.5);
@@ -127,9 +145,24 @@ namespace BuildingModel.Sketch
             foreach (var r in b.DiaphragmsOn(level).SelectMany(d => d.Pieces)) ctx.DrawRectangle(null, PiecePen, ScreenRect(r));
             foreach (var s in b.NetDiaphragm(level).Outline()) Line(ctx, DiaphragmPen, s.A, s.B);
 
-            foreach (var w in b.WallsOver(level)) Line(ctx, AbovePen, w.Start, w.End);
-            var walls = b.WallsUnder(level).ToList();
-            foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? WallPen, w.Start, w.End);
+            bool foundation = b.IsFoundationPlan(level);
+            var walls = b.WallsShown(level).ToList();
+            if (foundation)
+            {
+                // the foundation plan: the walls standing on it, cut at their base (a double line, as on a floor plan); they are
+                // drawn and kept on the level they carry, and only shown, selected and edited here
+                foreach (var w in walls)
+                {
+                    var style = WallStyle?.Invoke(w);
+                    Line(ctx, style == null ? CutWallPen : CutPenOf(style.Brush, freeze: false), w.Start, w.End);
+                    Line(ctx, CutWallCore, w.Start, w.End);
+                }
+            }
+            else
+            {
+                foreach (var w in b.WallsOver(level)) Line(ctx, AbovePen, w.Start, w.End);
+                foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? WallPen, w.Start, w.End);
+            }
 
             // beams in this level's framing (brown, dash-dot as on framing plans) and the columns under it (filled squares)
             foreach (var bm in b.BeamsOn(level))
@@ -657,7 +690,7 @@ namespace BuildingModel.Sketch
         {
             var l = ActiveLevel;
             double h = Building.StoryHeight(l);
-            string text = LevelCaption?.Invoke(l) ?? (l.Elevation == 0 ? $"{l.Name} · 0 ft" : $"{l.Name} · {l.Elevation:0.##} ft · story under it {h:0.##} ft");
+            string text = LevelCaption?.Invoke(l) ?? (l.Elevation == 0 ? $"{l.Name} · 0 ft · the foundation: what stands on it" : $"{l.Name} · {l.Elevation:0.##} ft · story under it {h:0.##} ft");
             if (text.Length == 0) return; // the host shows the level its own way
             var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                                        new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 12, Brushes.White, Dpi);

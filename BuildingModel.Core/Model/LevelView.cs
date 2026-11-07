@@ -6,8 +6,8 @@ namespace BuildingModel.Model
 {
     /// <summary>
     /// What the plan of one level shows. A level is drawn as the story under it: its diaphragm, the openings that cut it,
-    /// the walls that hold it up (from below, reaching it) and its notes. The ground has no story under it, so walls are
-    /// drawn on the levels above.
+    /// the walls that hold it up (from below, reaching it) and its notes. The ground has no story under it: its plan (the
+    /// foundation plan) shows the walls and columns standing on it, which are drawn on the levels they carry.
     /// </summary>
     public static class LevelView
     {
@@ -25,6 +25,21 @@ namespace BuildingModel.Model
                 return lo != null && hi != null && lo.Elevation < level.Elevation && hi.Elevation >= level.Elevation;
             });
         }
+
+        /// <summary>The foundation plan: the lowest level (no story under it). It shows what stands on it.</summary>
+        public static bool IsFoundationPlan(this Building b, Level level) => level != null && b.Below(level) == null;
+
+        /// <summary>The walls standing on this level (their base is here).</summary>
+        public static IEnumerable<Wall> WallsStandingOn(this Building b, Level level) =>
+            level == null ? Enumerable.Empty<Wall>() : b.Walls.Where(w => w.BaseLevelId == level.Id);
+
+        /// <summary>
+        /// The walls a level's plan shows, picks and selects: the walls under it (the story it carries). The foundation plan has
+        /// no story under it: it shows the walls standing on it, the same walls the level above shows, drawn cut at their base
+        /// (a view only: they are selected and edited there, and drawn on the level they carry).
+        /// </summary>
+        public static IEnumerable<Wall> WallsShown(this Building b, Level level) =>
+            b.IsFoundationPlan(level) ? b.WallsStandingOn(level) : b.WallsUnder(level);
 
         /// <summary>
         /// The columns standing on this level (their base is here: the foundation for the ground), drawn at their base on its
@@ -82,10 +97,11 @@ namespace BuildingModel.Model
             var ids = new HashSet<string>();
             foreach (var d in b.DiaphragmsOn(level)) ids.Add(d.Id);
             foreach (var o in b.OpeningsCutting(level)) ids.Add(o.Id);
-            foreach (var w in b.WallsUnder(level)) ids.Add(w.Id);
+            foreach (var w in b.WallsShown(level)) ids.Add(w.Id);
             foreach (var n in b.NotesOn(level)) ids.Add(n.Id);
             foreach (var x in b.BeamsOn(level)) ids.Add(x.Id);
             foreach (var c in b.ColumnsUnder(level)) ids.Add(c.Id);
+            foreach (var c in b.ColumnsStandingOn(level)) ids.Add(c.Id);
             return ids;
         }
     }

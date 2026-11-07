@@ -50,7 +50,7 @@ on top of it.
 | **Level** | A named elevation where a diaphragm can be, such as "Level 2, 12 ft" or "Mezzanine, 7.5 ft". The ground level (elevation 0) is the base. Levels are set by elevation, not by story count, so a mezzanine is just a level between two others. |
 | **Diaphragm** | Drawn on a level as one or more rectangles that merge into one outline (L-shapes, notches). It can be partial: a mezzanine covers part of the footprint. |
 | **Opening** | A hole in the floors, drawn once as rectangles, open from a bottom level to a top level. It cuts the diaphragm of every level **strictly between** those two. A lobby open from the ground to the roof cuts every floor in between; a one-floor hole runs from the level below to the level above. |
-| **Wall** | A line in plan (W-E or S-N) from a base level to a top level. It can span several levels, such as a lobby wall from the ground to level 3. It is marked as a shear wall or not. |
+| **Wall** | A line in plan (W-E or S-N) from a base level to a top level. It can span several levels, such as a lobby wall from the ground to level 3. It is drawn on the level it carries (its top), and a level's plan shows the walls under it. The ground's plan (the foundation plan, `IsFoundationPlan`) has no story under it: it shows the walls and columns standing on it, cut at their base (`WallsShown`), to select and edit there; nothing is drawn on it. Shear walls are declared in the Shear Wall Calculator, not here. |
 | **Note** | A short text pinned to a point on a level's plan, for the designer and the checker ("Stair: confirm the opening size"). |
 
 Outlines are kept to right angles, as in the shear wall designer, so areas, centroids and edges are exact. Angled

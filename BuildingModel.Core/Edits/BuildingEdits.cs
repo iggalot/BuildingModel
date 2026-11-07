@@ -255,7 +255,7 @@ namespace BuildingModel.Edits
         public static Rect2? Extents(Building b, Level level = null)
         {
             var pts = new List<Point2>();
-            var walls = level == null ? b.Walls : b.WallsUnder(level).ToList();
+            var walls = level == null ? b.Walls : b.WallsShown(level).ToList();
             var diaphragms = level == null ? b.Diaphragms : b.DiaphragmsOn(level).ToList();
             foreach (var w in walls) { pts.Add(w.Start); pts.Add(w.End); }
             foreach (var r in diaphragms.SelectMany(d => d.Pieces).Concat(b.Openings.SelectMany(o => o.Pieces)))
@@ -265,7 +265,7 @@ namespace BuildingModel.Edits
             }
             foreach (var n in level == null ? b.Notes : b.NotesOn(level).ToList()) pts.Add(n.At);
             foreach (var bm in level == null ? b.Beams : b.BeamsOn(level).ToList()) { pts.Add(bm.Start); pts.Add(bm.End); }
-            foreach (var c in level == null ? b.Columns : b.ColumnsUnder(level).ToList()) pts.Add(c.At);
+            foreach (var c in level == null ? b.Columns : b.ColumnsUnder(level).Concat(b.ColumnsStandingOn(level)).ToList()) pts.Add(c.At);
             if (pts.Count == 0) return null;
             return new Rect2(pts.Min(p => p.X), pts.Min(p => p.Y), pts.Max(p => p.X), pts.Max(p => p.Y));
         }

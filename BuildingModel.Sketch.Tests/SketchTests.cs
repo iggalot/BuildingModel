@@ -84,6 +84,19 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(l2, v.Canvas.ActiveLevel);
         }
 
+        [STATestMethod]
+        public void Render_TheGroundShowsTheWallsStandingOnIt_Cut()
+        {
+            var b = Sample(out var l2, out _);
+            b.AddColumn(b.Ground, l2, 30, 30);
+            var v = new SketchView();
+            v.Canvas.SetBuilding(b, b.Ground.Id);
+            v.Canvas.ZoomExtents();
+            var bmp = Render(v, "sketch-ground");
+            Assert.IsTrue(Count(bmp, SketchCanvas.Palette.Ink, 12) > 400, "the first story's walls drawn cut (dark band)");
+            Assert.AreEqual(5, b.VisibleIds(b.Ground).Count, "its four walls and the column, selectable");
+        }
+
         /// <summary>
         /// What a host app (the Shear Wall Designer) hooks into: wall colours from its design check, its own overlay and
         /// level caption, its error markers, and typed text its own command waits for.
@@ -321,7 +334,7 @@ namespace BuildingModel.Sketch.Tests
             s.SetBuilding(b, b.Ground.Id);
             s.SetTool(SketchTool.Wall);
             s.TypePoint("0,0");
-            StringAssert.Contains(said, "above the ground");
+            StringAssert.Contains(said, "draw a wall on the level it carries");
             s.ShowLevel(l2.Id);
             s.SetTool(SketchTool.Opening);
             s.TypePoint("1,1");

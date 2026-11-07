@@ -84,7 +84,7 @@ namespace BuildingModel.Sketch
             var b = Building;
             var level = ActiveLevel;
             if (b == null || level == null) return false;
-            var wall = b.WallsUnder(level).OrderBy(x => Snapper.DistanceToSegment(at, new Segment2(x.Start, x.End))).FirstOrDefault();
+            var wall = b.WallsShown(level).OrderBy(x => Snapper.DistanceToSegment(at, new Segment2(x.Start, x.End))).FirstOrDefault();
             if (wall == null || Snapper.DistanceToSegment(at, new Segment2(wall.Start, wall.End)) > PixelsToFeet(8)) { Say("Click on a wall.", true); return false; }
             var p = BuildingEdits.AlongWall(wall, at);
             string rest = BuildingEdits.SplitWall(b, wall.Id, p);
@@ -160,7 +160,7 @@ namespace BuildingModel.Sketch
             switch (Tool)
             {
                 case SketchTool.Wall:
-                    if (below == null) { Say("Walls are drawn on a level above the ground: they run from the level below up to it.", true); return; }
+                    if (below == null) { Say("The ground only shows the walls standing on it: draw a wall on the level it carries (it runs from the level below up to it).", true); return; }
                     if (first == null) { first = p; break; }
                     var end = Snapper.Ortho(p, first.Value);
                     if (Snapper.Dist(end, first.Value) < BuildingEdits.MinimumWall) return;
@@ -285,7 +285,7 @@ namespace BuildingModel.Sketch
                     break;
 
                 case SketchTool.Split:
-                    var wall = b.WallsUnder(level).OrderBy(x => Snapper.DistanceToSegment(raw ?? p, new Segment2(x.Start, x.End))).FirstOrDefault();
+                    var wall = b.WallsShown(level).OrderBy(x => Snapper.DistanceToSegment(raw ?? p, new Segment2(x.Start, x.End))).FirstOrDefault();
                     if (wall == null || Snapper.DistanceToSegment(raw ?? p, new Segment2(wall.Start, wall.End)) > PixelsToFeet(8)) { Say("Click on a wall.", true); return; }
                     string rest = BuildingEdits.SplitWall(b, wall.Id, p);
                     if (rest == null) { Say("That is the end of the wall: click between its ends.", true); return; }

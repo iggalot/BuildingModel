@@ -211,7 +211,7 @@ namespace BuildingModel.Edits
             var beam = b.BeamsOn(level).Select(x => (x.Id, d: DistanceToSegment(p, new Segment2(x.Start, x.End))))
                         .Where(x => x.d <= reach).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
             if (beam != null) return beam;
-            var wall = b.WallsUnder(level).Select(w => (w.Id, d: DistanceToSegment(p, new Segment2(w.Start, w.End))))
+            var wall = b.WallsShown(level).Select(w => (w.Id, d: DistanceToSegment(p, new Segment2(w.Start, w.End))))
                         .Where(x => x.d <= reach).OrderBy(x => x.d).Select(x => x.Id).FirstOrDefault();
             if (wall != null) return wall;
             var opening = b.OpeningsCutting(level).Where(o => o.Pieces.Any(r => r.Contains(p.X, p.Y)))
@@ -226,12 +226,12 @@ namespace BuildingModel.Edits
         {
             bool In(Point2 p) => box.Contains(p.X, p.Y);
             var ids = new List<string>();
-            ids.AddRange(b.WallsUnder(level).Where(w => In(w.Start) && In(w.End)).Select(w => w.Id));
+            ids.AddRange(b.WallsShown(level).Where(w => In(w.Start) && In(w.End)).Select(w => w.Id));
             ids.AddRange(b.DiaphragmsOn(level).Where(d => d.Pieces.All(r => In(new Point2(r.X0, r.Y0)) && In(new Point2(r.X1, r.Y1)))).Select(d => d.Id));
             ids.AddRange(b.OpeningsCutting(level).Where(o => o.Pieces.All(r => In(new Point2(r.X0, r.Y0)) && In(new Point2(r.X1, r.Y1)))).Select(o => o.Id));
             ids.AddRange(b.NotesOn(level).Where(n => In(n.At)).Select(n => n.Id));
             ids.AddRange(b.BeamsOn(level).Where(x => In(x.Start) && In(x.End)).Select(x => x.Id));
-            ids.AddRange(b.ColumnsUnder(level).Where(c => In(c.At)).Select(c => c.Id));
+            ids.AddRange(b.ColumnsUnder(level).Concat(b.ColumnsStandingOn(level)).Where(c => In(c.At)).Select(c => c.Id));
             return ids;
         }
     }

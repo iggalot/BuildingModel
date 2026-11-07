@@ -199,7 +199,7 @@ namespace BuildingModel.Sketch
             }
             if (ShowSpans) foreach (var d in b.DiaphragmsOn(level)) SpanMarker(ctx, b, d, ShowLabels);
             // the hold-downs after the members' labels, so theirs keep off them (the shared rule, as in every app)
-            if (foundation && ShowConnections) DrawConnections(ctx, b);
+            if (ShowConnections) DrawConnections(ctx, b, level, foundation);
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
 
             DrawOver?.Invoke(this, new SketchDrawEventArgs(ctx, this));
@@ -269,21 +269,23 @@ namespace BuildingModel.Sketch
             }
         }
 
-        /// <summary>Draw the hold-downs and connections on the foundation plan. On by default.</summary>
+        /// <summary>Draw the hold-downs and connections, on the foundation plan and on every level's plan. On by default.</summary>
         public bool ShowConnections { get; set; } = true;
 
         /// <summary>
-        /// The connections as markers, each drawn and labelled by the shared rule (<see cref="HoldownMarks"/>, as on the Shear
-        /// Wall Calculator's plans): a wall end's marker on its own wall, exactly at the hold-down's point (on the end
-        /// post's inside face, as the shear wall app found it); its label ("W1  HDU5-SDS2.5"; in red, "W1  no hold-down" where it lifts with none chosen) beside the wall,
-        /// kept off the other labels, with an arrow to the marker. Grey and "(out of date)" when the model has changed since
-        /// they were found (a wall they name is gone or moved).
+        /// The hold-downs as markers, each drawn and labelled by the shared rule (<see cref="HoldownMarks"/>, the same in every
+        /// app): exactly at the hold-down's point (on the end post's inside face, as the shear wall app found it), on its own
+        /// wall; its label beside the wall, kept off the other labels, with an arrow to the marker. On the foundation plan
+        /// the foundation's points (<see cref="ConnectionMarkers"/>); on a level's plan its walls' own hold-downs and, a
+        /// triangle pointing down, those coming down from the story above onto what is under them (<see cref="LevelMarkers"/>).
+        /// Grey and "(out of date)" when the model has changed since they were found (a wall they name is gone or moved).
         /// </summary>
-        private void DrawConnections(DrawingContext ctx, Building b)
+        private void DrawConnections(DrawingContext ctx, Building b, Level level, bool foundation)
         {
             var lat = Connections != null ? Connections() : LateralSection.Read(b);
             if (lat == null || lat.IsEmpty) return;
-            var markers = ConnectionMarkers(b, lat);
+            var markers = foundation ? ConnectionMarkers(b, lat) : LevelMarkers(b, lat, level);
+            if (markers.Count == 0) return;
             var ext = BuildingEdits.Extents(b, ActiveLevel) ?? BuildingEdits.Extents(b);
             Rect? outline = ext == null ? (Rect?)null : ScreenRect(ext.Value);
             var taken = new List<Rect>(memberLabels);
@@ -296,15 +298,14 @@ namespace BuildingModel.Sketch
 
         /// <summary>
         /// The foundation plan's markers, one for each point of the lateral section (screen terms): a wall end's on its wall
-        /// (<see cref="LateralPoint.WallId"/>, the end nearest the point) exactly at its point; a point with no wall (a
-        /// column base) at the point.
+        /// (<see cref="LateralPoint.WallId"/>) exactly at its point; a point with no wall (a column base) at the point.
         /// </summary>
         public List<HoldownMarker> ConnectionMarkers(Building b, LateralSection lat)
         {
             var list = new List<HoldownMarker>();
             if (lat == null || lat.IsEmpty) return list;
             bool stale = lat.Stale(b) != null;
-            foreach (var p in lat.Points)
+            foreach (var p in lat.Points ?? new List<LateralPoint>())
             {
                 bool missing = p.Connector == null && p.MaxUp > 0;
                 string what = p.Connector ?? (missing ? "no hold-down" : null);
@@ -313,24 +314,92 @@ namespace BuildingModel.Sketch
                     Mark = p.Connector != null ? HoldownMark.Sized : missing ? HoldownMark.Missing : HoldownMark.None,
                     Text = what == null ? null : $"{p.WallId ?? p.From}  {what}" + (stale ? "  (out of date)" : ""),
                     Ink = stale ? MutedBrush : missing ? HoldownMarks.MissingInk : HoldownMarks.TextInk,
-                    Icon = ToScreen(p.Where),
                 };
-                var w = p.WallId == null ? null : b.Walls.FirstOrDefault(x => x.Id == p.WallId);
-                if (w != null && w.Length > 0)
+                OnWall(b, m, p.WallId, p.Where, 0);
+                list.Add(m);
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// A level's markers (screen terms), from the lateral design's hold-downs (<see cref="LateralSection.Holdowns"/>): the
+        /// walls of the story under it, their own hold-downs on them ("W4  HDU5"; red "W4  no hold-down"); and the hold-downs
+        /// and connections of the story above coming down onto this level, a triangle at the point ("↓ W7 2.4k", "on beam B2",
+        /// red "nothing below": a beam or a column is needed).
+        /// </summary>
+        public List<HoldownMarker> LevelMarkers(Building b, LateralSection lat, Level level)
+        {
+            var list = new List<HoldownMarker>();
+            if (lat?.Holdowns == null || level == null) return list;
+            bool stale = lat.Stale(b) != null;
+            string late = stale ? "  (out of date)" : "";
+            foreach (var h in lat.Holdowns.Where(x => x.IsWall && x.LevelId == level.Id))
+            {
+                bool missing = h.Connector == null;
+                var m = new HoldownMarker
                 {
-                    bool atStart = Snapper.Dist(p.Where, w.Start) <= Snapper.Dist(p.Where, w.End);
-                    Point end = ToScreen(atStart ? w.Start : w.End), other = ToScreen(atStart ? w.End : w.Start);
-                    // exactly at its point (the shear wall app's: on the end post's inside face, a post in from the shear part's end);
-                    // the marker as wide as the post where it shows
-                    double inset = Snapper.Dist(p.Where, atStart ? w.Start : w.End) * Zoom;
-                    m.Icon = HoldownMarks.IconAt(end, other, HoldownMarks.Size, inset);
-                    m.Size = HoldownMarks.SizeFor(inset);
-                    var u = other - end;
+                    Mark = missing ? HoldownMark.Missing : HoldownMark.Sized,
+                    Text = $"{h.WallId}  {h.Connector ?? "no hold-down"}" + late,
+                    Ink = stale ? MutedBrush : missing ? HoldownMarks.MissingInk : HoldownMarks.TextInk,
+                };
+                OnWall(b, m, h.WallId, h.Where, h.PostAlongWall);
+                list.Add(m);
+            }
+            // a beam's end and a column's base on this level carrying hold-downs on down: a connection of their own, a square
+            // at the point ("beam B2 start  MSTI26 ↑ 2.7k"; red: nothing under it, or none strong enough)
+            foreach (var h in lat.Holdowns.Where(x => !x.IsWall && x.OntoLevelId == level.Id))
+            {
+                bool bad = !h.Supported || h.Connector == null;
+                string what = !h.Supported ? "nothing under it" : h.Connector ?? "none strong enough";
+                var m = new HoldownMarker
+                {
+                    Mark = bad ? HoldownMark.Missing : HoldownMark.Sized,
+                    Text = $"{h.From}  {what} ↑ {h.TensionAsd / 1000:0.0}k" + late,
+                    Ink = stale ? MutedBrush : bad ? HoldownMarks.MissingInk : HoldownMarks.TextInk,
+                    Icon = ToScreen(h.Where),
+                };
+                var bm = h.Kind == "beam end" ? b.Beams.FirstOrDefault(x => h.From.StartsWith($"beam {x.Id} ", StringComparison.Ordinal)) : null;
+                if (bm != null)
+                {
+                    bool atStart = Snapper.Dist(h.Where, bm.Start) <= Snapper.Dist(h.Where, bm.End);
+                    var u = ToScreen(atStart ? bm.End : bm.Start) - ToScreen(atStart ? bm.Start : bm.End);
                     if (u.Length > 1e-9) { u.Normalize(); m.Inward = u; }
                 }
                 list.Add(m);
             }
+            // the walls' hold-downs coming down from the story above: a triangle pointing down at the point
+            foreach (var h in lat.Holdowns.Where(x => x.IsWall && x.OntoLevelId == level.Id))
+            {
+                string who = h.WallId ?? h.From;
+                string rest = !h.Supported ? "  nothing below: a beam or a column is needed" : h.Onto.StartsWith("wall ", StringComparison.Ordinal) ? $" onto {h.Onto.Substring(5)}" : $" on {h.Onto}";
+                var m = new HoldownMarker
+                {
+                    Mark = h.Supported ? HoldownMark.FromAbove : HoldownMark.FromAboveOntoNothing,
+                    Text = $"↓ {who} {h.TensionAsd / 1000:0.0}k{rest}" + late,
+                    Ink = stale ? MutedBrush : h.Supported ? HoldownMarks.TextInk : HoldownMarks.MissingInk,
+                    Icon = ToScreen(h.Where),
+                };
+                // along the wall or beam under it, so the label goes beside that
+                var under = h.Onto != null && h.Onto.StartsWith("wall ", StringComparison.Ordinal) ? b.Walls.FirstOrDefault(x => x.Id == h.Onto.Substring(5)) : null;
+                if (under != null && under.Length > 0) { var u = ToScreen(under.End) - ToScreen(under.Start); if (u.Length > 1e-9) { u.Normalize(); m.Inward = u; } }
+                list.Add(m);
+            }
             return list;
+        }
+
+        /// <summary>
+        /// A marker on its wall: exactly at <paramref name="at"/>, labelled beside the wall (along it from its nearer end), as
+        /// wide as its post where the drawing shows it (<paramref name="postIn"/>, in; 0: not known, the usual size).
+        /// </summary>
+        private void OnWall(Building b, HoldownMarker m, string wallId, Point2 at, double postIn)
+        {
+            m.Icon = ToScreen(at);
+            var w = wallId == null ? null : b.Walls.FirstOrDefault(x => x.Id == wallId);
+            if (w == null || !(w.Length > 0)) return;
+            bool atStart = Snapper.Dist(at, w.Start) <= Snapper.Dist(at, w.End);
+            var u = ToScreen(atStart ? w.End : w.Start) - ToScreen(atStart ? w.Start : w.End);
+            if (u.Length > 1e-9) { u.Normalize(); m.Inward = u; }
+            m.Size = postIn > 0 ? HoldownMarks.SizeFor(postIn / 12.0 * Zoom) : HoldownMarks.Size;
         }
 
         // ------------------------------------------------------------------ pieces

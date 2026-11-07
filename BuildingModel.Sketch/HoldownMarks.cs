@@ -6,8 +6,9 @@ using System.Windows.Media;
 
 namespace BuildingModel.Sketch
 {
-    /// <summary>What a hold-down marker says: a hold-down chosen, none strong enough (or none at all where it lifts), none needed.</summary>
-    public enum HoldownMark { Sized, Missing, None }
+    /// <summary>What a hold-down marker says: a hold-down chosen, none strong enough (or none at all where it lifts), none needed;
+    /// coming down from the story above onto something (a triangle pointing down), or onto nothing.</summary>
+    public enum HoldownMark { Sized, Missing, None, FromAbove, FromAboveOntoNothing }
 
     /// <summary>One hold-down (or member-end connection) to mark on a plan, in screen terms.</summary>
     public sealed class HoldownMarker
@@ -76,6 +77,20 @@ namespace BuildingModel.Sketch
         public static Rect DrawIcon(DrawingContext ctx, Point p, HoldownMark mark, double size = Size)
         {
             var box = new Rect(p.X - size / 2, p.Y - size / 2, size, size);
+            if (mark == HoldownMark.FromAbove || mark == HoldownMark.FromAboveOntoNothing)
+            {
+                // a triangle pointing down, its tip at the point: a load coming down onto this story
+                var tri = new StreamGeometry();
+                using (var g = tri.Open())
+                {
+                    g.BeginFigure(new Point(p.X - size * 0.6, p.Y - size * 0.9), true, true);
+                    g.PolyLineTo(new[] { new Point(p.X + size * 0.6, p.Y - size * 0.9), p }, true, false);
+                }
+                tri.Freeze();
+                bool onto = mark == HoldownMark.FromAbove;
+                ctx.DrawGeometry(onto ? SizedFill : OpenFill, onto ? SizedEdge : MissingEdge, tri);
+                return new Rect(p.X - size * 0.6, p.Y - size * 0.9, size * 1.2, size * 0.9);
+            }
             if (mark == HoldownMark.Sized) ctx.DrawRectangle(SizedFill, SizedEdge, box);
             else if (mark == HoldownMark.None) ctx.DrawRectangle(OpenFill, NoneEdge, box);
             else

@@ -40,6 +40,44 @@ namespace BuildingModel.Model
     }
 
     /// <summary>
+    /// A hold-down (or a connection carrying one down) on any story, as the lateral design placed and sized it, for every plan
+    /// and wall view to draw (they draw it, they do not size it): where it is, what it is, and what it anchors to on the level
+    /// below. A wall's hold-down is drawn on its wall's own plan (the level the wall carries) and, coming down, on the plan of
+    /// the level it lands on.
+    /// </summary>
+    [DataContract]
+    public sealed class StoryHoldown
+    {
+        /// <summary>"W7 west end", "beam B2 end", "column C1 base".</summary>
+        [DataMember(Order = 1)] public string From { get; set; }
+        /// <summary>The model's wall it is a hold-down of (null for a beam end or a column base).</summary>
+        [DataMember(Order = 2, EmitDefaultValue = false)] public string WallId { get; set; }
+        /// <summary>Where (ft): on the end post's inside face.</summary>
+        [DataMember(Order = 3)] public double X { get; set; }
+        [DataMember(Order = 4)] public double Y { get; set; }
+        /// <summary>The level whose plan shows it as its own: the level its wall carries (the top of its story).</summary>
+        [DataMember(Order = 5, EmitDefaultValue = false)] public string LevelId { get; set; }
+        /// <summary>The level it lands on (its base): the ground for the first story.</summary>
+        [DataMember(Order = 6, EmitDefaultValue = false)] public string OntoLevelId { get; set; }
+        /// <summary>The connector chosen ("HDU5-SDS2.5", "MSTC40"); null: none strong enough.</summary>
+        [DataMember(Order = 7, EmitDefaultValue = false)] public string Connector { get; set; }
+        /// <summary>Its tension (lb, ASD), the worst case.</summary>
+        [DataMember(Order = 8)] public double TensionAsd { get; set; }
+        /// <summary>What it anchors to: "the foundation", "wall W3", "beam B2", "column C1"; null: nothing under it.</summary>
+        [DataMember(Order = 9, EmitDefaultValue = false)] public string Onto { get; set; }
+        /// <summary>"wall", "beam end" or "column base".</summary>
+        [DataMember(Order = 10)] public string Kind { get; set; } = "wall";
+        /// <summary>The end post's width along the wall (in) the hold-down needs (0: not a wall's).</summary>
+        [DataMember(Order = 11, EmitDefaultValue = false)] public double PostAlongWall { get; set; }
+        /// <summary>Its connector's family in a word ("bolted" for a hold-down bolted to the post, "strap"), for the views.</summary>
+        [DataMember(Order = 12, EmitDefaultValue = false)] public string Family { get; set; }
+
+        public bool IsWall => Kind == "wall";
+        public bool Supported => Onto != null;
+        public BuildingModel.Geometry.Point2 Where => new BuildingModel.Geometry.Point2(X, Y);
+    }
+
+    /// <summary>
     /// What the lateral design (the shear wall app) puts on the foundation: its own section of the project file ("Lateral"), written
     /// by the shear wall app each time it saves. The load manager reads its forces; every plan (the shared sketch) draws its points
     /// and connectors on the foundation plan. The format is here, in the building model, so no app reads another app's own code.
@@ -68,7 +106,19 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 7, EmitDefaultValue = false)] public Dictionary<string, string> BasedOn { get; set; }
 
-        public bool IsEmpty => Points == null || Points.Count == 0;
+        /// <summary>
+        /// Every story's hold-downs and the connections carrying them down (<see cref="StoryHoldown"/>), for the plans of
+        /// every level and the wall views; the foundation's forces stay in <see cref="Points"/>.
+        /// </summary>
+        [DataMember(Order = 8, EmitDefaultValue = false)] public List<StoryHoldown> Holdowns { get; set; } = new List<StoryHoldown>();
+
+        /// <summary>The hold-downs of <paramref name="wallId"/> (its own, at its base).</summary>
+        public IEnumerable<StoryHoldown> HoldownsOf(string wallId) => (Holdowns ?? new List<StoryHoldown>()).Where(h => h.IsWall && h.WallId == wallId);
+
+        /// <summary>The hold-downs and connections from the story above that land on <paramref name="what"/> ("wall W3", "beam B2").</summary>
+        public IEnumerable<StoryHoldown> LandingOn(string what) => (Holdowns ?? new List<StoryHoldown>()).Where(h => h.Onto == what);
+
+        public bool IsEmpty => (Points == null || Points.Count == 0) && (Holdowns == null || Holdowns.Count == 0);
 
         private static DataContractJsonSerializer Serializer() =>
             new DataContractJsonSerializer(typeof(LateralSection), new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true });
@@ -113,6 +163,11 @@ namespace BuildingModel.Model
                 if (w == null) return $"{p.From}: wall {p.WallId} is not in the model any more.";
                 double d = Math.Min(Dist(w.Start, p.Where), Dist(w.End, p.Where));
                 if (d > 1.5) return $"{p.From}: wall {p.WallId} has moved ({d:0.#} ft from its end).";
+            }
+            foreach (var h in Holdowns ?? new List<StoryHoldown>())
+            {
+                if (h.WallId == null) continue;
+                if (b?.Walls.Any(x => x.Id == h.WallId) != true) return $"{h.From}: wall {h.WallId} is not in the model any more.";
             }
             return null;
         }

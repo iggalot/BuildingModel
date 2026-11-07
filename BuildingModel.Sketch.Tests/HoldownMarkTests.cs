@@ -93,5 +93,35 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(new Vector(0, -1), m[1].Inward, "W9's along W9 (up the screen)");
             Assert.AreEqual($"{w4.Id}  HDU2", m[0].Text);
         }
+
+        [STATestMethod]
+        public void LevelPlan_ItsWallsHoldowns_AndThoseComingDownFromAbove()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            var l3 = BuildingEdits.AddStory(b, 10);
+            var w1 = b.AddWall(b.Ground, l2, 0, 0, 20, 0);   // first story, carries level 2
+            var w2 = b.AddWall(l2, l3, 0, 0, 20, 0);         // second story, carries level 3, on W1
+            var s = new SketchCanvas();
+            s.SetBuilding(b, l2.Id);
+            var lat = new LateralSection();
+            lat.Holdowns.Add(new StoryHoldown { From = $"{w1.Id} west end", WallId = w1.Id, X = 0.25, Y = 0, LevelId = l2.Id, OntoLevelId = b.Ground.Id, Connector = "HDU5", TensionAsd = 3000, Onto = "the foundation", PostAlongWall = 3 });
+            lat.Holdowns.Add(new StoryHoldown { From = $"{w2.Id} west end", WallId = w2.Id, X = 0.25, Y = 0, LevelId = l3.Id, OntoLevelId = l2.Id, Connector = "MSTC40", TensionAsd = 1500, Onto = $"wall {w1.Id}", PostAlongWall = 3 });
+            lat.Holdowns.Add(new StoryHoldown { From = $"{w2.Id} east end", WallId = w2.Id, X = 19.75, Y = 0, LevelId = l3.Id, OntoLevelId = l2.Id, Connector = "MSTC40", TensionAsd = 1500, Onto = null, PostAlongWall = 3 });
+
+            var m = s.LevelMarkers(b, lat, l2);
+            Assert.AreEqual(3, m.Count, "W1's own, and W2's two coming down onto level 2");
+            Assert.AreEqual(HoldownMark.Sized, m[0].Mark);
+            Assert.AreEqual($"{w1.Id}  HDU5", m[0].Text);
+            Assert.AreEqual(s.ToScreen(lat.Holdowns[0].Where), m[0].Icon);
+            Assert.AreEqual(HoldownMark.FromAbove, m[1].Mark);
+            Assert.AreEqual($"↓ {w2.Id} 1.5k onto {w1.Id}", m[1].Text);
+            Assert.AreEqual(HoldownMark.FromAboveOntoNothing, m[2].Mark, "nothing under it: red");
+            StringAssert.Contains(m[2].Text, "nothing below");
+
+            var top = s.LevelMarkers(b, lat, l3);
+            Assert.AreEqual(2, top.Count, "level 3: W2's own");
+            Assert.IsTrue(top.All(x => x.Mark == HoldownMark.Sized));
+        }
     }
 }

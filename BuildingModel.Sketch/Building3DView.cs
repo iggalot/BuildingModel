@@ -53,6 +53,18 @@ namespace BuildingModel.Sketch
         /// </summary>
         public string Only { get; set; }
 
+        /// <summary>
+        /// Draw only these elements (a free body of several: walls, beams, columns), as <see cref="Only"/> does one. Null or
+        /// empty: <see cref="Only"/> rules.
+        /// </summary>
+        public ISet<string> OnlyIds { get; set; }
+
+        /// <summary>Elements drawn in the highlight colour in the whole building (those picked for a free body).</summary>
+        public ISet<string> HighlightIds { get; set; }
+
+        /// <summary>The elements drawn alone (a free body), or null for the whole building.</summary>
+        private ISet<string> Alone => OnlyIds != null && OnlyIds.Count > 0 ? OnlyIds : Only == null ? null : new HashSet<string> { Only };
+
         /// <summary>With <see cref="Only"/>: draw the element itself (see-through), or leave it to the host (its framing drawn in <see cref="Extra"/>).</summary>
         public bool DrawOnly { get; set; } = true;
 
@@ -184,11 +196,14 @@ namespace BuildingModel.Sketch
             building = b;
             var group = new Model3DGroup();
             ids.Clear();
-            string only = Only;
+            var alone = Alone;
+            string only = alone == null ? null : string.Join("|", alone.OrderBy(x => x));
             // a free body: the element see-through grey too (a little stronger), the host's forces on it seen through it
             ghost = Ghost;
             ghostAlpha = only == null ? 0.16 : 0.32;
-            bool Drawn(string id) => only == null || (id == only && DrawOnly);
+            bool Drawn(string id) => alone == null || (alone.Contains(id) && DrawOnly);
+            var picked = Material(Color.FromArgb(0xF0, 0xE0, 0x8A, 0x1E));
+            Material Mark(string id, Material m) => alone == null && HighlightIds != null && HighlightIds.Contains(id) ? picked : m;
             // the host's first: see-through surfaces drawn after them
             if (b != null && Extra != null) { var x = Extra(b); if (x != null) group.Children.Add(x); }
             if (b != null)
@@ -211,7 +226,7 @@ namespace BuildingModel.Sketch
                     var r = w.Direction == WallDirection.SouthNorth
                         ? new Rect2(w.Start.X - t, w.Start.Y, w.End.X + t, w.End.Y)
                         : new Rect2(w.Start.X, w.Start.Y - t, w.End.X, w.End.Y + t);
-                    Add(group, Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, top.Elevation - SlabThickness, other), w.Id);
+                    Add(group, Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, top.Elevation - SlabThickness, Mark(w.Id, other)), w.Id);
                 }
                 // beams: a box under the floor they frame; columns: a square post from base to top (rectangles for now)
                 var timber = Material(Color.FromArgb(0xF0, 0x8B, 0x4A, 0x14));
@@ -220,7 +235,7 @@ namespace BuildingModel.Sketch
                     var l = b.Level(bm.LevelId);
                     if (l == null || bm.Length <= 0) continue;
                     double top = l.Elevation - SlabThickness;
-                    Add(group, Along(bm.Start, bm.End, BeamWidth, top - BeamDepth, top, timber), bm.Id);
+                    Add(group, Along(bm.Start, bm.End, BeamWidth, top - BeamDepth, top, Mark(bm.Id, timber)), bm.Id);
                 }
                 foreach (var c in b.Columns.Where(x => Drawn(x.Id)))
                 {
@@ -228,7 +243,7 @@ namespace BuildingModel.Sketch
                     var hi = b.Level(c.TopLevelId);
                     if (lo == null || hi == null || !(hi.Elevation > lo.Elevation)) continue;
                     double h = ColumnSize / 2;
-                    Add(group, Box(c.At.X - h, c.At.Y - h, lo.Elevation, c.At.X + h, c.At.Y + h, ColumnTop(b, c), timber), c.Id);
+                    Add(group, Box(c.At.X - h, c.At.Y - h, lo.Elevation, c.At.X + h, c.At.Y + h, ColumnTop(b, c), Mark(c.Id, timber)), c.Id);
                 }
                 if (only == null)
                 {
@@ -243,7 +258,7 @@ namespace BuildingModel.Sketch
                 }
             }
             // the north arrow, the building model's one (as in every view): off the building's north-west corner, or a free body's
-            var north = b == null ? null : only == null ? NorthArrow.For(b) : ElementBounds(b, only) is Rect2 eb ? NorthArrow.For(eb) : null;
+            var north = b == null ? null : only == null ? NorthArrow.For(b) : BoundsOf(b, alone) is Rect2 eb ? NorthArrow.For(eb) : null;
             north = north?.Scaled(NorthArrowScale);
             if (north != null) group.Children.Add(NorthArrowDrawing.Model(north, p => NorthArrowDrawing.OnGround(p)));
             northAt = north == null ? (Point3D?)null : NorthArrowDrawing.OnGround(north.LabelAt);
@@ -278,6 +293,16 @@ namespace BuildingModel.Sketch
         }
 
         /// <summary>A wall's, beam's or column's plan extent (ft).</summary>
+        /// <summary>The extent of several elements on plan (a free body of several), or null.</summary>
+        private static Rect2? BoundsOf(Building b, IEnumerable<string> ids)
+        {
+            Rect2? r = null;
+            foreach (var id in ids ?? Enumerable.Empty<string>())
+                if (ElementBounds(b, id) is Rect2 e)
+                    r = r is Rect2 x ? new Rect2(Math.Min(x.X0, e.X0), Math.Min(x.Y0, e.Y0), Math.Max(x.X1, e.X1), Math.Max(x.Y1, e.Y1)) : e;
+            return r;
+        }
+
         private static Rect2? ElementBounds(Building b, string id)
         {
             Rect2 Of(Point2 a, Point2 c) => new Rect2(Math.Min(a.X, c.X), Math.Min(a.Y, c.Y), Math.Max(a.X, c.X), Math.Max(a.Y, c.Y));
@@ -335,7 +360,7 @@ namespace BuildingModel.Sketch
         public void Fit()
         {
             if (building == null) return;
-            if (Only != null && content.Content != null && !content.Content.Bounds.IsEmpty)
+            if (Alone != null && content.Content != null && !content.Content.Bounds.IsEmpty)
             {
                 // a free body: the element and the host's forces on it
                 var r = content.Content.Bounds;

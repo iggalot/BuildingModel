@@ -142,5 +142,58 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(2, top.Count, "level 3: W2's own");
             Assert.IsTrue(top.All(x => x.Mark == HoldownMark.Sized));
         }
+
+        /// <summary>
+        /// The Internal forces toggle, the same rule as a free body (WISE): on, both halves of every connection; off, the
+        /// selected members are the body (none: the whole structure). W2 on W1 on the foundation; W3's hold-down lands on W1
+        /// half a foot from W2's: one label, their sum case by case, ASD (0.6 × (500 + 1000) = 0.9k).
+        /// </summary>
+        [STATestMethod]
+        public void LevelPlan_InternalForces_TheBodyIsTheSelection()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            var l3 = BuildingEdits.AddStory(b, 10);
+            var w1 = b.AddWall(b.Ground, l2, 0, 0, 20, 0);
+            var w2 = b.AddWall(l2, l3, 0, 0, 20, 0);
+            var w3 = b.AddWall(l2, l3, 0.5, 0, 0.5, 12);
+            var s = new SketchCanvas();
+            s.SetBuilding(b, l2.Id);
+            StoryHoldown H(Wall w, Level top, Level onto, string to, double x, double y, double up) => new StoryHoldown
+            {
+                From = $"{w.Id} end at {x}", WallId = w.Id, X = x, Y = y, LevelId = top.Id, OntoLevelId = onto.Id, Onto = to, Connector = "HDU2",
+                TensionAsd = 0.6 * System.Math.Abs(up), Up = new Dictionary<string, double> { ["C"] = up }, PostAlongWall = 3,
+            };
+            var lat = new LateralSection();
+            lat.Holdowns.Add(H(w1, l2, b.Ground, "the foundation", 0.25, 0, 1500));
+            lat.Holdowns.Add(H(w1, l2, b.Ground, "the foundation", 19.75, 0, -1500));
+            lat.Holdowns.Add(H(w2, l3, l2, $"wall {w1.Id}", 0.25, 0, 500));
+            lat.Holdowns.Add(H(w2, l3, l2, $"wall {w1.Id}", 19.75, 0, -500));
+            lat.Holdowns.Add(H(w3, l3, l2, $"wall {w1.Id}", 0.5, 0.25, 1000));
+            lat.Holdowns.Add(H(w3, l3, l2, "wall W99", 0.5, 11.75, -1000));
+
+            // on: every half, each on its plan; the two landing together on W1 in one label
+            var on = s.LevelMarkers(b, lat, l2);
+            Assert.AreEqual(2 + 3, on.Count, $"W1's two; coming down: W2 + W3 together, W2's other end, W3's other end: {string.Join(" | ", on.Select(m => m.Text))}");
+            var both = on.Single(m => m.Text.Contains("+"));
+            StringAssert.StartsWith(both.Text, $"↓ {w2.Id} + {w3.Id} 0.9k onto {w1.Id}");
+            Assert.AreEqual(4, s.LevelMarkers(b, lat, l3).Count, "level 3: W2's two and W3's two, their own");
+
+            // off, nothing selected: the whole structure, only what is on the foundation (W1's own) and what nothing takes
+            s.SetInternalForces(false);
+            Assert.AreEqual(2, s.LevelMarkers(b, lat, l2).Count, "W1's own on the foundation: the support");
+            Assert.AreEqual(0, s.LevelMarkers(b, lat, l3).Count(m => m.Text.StartsWith(w2.Id)), "W2's on W1: inside");
+
+            // off, W2 selected: cut from W1, its own half only
+            s.Select(new[] { w2.Id });
+            Assert.AreEqual(2, s.LevelMarkers(b, lat, l3).Count(m => m.Text.StartsWith(w2.Id)), "W2's own: the cut, on W2");
+            Assert.IsFalse(s.LevelMarkers(b, lat, l2).Any(), "nothing on W1's plan: W1 is not in the body");
+
+            // off, W1 selected: its own on the foundation, and the halves coming down onto it from W2 and W3 (the cut)
+            s.Select(new[] { w1.Id });
+            var w1Body = s.LevelMarkers(b, lat, l2);
+            Assert.AreEqual(2 + 1 + 1, w1Body.Count, string.Join(" | ", w1Body.Select(m => m.Text)));
+            Assert.AreEqual(0, s.LevelMarkers(b, lat, l3).Count, "W2's and W3's own: outside the body");
+        }
     }
 }

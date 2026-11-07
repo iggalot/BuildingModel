@@ -25,6 +25,10 @@
   - `LateralSection` (`BuildingModel.Core\Model`): what the lateral design relays to the model, the foundation points with
     their forces per wind case and their connector. The sketch draws them on the Ground plan (`Connections`, a host may
     give live ones; `ShowConnections`). The format is here so every app reads it without reading another app.
+  - `ConnectionPairs` (`BuildingModel.Core\Model`): every story hold-down as a pair of equal and opposite forces (member
+    above, member below or the foundation), and the one rule every drawing uses to show a pair's halves (`Drawn`: the
+    Internal forces toggle, `SketchCanvas.ShowInternalForces`, the selection as the body, WISE), and those landing
+    within 1 ft together (`Near`, `Sum`). The Load Manager's free bodies read the same pairs.
   - `ModelFingerprint` (`BuildingModel.Core\Serialization`): short hashes of the geometry (no names or notes), a data
     section, or an app's data. An app stamps what a result was found from (`LateralSection.BasedOn`); `Changed` says
     which part differs now.

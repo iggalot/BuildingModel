@@ -106,6 +106,55 @@ namespace BuildingModel.Model
         public static double On(IEnumerable<ConnectionPair> pairs, string memberId, string windCase) =>
             At(pairs, memberId).Sum(p => (p.Upper == memberId ? p.OnUpper(windCase) : 0) + (p.Lower == memberId ? p.OnLower(windCase) : 0));
 
+        /// <summary>
+        /// Whether a drawing shows one half of a pair (the owner's rule, the same in every drawing, as on a free body: WISE).
+        /// <paramref name="upperHalf"/>: the half acting on the member above (its own hold-down, at its base); else the half on
+        /// the member below (the force coming down onto it). <paramref name="body"/>: the members drawn as the body (the
+        /// selection); null or empty: the whole structure. With the internal forces shown, every half is drawn (the visual
+        /// check that everything is accounted for). Off, the cleaner drawing: a pair with both members in the body is inside it
+        /// and neither half is drawn; at the cut only the half on the body's member; on the foundation the body's half (the
+        /// support); none on members outside the body. A connection with nothing under it is always drawn: nothing balances it.
+        /// </summary>
+        public static bool Drawn(ConnectionPair p, bool upperHalf, ICollection<string> body, bool showInternal)
+        {
+            if (p == null) return false;
+            if (showInternal || !p.Supported) return true;
+            bool all = body == null || body.Count == 0;
+            bool up = all || body.Contains(p.Upper);
+            if (p.OnFoundation) return upperHalf && up;
+            bool low = all || body.Contains(p.Lower);
+            if (up && low) return false;
+            return upperHalf ? up : low;
+        }
+
+        /// <summary>
+        /// The pairs landing on one member within <paramref name="near"/> ft of each other (the Load Manager's foundation
+        /// rule: 1 ft), each group with its force per case added case by case (the worst case of the sum, not the sum of the
+        /// worst cases): for one label where several land together.
+        /// </summary>
+        public static List<List<ConnectionPair>> Near(IEnumerable<ConnectionPair> pairs, double near = 1.0)
+        {
+            var groups = new List<List<ConnectionPair>>();
+            foreach (var p in pairs ?? Enumerable.Empty<ConnectionPair>())
+            {
+                var g = groups.FirstOrDefault(x => x[0].Lower == p.Lower && x[0].LevelId == p.LevelId &&
+                                                   x.Any(q => Math.Sqrt((q.Where.X - p.Where.X) * (q.Where.X - p.Where.X) + (q.Where.Y - p.Where.Y) * (q.Where.Y - p.Where.Y)) <= near));
+                if (g == null) groups.Add(new List<ConnectionPair> { p });
+                else g.Add(p);
+            }
+            return groups;
+        }
+
+        /// <summary>The sum of the pairs' forces, case by case (lb, W at strength level, + tension).</summary>
+        public static Dictionary<string, double> Sum(IEnumerable<ConnectionPair> pairs)
+        {
+            var d = new Dictionary<string, double>();
+            foreach (var p in pairs ?? Enumerable.Empty<ConnectionPair>())
+                foreach (var kv in p.Force ?? new Dictionary<string, double>())
+                    d[kv.Key] = (d.TryGetValue(kv.Key, out var v) ? v : 0) + kv.Value;
+            return d;
+        }
+
         /// <summary>The wind cases the pairs carry, in their order.</summary>
         public static List<string> Cases(IEnumerable<ConnectionPair> pairs) =>
             (pairs ?? Enumerable.Empty<ConnectionPair>()).SelectMany(p => p.Force?.Keys ?? Enumerable.Empty<string>()).Distinct().ToList();

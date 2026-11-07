@@ -165,6 +165,8 @@ namespace BuildingModel.App
             Item(viewMenu, "_3D", null, () => ShowPlan(false));
             viewMenu.Items.Add(new Separator());
             Item(viewMenu, "_Zoom to the drawing", "Z", () => Sketch.ZoomExtents());
+            viewMenu.Items.Add(new Separator());
+            viewMenu.Items.Add(Sketch.InternalForcesMenuItem());
 
             var bar = new DockPanel { LastChildFill = false };
             var title = new TextBlock { Text = "Building Model", FontWeight = FontWeights.SemiBold, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 12, 0) };

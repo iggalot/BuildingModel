@@ -273,6 +273,42 @@ namespace BuildingModel.Sketch
         public bool ShowConnections { get; set; } = true;
 
         /// <summary>
+        /// Draw the internal forces (the owner's toggle): on (the default), both halves of every connection, each on its plan
+        /// (the visual check that everything is accounted for). Off, the cleaner drawing for reports: the selected members are
+        /// the body (none selected: the whole structure); a connection between two of them is inside it and not drawn, one at
+        /// the cut only on the body's member, one on the foundation on the body's member (<see cref="ConnectionPairs.Drawn"/>).
+        /// </summary>
+        public bool ShowInternalForces { get; set; } = true;
+
+        /// <summary>Text for the toggle, the same in every app.</summary>
+        public const string InternalForcesTip =
+            "On: both halves of every connection, each on its plan (the check that everything is accounted for). Off, for reports: the selected members " +
+            "are the body (none: the whole structure); the connections inside it are not drawn, those at the cut and on the foundation only on the body's side.";
+
+        /// <summary>Turns <see cref="ShowInternalForces"/> on or off and draws again.</summary>
+        public void SetInternalForces(bool on)
+        {
+            ShowInternalForces = on;
+            InvalidateVisual();
+        }
+
+        /// <summary>The Internal forces toggle for a host's View menu (the same in every app): checkable, on by default.</summary>
+        public System.Windows.Controls.MenuItem InternalForcesMenuItem()
+        {
+            var mi = new System.Windows.Controls.MenuItem { Header = "_Internal forces", IsCheckable = true, IsChecked = ShowInternalForces, ToolTip = InternalForcesTip };
+            mi.Click += (s, e) => SetInternalForces(mi.IsChecked);
+            mi.Loaded += (s, e) => mi.IsChecked = ShowInternalForces; // set elsewhere meanwhile (a free body's own box)
+            return mi;
+        }
+
+        /// <summary>The walls, beams and columns selected (the body for <see cref="ShowInternalForces"/>); null: none selected.</summary>
+        private HashSet<string> BodyIds(Building b)
+        {
+            var ids = new HashSet<string>(Selection.Where(id => b.Walls.Any(w => w.Id == id) || b.Beams.Any(x => x.Id == id) || b.Columns.Any(x => x.Id == id)));
+            return ids.Count == 0 ? null : ids;
+        }
+
+        /// <summary>
         /// The hold-downs as markers, each drawn and labelled by the shared rule (<see cref="HoldownMarks"/>, the same in every
         /// app): exactly at the hold-down's point (on the end post's inside face, as the shear wall app found it), on its own
         /// wall; its label beside the wall, kept off the other labels, with an arrow to the marker. On the foundation plan
@@ -333,7 +369,14 @@ namespace BuildingModel.Sketch
             if (lat?.Holdowns == null || level == null) return list;
             bool stale = lat.Stale(b) != null;
             string late = stale ? "  (out of date)" : "";
-            foreach (var h in lat.Holdowns.Where(x => x.IsWall && x.LevelId == level.Id))
+            // each hold-down is half of a pair of equal and opposite forces: drawn by the one rule of every drawing
+            // (ConnectionPairs.Drawn), for the body drawn (the selection; none: the whole structure)
+            var pairs = ConnectionPairs.Of(lat);
+            var pairOf = new Dictionary<StoryHoldown, ConnectionPair>();
+            foreach (var p in pairs) pairOf[p.Source] = p;
+            var body = BodyIds(b);
+            bool Shown(StoryHoldown h, bool upperHalf) => !pairOf.TryGetValue(h, out var p) || ConnectionPairs.Drawn(p, upperHalf, body, ShowInternalForces);
+            foreach (var h in lat.Holdowns.Where(x => x.IsWall && x.LevelId == level.Id && Shown(x, true)))
             {
                 bool missing = h.Connector == null;
                 var m = new HoldownMarker
@@ -347,7 +390,7 @@ namespace BuildingModel.Sketch
             }
             // a beam's end and a column's base on this level carrying hold-downs on down: a connection of their own, a square
             // at the point ("beam B2 start  MSTI26 ↑ 2.7k"; red: nothing under it, or none strong enough)
-            foreach (var h in lat.Holdowns.Where(x => !x.IsWall && x.OntoLevelId == level.Id))
+            foreach (var h in lat.Holdowns.Where(x => !x.IsWall && x.OntoLevelId == level.Id && Shown(x, true)))
             {
                 bool bad = !h.Supported || h.Connector == null;
                 string what = !h.Supported ? "nothing under it" : h.Connector ?? "none strong enough";
@@ -367,15 +410,26 @@ namespace BuildingModel.Sketch
                 }
                 list.Add(m);
             }
-            // the walls' hold-downs coming down from the story above: a triangle pointing down at the point
-            foreach (var h in lat.Holdowns.Where(x => x.IsWall && x.OntoLevelId == level.Id))
+            // the walls' hold-downs coming down from the story above: a triangle pointing down at the point; several landing
+            // within 1 ft of each other on one member, one label with their sum, case by case (the worst case of the sum)
+            var coming = lat.Holdowns.Where(x => x.IsWall && x.OntoLevelId == level.Id && Shown(x, false)).ToList();
+            var together = ConnectionPairs.Near(coming.Where(x => x.Supported && pairOf.ContainsKey(x)).Select(x => pairOf[x]));
+            var groups = coming.Where(x => !x.Supported || !pairOf.ContainsKey(x)).Select(x => new List<StoryHoldown> { x })
+                               .Concat(together.Select(g => g.Select(p => p.Source).ToList()))
+                               .OrderBy(g => coming.IndexOf(g[0])).ToList();
+            foreach (var grp in groups)
             {
-                string who = h.WallId ?? h.From;
+                var h = grp[0];
+                string who = string.Join(" + ", grp.Select(x => x.WallId ?? x.From).Distinct());
                 string rest = !h.Supported ? "  nothing below: a beam or a column is needed" : h.Onto.StartsWith("wall ", StringComparison.Ordinal) ? $" onto {h.Onto.Substring(5)}" : $" on {h.Onto}";
+                // ASD as the hold-downs are sized: one alone its tension; several, each case's sum (× 0.6 from W at strength level)
+                double asd = grp.Count == 1 ? h.TensionAsd
+                           : grp.All(x => x.Up != null && x.Up.Count > 0) ? Math.Max(0, ConnectionPairs.Sum(grp.Select(x => pairOf[x])).Values.DefaultIfEmpty(0).Max() * 0.6)
+                           : grp.Sum(x => x.TensionAsd);
                 var m = new HoldownMarker
                 {
                     Mark = h.Supported ? HoldownMark.FromAbove : HoldownMark.FromAboveOntoNothing,
-                    Text = $"↓ {who} {h.TensionAsd / 1000:0.0}k{rest}" + late,
+                    Text = $"↓ {who} {asd / 1000:0.0}k{rest}" + late,
                     Ink = stale ? MutedBrush : h.Supported ? HoldownMarks.TextInk : HoldownMarks.MissingInk,
                     Icon = ToScreen(h.Where),
                 };

@@ -72,6 +72,21 @@ namespace BuildingModel.Model
         /// <summary>Its connector's family in a word ("bolted" for a hold-down bolted to the post, "strap"), for the views.</summary>
         [DataMember(Order = 12, EmitDefaultValue = false)] public string Family { get; set; }
 
+        /// <summary>
+        /// Wind case → the force this point puts on what is under it (lb, W at strength level: the lateral design's ASD ÷ 0.6),
+        /// + up (the hold-down's tension, in the cases this end lifts) / − down (the overturning compression, in the cases it
+        /// does not), as <see cref="LateralPoint.Up"/> on the foundation: the couple alone (the walls above included), no dead
+        /// load. A beam end or column base carries tension only. The equal and opposite force acts on the member above. Null
+        /// in a file saved before it was kept (only <see cref="TensionAsd"/> then).
+        /// </summary>
+        [DataMember(Order = 13, EmitDefaultValue = false)] public Dictionary<string, double> Up { get; set; } = new Dictionary<string, double>();
+
+        /// <summary>The largest uplift over the cases (lb, W at strength level; 0 when it only presses down, or none kept).</summary>
+        public double MaxUp => Up == null || Up.Count == 0 ? 0 : Math.Max(0, Up.Values.Max());
+
+        /// <summary>The largest downward force over the cases (lb, W at strength level, as a positive number; 0: none).</summary>
+        public double MaxDown => Up == null || Up.Count == 0 ? 0 : Math.Max(0, -Up.Values.Min());
+
         public bool IsWall => Kind == "wall";
         public bool Supported => Onto != null;
         public BuildingModel.Geometry.Point2 Where => new BuildingModel.Geometry.Point2(X, Y);

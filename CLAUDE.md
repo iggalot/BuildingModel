@@ -25,6 +25,9 @@
   - `LateralSection` (`BuildingModel.Core\Model`): what the lateral design relays to the model, the foundation points with
     their forces per wind case and their connector. The sketch draws them on the Ground plan (`Connections`, a host may
     give live ones; `ShowConnections`). The format is here so every app reads it without reading another app.
+  - `ModelFingerprint` (`BuildingModel.Core\Serialization`): short hashes of the geometry (no names or notes), a data
+    section, or an app's data. An app stamps what a result was found from (`LateralSection.BasedOn`); `Changed` says
+    which part differs now.
 - **Several apps, one file** (`BuildingModel.Core\Serialization`; 2026-11-05):
   - `ModelFile.Save` is atomic. It writes `<model>.saving`, then replaces the model, keeping the old one as
     `<model>.bak`. Watchers see a rename: `ProjectWatcher` handles it.
@@ -35,7 +38,9 @@
     re-reads the file and copies only its keys.
   - `ProjectLock` is `<model>.<appId>.lock` (hidden), held open while an app has the project. There is one copy per
     app per project; a second copy is refused. `Holders(model)` lists who has it, on any PC sharing the folder. A lock
-    left by a crash is stale and taken over. The app ids are `building`, `wind`, `shearwalls` and `loads`.
+    left by a crash is stale and taken over. The app ids are `building`, `wind`, `shearwalls`, `loads` and `hub`
+    (`HubId`). One person per project: `HeldByOthers` and `OthersMessage` name another person or PC that has it, and
+    `ProjectDialogs.TakeLock` refuses it then.
   - `SketchCanvas.GeometryLocked`: a host that only shows the building (the Shear Wall Calculator) gets any edit that
     moves, adds or deletes something put back. The apps' data on objects still changes.
 - **Geometry is edited only here.** The other apps show it, and open this app on the project (Edit building).

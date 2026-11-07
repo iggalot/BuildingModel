@@ -116,6 +116,27 @@ namespace BuildingModel.Serialization
             return new ProjectLock(modelPath, appId, path, s);
         }
 
+        /// <summary>
+        /// Who else is working on this project: the hub or an app open by another person or on another PC. One person works
+        /// on a project at a time (the suite's rule: two people saving the same project overwrite each other's work), so the
+        /// hub and every app refuse a project someone else has. Empty when it is free or only this person has it here.
+        /// </summary>
+        public static IReadOnlyList<LockHolder> HeldByOthers(string modelPath) =>
+            Holders(modelPath).Where(h => !(h.OnThisPc && string.Equals(h.User, Environment.UserName, StringComparison.OrdinalIgnoreCase))).ToList();
+
+        /// <summary>The hub's lock id: the person whose hub has the project.</summary>
+        public const string HubId = "hub";
+
+        /// <summary>"jim on DESK-2 has it open in the Shear Wall Calculator. One person works on a project at a time..."; null when free.</summary>
+        public static string OthersMessage(string modelPath)
+        {
+            var others = HeldByOthers(modelPath);
+            if (others.Count == 0) return null;
+            var h = others[0];
+            return $"{h.User} on {h.Machine} has this project open (in the {h.AppName}, since {h.Since.ToLocalTime():g}).\n\n" +
+                   "One person works on a project at a time, so no one saves over another's work. Ask them to close it first.";
+        }
+
         /// <summary>The apps that have this project open now (any PC that shares the folder). Stale locks are cleared.</summary>
         public static IReadOnlyList<LockHolder> Holders(string modelPath)
         {

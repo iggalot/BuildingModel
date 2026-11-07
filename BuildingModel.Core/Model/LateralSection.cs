@@ -62,6 +62,12 @@ namespace BuildingModel.Model
         /// <summary>How the forces were found, in a sentence (shown with them).</summary>
         [DataMember(Order = 6, EmitDefaultValue = false)] public string Note { get; set; }
 
+        /// <summary>
+        /// What the forces were found from (<see cref="Serialization.ModelFingerprint"/>): part → fingerprint ("geometry",
+        /// "wind", "shearwalls"). The hub compares them with the project as it is to say which input has changed since.
+        /// </summary>
+        [DataMember(Order = 7, EmitDefaultValue = false)] public Dictionary<string, string> BasedOn { get; set; }
+
         public bool IsEmpty => Points == null || Points.Count == 0;
 
         private static DataContractJsonSerializer Serializer() =>

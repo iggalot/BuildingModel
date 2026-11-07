@@ -87,6 +87,14 @@ namespace BuildingModel.Sketch
         /// </summary>
         public static ProjectLock TakeLock(Window owner, string modelPath, string appId, string appName, out bool refused)
         {
+            // one person per project: someone else's hub or app has it (another person, or another PC)
+            string others = ProjectLock.OthersMessage(modelPath);
+            if (others != null)
+            {
+                refused = true;
+                MessageBox.Show(owner, others, appName, MessageBoxButton.OK, MessageBoxImage.Information);
+                return null;
+            }
             var taken = ProjectLock.TryTake(modelPath, appId, appName, out var heldBy);
             refused = taken == null && heldBy != null;
             if (refused)

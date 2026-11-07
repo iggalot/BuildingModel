@@ -58,6 +58,31 @@ namespace BuildingModel.Serialization
             return Of(sb.ToString());
         }
 
+        /// <summary>The part name of one section of the building's data ("data:Wind"): any app can find its fingerprint again (<see cref="Recompute"/>).</summary>
+        public static string DataPart(string key) => "data:" + key;
+
+        /// <summary>
+        /// A part's fingerprint found again from the model alone: the geometry, or a data section (<see cref="DataPart"/>).
+        /// Null for a part only its app can find (an app's own design inputs).
+        /// </summary>
+        public static string Recompute(Building b, string part) =>
+            part == GeometryPart ? Geometry(b) : part != null && part.StartsWith("data:", StringComparison.Ordinal) ? Data(b, part.Substring(5)) : null;
+
+        /// <summary>
+        /// The parts of <paramref name="basedOn"/> that any app can find again (<see cref="Recompute"/>) and that differ now:
+        /// for an app that reads a result without its maker's code (the Load Manager reading the shear walls' forces).
+        /// Null when there is no <paramref name="basedOn"/>.
+        /// </summary>
+        public static List<string> ChangedFromModel(IDictionary<string, string> basedOn, Building b)
+        {
+            if (basedOn == null || basedOn.Count == 0) return null;
+            return basedOn.Where(kv => Recompute(b, kv.Key) is string now && now != kv.Value).Select(kv => kv.Key).ToList();
+        }
+
+        /// <summary>"the building", "the Wind inputs", or the part's own name.</summary>
+        public static string Words(string part) =>
+            part == GeometryPart ? "the building" : part != null && part.StartsWith("data:", StringComparison.Ordinal) ? $"the {part.Substring(5).ToLowerInvariant()} inputs" : part;
+
         /// <summary>
         /// The parts whose fingerprint differs between <paramref name="basedOn"/> (stored with a result) and
         /// <paramref name="now"/>, in <paramref name="now"/>'s order. A part missing on either side counts as changed;

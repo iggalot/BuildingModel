@@ -187,6 +187,7 @@ namespace BuildingModel.Sketch
                 ctx.DrawLine(ColumnBasePen, new Point(cs.X - half, cs.Y + half), new Point(cs.X + half, cs.Y - half));
                 ColumnLabel(ctx, cs, half, $"{c.Id} base", above: false);
             }
+            if (foundation && ShowConnections) DrawConnections(ctx, b);
 
             // selection under the labels
             foreach (var id in selection) DrawSelected(ctx, b.Find(id));
@@ -227,6 +228,50 @@ namespace BuildingModel.Sketch
             DrawPreview(ctx);
             DrawLevelTag(ctx);
             DrawScaleBar(ctx);
+        }
+
+        // ------------------------------------------------------------------ the foundation plan's connections
+
+        /// <summary>
+        /// The connections the foundation plan shows: the points the lateral design puts on the foundation (the model's
+        /// "Lateral" section, <see cref="LateralSection"/>), each with its connector. Null: read from the model. A host that
+        /// computes them (the shear wall app, before it saves) gives its own; the sketch draws them either way.
+        /// </summary>
+        public Func<LateralSection> Connections { get; set; }
+
+        /// <summary>Draw the hold-downs and connections on the foundation plan. On by default.</summary>
+        public bool ShowConnections { get; set; } = true;
+
+        private static readonly Brush ConnectorInk = B(Palette.ShearWall);
+        private static readonly Pen ConnectorPen = P(Palette.ShearWall, 1.6);
+        private static readonly Brush MissingInk = B(Palette.Error);
+        private static readonly Pen MissingPen = P(Palette.Error, 1.6);
+        private static readonly Pen StalePen = P(Palette.Muted, 1.6);
+
+        /// <summary>
+        /// Each point as a hold-down marker (a square with its anchor rod as a dot) and what is there, a line each: "W1
+        /// HDU5-SDS2.5"; in red, "W1  no hold-down" where it lifts with none chosen. Grey and "(out of date)" when the model
+        /// has changed since they were found (a wall they name is gone or moved).
+        /// </summary>
+        private void DrawConnections(DrawingContext ctx, Building b)
+        {
+            var lat = Connections != null ? Connections() : LateralSection.Read(b);
+            if (lat == null || lat.IsEmpty) return;
+            bool stale = lat.Stale(b) != null;
+            double h = 5;
+            foreach (var grp in lat.Points.GroupBy(p => ((long)Math.Round(p.X * 4), (long)Math.Round(p.Y * 4))))
+            {
+                var pts = grp.ToList();
+                bool missing = pts.Any(p => p.Connector == null && p.MaxUp > 0);
+                var pen = stale ? StalePen : missing ? MissingPen : ConnectorPen;
+                var ink = stale ? MutedBrush : missing ? MissingInk : ConnectorInk;
+                var c = ToScreen(pts[0].Where);
+                ctx.DrawRectangle(Brushes.White, pen, new Rect(c.X - h, c.Y - h, 2 * h, 2 * h));
+                ctx.DrawEllipse(ink, null, c, 1.8, 1.8);
+                string text = string.Join("\n", pts.Select(p => (p.Connector ?? (p.MaxUp > 0 ? "no hold-down" : null)) is string k ? $"{p.WallId ?? p.From}  {k}" : null).Where(x => x != null).Distinct());
+                if (stale) text = (text.Length > 0 ? text + " " : "") + "(out of date)";
+                if (text.Length > 0) Label(ctx, text, new Point(c.X + h + 3, c.Y - h - 13), ink, 9.5);
+            }
         }
 
         // ------------------------------------------------------------------ pieces

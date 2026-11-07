@@ -95,6 +95,16 @@ namespace BuildingModel.Sketch.Tests
             var bmp = Render(v, "sketch-ground");
             Assert.IsTrue(Count(bmp, SketchCanvas.Palette.Ink, 12) > 400, "the first story's walls drawn cut (dark band)");
             Assert.AreEqual(5, b.VisibleIds(b.Ground).Count, "its four walls and the column, selectable");
+
+            // the hold-downs the lateral design relays (the model's Lateral section): drawn by the sketch, in every app
+            var w = b.Walls[3];
+            LateralSection.Write(b, new LateralSection { Points = {
+                new LateralPoint { From = w.Id + " south end", WallId = w.Id, X = w.Start.X, Y = w.Start.Y + 0.25, Up = { ["A"] = 4000, ["B"] = -4000 }, Connector = "HDU5-SDS2.5" },
+                new LateralPoint { From = w.Id + " north end", WallId = w.Id, X = w.End.X, Y = w.End.Y - 0.25, Up = { ["A"] = -4000, ["B"] = 4000 } } } });
+            v.Canvas.Refresh();
+            var withHd = Render(v, "sketch-ground-holdowns");
+            Assert.IsTrue(Count(withHd, SketchCanvas.Palette.ShearWall, 12) > 20, "the hold-down drawn, with its connector");
+            Assert.IsTrue(Count(withHd, SketchCanvas.Palette.Error, 12) > 20, "the end with none chosen in red");
         }
 
         /// <summary>

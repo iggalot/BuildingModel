@@ -22,6 +22,9 @@
     names the step.
   - `ProjectWatcher` (`BuildingModel.Core\Serialization`): "the project changed on disk", after a quiet time, without
     the app's own save (`SavedByMe`). Every app that watches the file uses it.
+  - `LateralSection` (`BuildingModel.CoreModel`): what the lateral design relays to the model, the foundation points with
+    their forces per wind case and their connector. The sketch draws them on the Ground plan (`Connections`, a host may
+    give live ones; `ShowConnections`). The format is here so every app reads it without reading another app.
 - **Several apps, one file** (`BuildingModel.Core\Serialization`; 2026-11-05):
   - `ModelFile.Save` is atomic. It writes `<model>.saving`, then replaces the model, keeping the old one as
     `<model>.bak`. Watchers see a rename: `ProjectWatcher` handles it.

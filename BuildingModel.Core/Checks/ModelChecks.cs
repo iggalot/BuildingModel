@@ -188,6 +188,8 @@ namespace BuildingModel.Checks
                     add(Severity.Warning, "WallsOverlap", $"Walls {a.Id} and {c.Id} overlap over {hi - lo:0.##} ft: one is drawn on top of the other. Delete one, or move it.", new[] { a.Id, c.Id });
                 }
 
+            WallJointChecks(walls, b, add);
+
             // beams on one level along one line
             var beams = b.Beams.Where(x => b.Level(x.LevelId) != null && x.Length > 0.1).ToList();
             for (int i = 0; i < beams.Count; i++)
@@ -215,6 +217,57 @@ namespace BuildingModel.Checks
                     if (!HeightsOverlap(b.Level(a.BaseLevelId).Elevation, b.Level(a.TopLevelId).Elevation, b.Level(c.BaseLevelId).Elevation, b.Level(c.TopLevelId).Elevation)) continue;
                     add(Severity.Warning, "ColumnsOverlap", $"Columns {a.Id} and {c.Id} stand at the same point ({a.At.X:0.##}, {a.At.Y:0.##}) over the same height: a load may land on " +
                                                             "one and not the other. Delete one.", new[] { a.Id, c.Id });
+                }
+        }
+
+        /// <summary>
+        /// Perpendicular walls of one story whose ends take the same space (a warning). The walls are their centrelines; where one
+        /// wall's end lands on another wall part way along it (a T) the first stops at the other's face, as built: one runs
+        /// past, the other butts into it. Flagged:
+        /// <list type="bullet">
+        /// <item>WallEndsMeet: both end at the same point (an L drawn centreline to centreline), so both would fill the
+        /// corner. One runs past: extend it past the corner to the other's outside face, or stop the other at its face;</item>
+        /// <item>WallsCross: each runs past the other, so they take the same space where they cross. Split one at the crossing
+        /// (two walls butting into the other), or move it.</item>
+        /// </list>
+        /// Where a wall ends sets where its hold-down goes, so a corner both walls fill puts two hold-downs in one post.
+        /// </summary>
+        private static void WallJointChecks(List<Wall> walls, Building b, Action<Severity, string, string, string[]> add)
+        {
+            const double tol = 1e-6;
+            bool Same(Point2 p, Point2 q) => Math.Abs(p.X - q.X) <= tol && Math.Abs(p.Y - q.Y) <= tol;
+            // strictly inside a wall's length (not at its ends), on its line
+            bool Inside(Wall w, Point2 p)
+            {
+                bool we = w.Direction == WallDirection.WestEast;
+                if (Math.Abs(we ? p.Y - w.Start.Y : p.X - w.Start.X) > tol) return false;
+                double t = we ? p.X : p.Y;
+                return t > Lo(w, we) + tol && t < Hi(w, we) - tol;
+            }
+            for (int i = 0; i < walls.Count; i++)
+                for (int j = i + 1; j < walls.Count; j++)
+                {
+                    var a = walls[i]; var c = walls[j];
+                    if (a.Direction == c.Direction) continue;
+                    if (!HeightsOverlap(b.Level(a.BaseLevelId).Elevation, b.Level(a.TopLevelId).Elevation, b.Level(c.BaseLevelId).Elevation, b.Level(c.TopLevelId).Elevation)) continue;
+                    var ends = new[] { a.Start, a.End }.Where(p => Same(p, c.Start) || Same(p, c.End)).ToList();
+                    if (ends.Count > 0)
+                    {
+                        var corner = ends[0];
+                        add(Severity.Warning, "WallEndsMeet",
+                            $"Walls {a.Id} and {c.Id} both end at the corner ({corner.X:0.##}, {corner.Y:0.##}): as drawn both fill it, and so would their hold-downs. " +
+                            $"One runs past the other: extend {a.Id} past the corner to {c.Id}'s outside face, or stop {c.Id} at {a.Id}'s face (or the other way round).",
+                            new[] { a.Id, c.Id });
+                        continue;
+                    }
+                    var we = a.Direction == WallDirection.WestEast ? a : c;
+                    var sn = ReferenceEquals(we, a) ? c : a;
+                    var cross = new Point2(sn.Start.X, we.Start.Y);
+                    if (Inside(we, cross) && Inside(sn, cross))
+                        add(Severity.Warning, "WallsCross",
+                            $"Walls {a.Id} and {c.Id} cross at ({cross.X:0.##}, {cross.Y:0.##}): each runs past the other, so they take the same space there. " +
+                            "Split one at the crossing (two walls butting into the other), or move it.",
+                            new[] { a.Id, c.Id });
                 }
         }
 

@@ -187,8 +187,6 @@ namespace BuildingModel.Sketch
                 ctx.DrawLine(ColumnBasePen, new Point(cs.X - half, cs.Y + half), new Point(cs.X + half, cs.Y - half));
                 ColumnLabel(ctx, cs, half, $"{c.Id} base", above: false);
             }
-            if (foundation && ShowConnections) DrawConnections(ctx, b);
-
             // selection under the labels
             foreach (var id in selection) DrawSelected(ctx, b.Find(id));
 
@@ -199,6 +197,8 @@ namespace BuildingModel.Sketch
                 foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true); }
             }
             if (ShowSpans) foreach (var d in b.DiaphragmsOn(level)) SpanMarker(ctx, b, d, ShowLabels);
+            // the hold-downs after the members' labels, so theirs keep off them (the shared rule, as in every app)
+            if (foundation && ShowConnections) DrawConnections(ctx, b);
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
 
             DrawOver?.Invoke(this, new SketchDrawEventArgs(ctx, this));
@@ -242,36 +242,65 @@ namespace BuildingModel.Sketch
         /// <summary>Draw the hold-downs and connections on the foundation plan. On by default.</summary>
         public bool ShowConnections { get; set; } = true;
 
-        private static readonly Brush ConnectorInk = B(Palette.ShearWall);
-        private static readonly Pen ConnectorPen = P(Palette.ShearWall, 1.6);
-        private static readonly Brush MissingInk = B(Palette.Error);
-        private static readonly Pen MissingPen = P(Palette.Error, 1.6);
-        private static readonly Pen StalePen = P(Palette.Muted, 1.6);
-
         /// <summary>
-        /// Each point as a hold-down marker (a square with its anchor rod as a dot) and what is there, a line each: "W1
-        /// HDU5-SDS2.5"; in red, "W1  no hold-down" where it lifts with none chosen. Grey and "(out of date)" when the model
-        /// has changed since they were found (a wall they name is gone or moved).
+        /// The connections as markers, each drawn and labelled by the shared rule (<see cref="HoldownMarks"/>, as on the Shear
+        /// Wall Calculator's plans): a wall end's marker on its own wall, exactly at the hold-down's point (on the end
+        /// post's inside face, as the shear wall app found it); its label ("W1  HDU5-SDS2.5"; in red, "W1  no hold-down" where it lifts with none chosen) beside the wall,
+        /// kept off the other labels, with an arrow to the marker. Grey and "(out of date)" when the model has changed since
+        /// they were found (a wall they name is gone or moved).
         /// </summary>
         private void DrawConnections(DrawingContext ctx, Building b)
         {
             var lat = Connections != null ? Connections() : LateralSection.Read(b);
             if (lat == null || lat.IsEmpty) return;
+            var markers = ConnectionMarkers(b, lat);
+            var ext = BuildingEdits.Extents(b, ActiveLevel) ?? BuildingEdits.Extents(b);
+            Rect? outline = ext == null ? (Rect?)null : ScreenRect(ext.Value);
+            var taken = new List<Rect>(memberLabels);
+            int had = taken.Count;
+            double dip = Dpi;
+            HoldownMarks.Draw(ctx, markers, m => new FormattedText(m.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 9.5 * LabelScale, m.Ink, dip),
+                              outline, taken);
+            memberLabels.AddRange(taken.Skip(had)); // a host's own labels keep off these too
+        }
+
+        /// <summary>
+        /// The foundation plan's markers, one for each point of the lateral section (screen terms): a wall end's on its wall
+        /// (<see cref="LateralPoint.WallId"/>, the end nearest the point) exactly at its point; a point with no wall (a
+        /// column base) at the point.
+        /// </summary>
+        public List<HoldownMarker> ConnectionMarkers(Building b, LateralSection lat)
+        {
+            var list = new List<HoldownMarker>();
+            if (lat == null || lat.IsEmpty) return list;
             bool stale = lat.Stale(b) != null;
-            double h = 5;
-            foreach (var grp in lat.Points.GroupBy(p => ((long)Math.Round(p.X * 4), (long)Math.Round(p.Y * 4))))
+            foreach (var p in lat.Points)
             {
-                var pts = grp.ToList();
-                bool missing = pts.Any(p => p.Connector == null && p.MaxUp > 0);
-                var pen = stale ? StalePen : missing ? MissingPen : ConnectorPen;
-                var ink = stale ? MutedBrush : missing ? MissingInk : ConnectorInk;
-                var c = ToScreen(pts[0].Where);
-                ctx.DrawRectangle(Brushes.White, pen, new Rect(c.X - h, c.Y - h, 2 * h, 2 * h));
-                ctx.DrawEllipse(ink, null, c, 1.8, 1.8);
-                string text = string.Join("\n", pts.Select(p => (p.Connector ?? (p.MaxUp > 0 ? "no hold-down" : null)) is string k ? $"{p.WallId ?? p.From}  {k}" : null).Where(x => x != null).Distinct());
-                if (stale) text = (text.Length > 0 ? text + " " : "") + "(out of date)";
-                if (text.Length > 0) Label(ctx, text, new Point(c.X + h + 3, c.Y - h - 13), ink, 9.5);
+                bool missing = p.Connector == null && p.MaxUp > 0;
+                string what = p.Connector ?? (missing ? "no hold-down" : null);
+                var m = new HoldownMarker
+                {
+                    Mark = p.Connector != null ? HoldownMark.Sized : missing ? HoldownMark.Missing : HoldownMark.None,
+                    Text = what == null ? null : $"{p.WallId ?? p.From}  {what}" + (stale ? "  (out of date)" : ""),
+                    Ink = stale ? MutedBrush : missing ? HoldownMarks.MissingInk : HoldownMarks.TextInk,
+                    Icon = ToScreen(p.Where),
+                };
+                var w = p.WallId == null ? null : b.Walls.FirstOrDefault(x => x.Id == p.WallId);
+                if (w != null && w.Length > 0)
+                {
+                    bool atStart = Snapper.Dist(p.Where, w.Start) <= Snapper.Dist(p.Where, w.End);
+                    Point end = ToScreen(atStart ? w.Start : w.End), other = ToScreen(atStart ? w.End : w.Start);
+                    // exactly at its point (the shear wall app's: on the end post's inside face, a post in from the shear part's end);
+                    // the marker as wide as the post where it shows
+                    double inset = Snapper.Dist(p.Where, atStart ? w.Start : w.End) * Zoom;
+                    m.Icon = HoldownMarks.IconAt(end, other, HoldownMarks.Size, inset);
+                    m.Size = HoldownMarks.SizeFor(inset);
+                    var u = other - end;
+                    if (u.Length > 1e-9) { u.Normalize(); m.Inward = u; }
+                }
+                list.Add(m);
             }
+            return list;
         }
 
         // ------------------------------------------------------------------ pieces

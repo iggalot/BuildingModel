@@ -103,8 +103,9 @@ namespace BuildingModel.Sketch.Tests
                 new LateralPoint { From = w.Id + " north end", WallId = w.Id, X = w.End.X, Y = w.End.Y - 0.25, Up = { ["A"] = -4000, ["B"] = 4000 } } } });
             v.Canvas.Refresh();
             var withHd = Render(v, "sketch-ground-holdowns");
-            Assert.IsTrue(Count(withHd, SketchCanvas.Palette.ShearWall, 12) > 20, "the hold-down drawn, with its connector");
-            Assert.IsTrue(Count(withHd, SketchCanvas.Palette.Error, 12) > 20, "the end with none chosen in red");
+            var textInk = ((System.Windows.Media.SolidColorBrush)HoldownMarks.TextInk).Color; // the dark marker is on the dark cut wall: look for its label
+            Assert.IsTrue(Count(withHd, textInk, 30) > Count(bmp, textInk, 30) + 10, "the hold-down drawn, labelled with its connector");
+            Assert.IsTrue(Count(withHd, HoldownMarks.MissingColor, 12) > 20, "the end with none chosen in red (the shared open, crossed marker)");
         }
 
         /// <summary>

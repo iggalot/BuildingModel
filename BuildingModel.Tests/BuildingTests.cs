@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
 using BuildingModel.Checks;
+using BuildingModel.Edits;
 using BuildingModel.Geometry;
 using BuildingModel.Model;
 using BuildingModel.Serialization;
@@ -137,7 +138,33 @@ namespace BuildingModel.Tests
         {
             var b = ThreeStoryWithLobby(out _, out _, out _, out _, out _);
             var issues = ModelChecks.Run(b);
-            Assert.AreEqual(0, issues.Count, string.Join("\n", issues));
+            // drawn centreline to centreline, its four corners are each flagged: both walls fill the corner (WallEndsMeet)
+            Assert.AreEqual(0, issues.Count(i => i.Code != "WallEndsMeet"), string.Join("\n", issues));
+        }
+
+        [TestMethod]
+        public void Checks_WallEnds_ACornerBothFill_Flagged_OneRunningPast_Not()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            var w4 = b.AddWall(b.Ground, l2, 0, 0, 20, 0);
+            var w9 = b.AddWall(b.Ground, l2, 0, 0, 0, 16);
+            var meet = ModelChecks.Run(b).Where(i => i.Code == "WallEndsMeet").ToList();
+            Assert.AreEqual(1, meet.Count, "the L drawn to one point: both fill the corner");
+            CollectionAssert.AreEquivalent(new[] { w4.Id, w9.Id }, meet[0].Ids);
+            StringAssert.Contains(meet[0].Message, "runs past");
+
+            w4.Start = new Point2(-0.23, 0); // W4 runs past to W9's outside face: W9 butts into it (a T)
+            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "WallEndsMeet" || i.Code == "WallsCross"), "one runs past, the other butts into it");
+
+            w4.Start = new Point2(0, 0);
+            w9.Start = new Point2(0, 0.23); // or W9 stops at W4's face
+            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "WallEndsMeet" || i.Code == "WallsCross"));
+
+            var x = b.AddWall(b.Ground, l2, 10, -5, 10, 5); // runs across W4: each past the other
+            Assert.IsTrue(ModelChecks.Run(b).Any(i => i.Code == "WallsCross" && i.Ids.Contains(x.Id) && i.Ids.Contains(w4.Id)));
+            var upper = b.AddWall(l2, b.AddLevel("Roof", 20), 10, -5, 10, 5);
+            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "WallsCross" && i.Ids.Contains(upper.Id)), "another story: not in the same space");
         }
 
         [TestMethod]

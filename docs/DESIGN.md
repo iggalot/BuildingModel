@@ -84,6 +84,8 @@ walls can come later.
 | `OpeningAtEdge` | warning | An opening reaches a diaphragm edge, so the chord is interrupted there. |
 | `DiaphragmDiscontinuity` | warning | Openings cut more than 50 % of a level's gross diaphragm area. This is ASCE 7-22 Table 12.3-1, horizontal irregularity type 3 (seismic). |
 | `WallsOverlap` | warning | Two walls of the same story lie on top of each other along a stretch. |
+| `WallEndsMeet` | warning | Two perpendicular walls of one story both end at one point (an L drawn centreline to centreline): both would fill the corner, and so would their hold-downs. One runs past the other (extend it to the other's outside face), or the other stops at its face. A wall ending part way along another (a T) butts into it, as built. |
+| `WallsCross` | warning | Two perpendicular walls of one story each run past the other: they take the same space where they cross. Split one at the crossing, or move it. |
 
 The shear-wall checks (no shear wall reaching a level in a direction, a shear wall no diaphragm reaches, two shear walls
 overlapping) are the Shear Wall Calculator's, on the walls declared there (`ShearWallAdapter.Checks`). A wall here is just a wall:

@@ -12,8 +12,8 @@ namespace BuildingModel.Serialization
     public sealed class ModelDocument
     {
         public const string FormatName = "BuildingModel";
-        /// <summary>1: levels, diaphragms, openings, walls. 2: adds the data bags and the notes. 3: adds the roof (an older file reads as is, with a flat roof). 4: adds beams and columns (none in an older file). 5: adds wall stud framing (per wall and story) and the stud defaults (an older file takes 2x6 / 2x4 at 16", DF-L No. 2, L/240). 6: adds the span direction of a diaphragm's joists or rafters (an older file: Auto, the shorter way).</summary>
-        public const int CurrentVersion = 6;
+        /// <summary>1: levels, diaphragms, openings, walls. 2: adds the data bags and the notes. 3: adds the roof (an older file reads as is, with a flat roof). 4: adds beams and columns (none in an older file). 5: adds wall stud framing (per wall and story) and the stud defaults (an older file takes 2x6 / 2x4 at 16", DF-L No. 2, L/240). 6: adds the span direction of a diaphragm's joists or rafters (an older file: Auto, the shorter way). 7: adds the wall joints turned round from the usual rule (an older file: none, every joint by the rule).</summary>
+        public const int CurrentVersion = 7;
 
         [DataMember(Order = 0)] public string Format { get; set; } = FormatName;
         [DataMember(Order = 1)] public int Version { get; set; } = CurrentVersion;

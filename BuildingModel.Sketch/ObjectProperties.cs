@@ -107,6 +107,48 @@ namespace BuildingModel.Sketch
             var lo = B.Level(w.BaseLevelId);
             var hi = B.Level(w.TopLevelId);
             if (lo != null && hi != null) Hint($"Height {hi.Elevation - lo.Elevation:0.##} ft; unbraced {B.UnbracedHeight(w):0.##} ft.");
+            JointProps(w);
+        }
+
+        /// <summary>
+        /// The wall's joints with the walls it meets (<see cref="WallJoints"/>): which runs past and which stops at the other's
+        /// face; a corner with Flip, to turn it round (one undo step). The real ends set where a shear wall's hold-downs go.
+        /// </summary>
+        private void JointProps(Wall w)
+        {
+            var joints = WallJoints.Of(B, w);
+            if (joints.Count == 0) return;
+            Children.Add(new TextBlock { Text = "Joints", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 2) });
+            foreach (var j in joints)
+            {
+                var other = ReferenceEquals(j.Through, w) ? j.Butting : j.Through;
+                string what = ReferenceEquals(j.Through, w) ? $"runs past {other.Id}" : $"stops at {other.Id}'s face";
+                string where = j.Kind == JointKind.Corner ? "Corner" : "Tee";
+                var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+                if (j.CanFlip)
+                {
+                    var flip = new Button
+                    {
+                        Content = "Flip", Padding = new Thickness(8, 0, 8, 0), Margin = new Thickness(6, 0, 0, 0),
+                        ToolTip = $"Turn it round: {j.Butting.Id} runs past, {j.Through.Id} stops at its face" +
+                                  (j.Flipped ? " (back to the rule: the longer wall runs past)." : "."),
+                    };
+                    var joint = j;
+                    flip.Click += (s, e) => sketch.Edit($"Corner of {joint.Through.Id} and {joint.Butting.Id}: {joint.Butting.Id} runs past.", b => WallJoints.Flip(b, joint));
+                    DockPanel.SetDock(flip, Dock.Right);
+                    row.Children.Add(flip);
+                }
+                row.Children.Add(new TextBlock
+                {
+                    Text = $"{where} with {other.Id}: {what}" + (j.Flipped ? " (turned)" : ""), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap,
+                    ToolTip = j.Kind == JointKind.Corner ? "At a corner the longer wall runs past the shorter, an E-W wall past an N-S one of the same length, unless turned round."
+                                                         : "At a tee the wall that ends part way along the other stops at its face.",
+                });
+                Children.Add(row);
+            }
+            var (s0, e0) = WallJoints.RealEnds(B, w);
+            double built = new Segment2(s0, e0).Length;
+            if (Math.Abs(built - w.Length) > 1e-6) Hint($"Built {built:0.###} ft long: it stops at the other walls' faces.");
         }
 
         private void RectProps(ModelObject o, List<Rect2> pieces)

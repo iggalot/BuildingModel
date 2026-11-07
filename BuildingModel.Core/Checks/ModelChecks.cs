@@ -221,21 +221,14 @@ namespace BuildingModel.Checks
         }
 
         /// <summary>
-        /// Perpendicular walls of one story whose ends take the same space (a warning). The walls are their centrelines; where one
-        /// wall's end lands on another wall part way along it (a T) the first stops at the other's face, as built: one runs
-        /// past, the other butts into it. Flagged:
-        /// <list type="bullet">
-        /// <item>WallEndsMeet: both end at the same point (an L drawn centreline to centreline), so both would fill the
-        /// corner. One runs past: extend it past the corner to the other's outside face, or stop the other at its face;</item>
-        /// <item>WallsCross: each runs past the other, so they take the same space where they cross. Split one at the crossing
-        /// (two walls butting into the other), or move it.</item>
-        /// </list>
-        /// Where a wall ends sets where its hold-down goes, so a corner both walls fill puts two hold-downs in one post.
+        /// Perpendicular walls of one story that take the same space (a warning): WallsCross, each running past the other.
+        /// Split one at the crossing (two walls butting into the other), or move it. Where two walls meet at a corner or a tee,
+        /// one runs past and the other stops at its face, by the rule or as the engineer turned it (<see cref="WallJoints"/>):
+        /// nothing to flag.
         /// </summary>
         private static void WallJointChecks(List<Wall> walls, Building b, Action<Severity, string, string, string[]> add)
         {
-            const double tol = 1e-6;
-            bool Same(Point2 p, Point2 q) => Math.Abs(p.X - q.X) <= tol && Math.Abs(p.Y - q.Y) <= tol;
+            const double tol = WallJoints.Tolerance;
             // strictly inside a wall's length (not at its ends), on its line
             bool Inside(Wall w, Point2 p)
             {
@@ -250,16 +243,6 @@ namespace BuildingModel.Checks
                     var a = walls[i]; var c = walls[j];
                     if (a.Direction == c.Direction) continue;
                     if (!HeightsOverlap(b.Level(a.BaseLevelId).Elevation, b.Level(a.TopLevelId).Elevation, b.Level(c.BaseLevelId).Elevation, b.Level(c.TopLevelId).Elevation)) continue;
-                    var ends = new[] { a.Start, a.End }.Where(p => Same(p, c.Start) || Same(p, c.End)).ToList();
-                    if (ends.Count > 0)
-                    {
-                        var corner = ends[0];
-                        add(Severity.Warning, "WallEndsMeet",
-                            $"Walls {a.Id} and {c.Id} both end at the corner ({corner.X:0.##}, {corner.Y:0.##}): as drawn both fill it, and so would their hold-downs. " +
-                            $"One runs past the other: extend {a.Id} past the corner to {c.Id}'s outside face, or stop {c.Id} at {a.Id}'s face (or the other way round).",
-                            new[] { a.Id, c.Id });
-                        continue;
-                    }
                     var we = a.Direction == WallDirection.WestEast ? a : c;
                     var sn = ReferenceEquals(we, a) ? c : a;
                     var cross = new Point2(sn.Start.X, we.Start.Y);

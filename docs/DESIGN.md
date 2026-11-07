@@ -84,8 +84,9 @@ walls can come later.
 | `OpeningAtEdge` | warning | An opening reaches a diaphragm edge, so the chord is interrupted there. |
 | `DiaphragmDiscontinuity` | warning | Openings cut more than 50 % of a level's gross diaphragm area. This is ASCE 7-22 Table 12.3-1, horizontal irregularity type 3 (seismic). |
 | `WallsOverlap` | warning | Two walls of the same story lie on top of each other along a stretch. |
-| `WallEndsMeet` | warning | Two perpendicular walls of one story both end at one point (an L drawn centreline to centreline): both would fill the corner, and so would their hold-downs. One runs past the other (extend it to the other's outside face), or the other stops at its face. A wall ending part way along another (a T) butts into it, as built. |
 | `WallsCross` | warning | Two perpendicular walls of one story each run past the other: they take the same space where they cross. Split one at the crossing, or move it. |
+
+Where two walls meet (`WallJoints`, one rule for every app): at a corner the longer wall runs past the shorter, an E-W wall past an N-S one of the same length; at a tee the wall that ends part way along the other butts into it. The engineer can turn a corner round (the wall's properties, Flip; kept in `Building.FlippedJoints`, format version 7). A wall that butts stops at the other's face, half its stud depth (`StudSizes`) short of the centrelines' point (`WallJoints.RealEnds`): the plans show the walls as drawn, with a bar where one stops; a shear wall's part, and its hold-downs, start at the face.
 
 The shear-wall checks (no shear wall reaching a level in a direction, a shear wall no diaphragm reaches, two shear walls
 overlapping) are the Shear Wall Calculator's, on the walls declared there (`ShearWallAdapter.Checks`). A wall here is just a wall:

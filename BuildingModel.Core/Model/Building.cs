@@ -312,6 +312,13 @@ namespace BuildingModel.Model
         [DataMember(Order = 9, EmitDefaultValue = false)] public List<Beam> Beams { get; set; } = new List<Beam>();
         [DataMember(Order = 10, EmitDefaultValue = false)] public List<Column> Columns { get; set; } = new List<Column>();
 
+        /// <summary>
+        /// The wall joints whose usual rule the engineer turned round (format version 7; none in an older file): at an L, the
+        /// longer wall runs past the shorter, an E-W one past an N-S one of the same length (<see cref="WallJoints"/>); a joint
+        /// listed here (<see cref="WallJoints.Key"/>) the other way. Only the turned ones are kept.
+        /// </summary>
+        [DataMember(Order = 11, EmitDefaultValue = false)] public List<string> FlippedJoints { get; set; } = new List<string>();
+
         public Building()
         {
             Defaults = new ModelDefaults();
@@ -338,6 +345,7 @@ namespace BuildingModel.Model
             Notes = Notes ?? new List<Note>();
             Beams = Beams ?? new List<Beam>();
             Columns = Columns ?? new List<Column>();
+            FlippedJoints = FlippedJoints ?? new List<string>();
             Defaults = Defaults ?? new ModelDefaults();
             Roof = Roof ?? Defaults.NewRoof();
             foreach (var d in Diaphragms) d.Pieces = d.Pieces ?? new List<Rect2>();

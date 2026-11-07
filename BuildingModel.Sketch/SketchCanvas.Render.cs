@@ -163,6 +163,7 @@ namespace BuildingModel.Sketch
                 foreach (var w in b.WallsOver(level)) Line(ctx, AbovePen, w.Start, w.End);
                 foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? WallPen, w.Start, w.End);
             }
+            if (ShowJoints) DrawJoints(ctx, b, walls);
 
             // beams in this level's framing (brown, dash-dot as on framing plans) and the columns under it (filled squares)
             foreach (var bm in b.BeamsOn(level))
@@ -238,6 +239,35 @@ namespace BuildingModel.Sketch
         /// computes them (the shear wall app, before it saves) gives its own; the sketch draws them either way.
         /// </summary>
         public Func<LateralSection> Connections { get; set; }
+
+        /// <summary>Mark where the walls shown meet (<see cref="WallJoints"/>). On by default.</summary>
+        public bool ShowJoints { get; set; } = true;
+
+        private static readonly Pen JointPen = P(Palette.Ink, 1.6), FlippedJointPen = P(Palette.Measure, 1.8);
+
+        /// <summary>
+        /// Each joint of the walls shown, as built: a short bar across the wall that stops, where it meets the face of the wall
+        /// that runs past (a few pixels from the centrelines' point, so it shows at any scale), violet where the engineer turned
+        /// the corner round.
+        /// </summary>
+        private void DrawJoints(DrawingContext ctx, Building b, List<Wall> walls)
+        {
+            if (walls.Count < 2) return;
+            var shown = new HashSet<Wall>(walls);
+            foreach (var j in WallJoints.Of(b).Where(x => shown.Contains(x.Through) && shown.Contains(x.Butting)))
+            {
+                var p = ToScreen(j.At);
+                var w = j.Butting;
+                var far = ToScreen(Snapper.Dist(j.At, w.Start) < Snapper.Dist(j.At, w.End) ? w.End : w.Start);
+                var u = far - p;
+                if (u.Length < 16) continue;
+                u.Normalize();
+                double inset = Math.Max(5, WallJoints.ThicknessOf(b, j.Through, w.TopLevelId) / 2 * Zoom);
+                var c = p + u * inset;
+                var n = new Vector(-u.Y, u.X) * 5;
+                ctx.DrawLine(j.Flipped ? FlippedJointPen : JointPen, c - n, c + n);
+            }
+        }
 
         /// <summary>Draw the hold-downs and connections on the foundation plan. On by default.</summary>
         public bool ShowConnections { get; set; } = true;

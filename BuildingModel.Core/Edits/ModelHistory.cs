@@ -87,6 +87,9 @@ namespace BuildingModel.Edits
             target.Notes = source.Notes;
             target.Beams = source.Beams;
             target.Columns = source.Columns;
+            target.Roof = source.Roof;
+            target.Defaults = source.Defaults;
+            target.FlippedJoints = source.FlippedJoints;
             target.Data.Clear();
             foreach (var kv in source.Data) target.Data[kv.Key] = kv.Value;
         }

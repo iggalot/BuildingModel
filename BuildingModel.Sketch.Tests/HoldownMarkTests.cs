@@ -51,6 +51,26 @@ namespace BuildingModel.Sketch.Tests
         }
 
         [STATestMethod]
+        public void Properties_AWallsJoints_ACornerFlips_OneUndoStep()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            var w4 = b.AddWall(b.Ground, l2, 0, 0, 20, 0);
+            var w9 = b.AddWall(b.Ground, l2, 0, 0, 0, 16);
+            var s = new SketchCanvas();
+            s.SetBuilding(b, l2.Id);
+            var props = new ObjectProperties(s);
+            s.Select(new[] { w9.Id });
+            var texts = props.Children.OfType<System.Windows.Controls.DockPanel>().SelectMany(d => d.Children.OfType<System.Windows.Controls.TextBlock>()).Select(t => t.Text).ToList();
+            CollectionAssert.Contains(texts, $"Corner with {w4.Id}: stops at {w4.Id}'s face");
+            var flip = props.Children.OfType<System.Windows.Controls.DockPanel>().SelectMany(d => d.Children.OfType<System.Windows.Controls.Button>()).Single();
+            flip.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Assert.AreEqual(w9.Id, WallJoints.Of(s.Building).Single().Through.Id, "turned round: W9 runs past");
+            s.Undo();
+            Assert.AreEqual(w4.Id, WallJoints.Of(s.Building).Single().Through.Id, "one undo step back to the rule");
+        }
+
+        [STATestMethod]
         public void FoundationPlan_TwoWallsAtACorner_EachMarkerExactlyAtItsPoint()
         {
             var b = Building.New();

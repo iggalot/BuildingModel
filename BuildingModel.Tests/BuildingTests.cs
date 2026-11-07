@@ -138,33 +138,65 @@ namespace BuildingModel.Tests
         {
             var b = ThreeStoryWithLobby(out _, out _, out _, out _, out _);
             var issues = ModelChecks.Run(b);
-            // drawn centreline to centreline, its four corners are each flagged: both walls fill the corner (WallEndsMeet)
-            Assert.AreEqual(0, issues.Count(i => i.Code != "WallEndsMeet"), string.Join("\n", issues));
+            Assert.AreEqual(0, issues.Count, string.Join("\n", issues));
         }
 
         [TestMethod]
-        public void Checks_WallEnds_ACornerBothFill_Flagged_OneRunningPast_Not()
+        public void Joints_ACorner_TheLongerRunsPast_TheSameLength_TheEastWest_TurnedRound_ByTheEngineer()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            var w4 = b.AddWall(b.Ground, l2, 0, 0, 20, 0);   // E-W, 20 ft
+            var w9 = b.AddWall(b.Ground, l2, 0, 0, 0, 16);   // N-S, 16 ft
+            var j = WallJoints.Of(b).Single();
+            Assert.AreEqual(JointKind.Corner, j.Kind);
+            Assert.AreSame(w4, j.Through, "the longer runs past");
+            Assert.AreSame(w9, j.Butting);
+            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "WallsCross"), "a corner has its rule: nothing to flag");
+
+            // W9 stops at W4's face: half a 2x6 (the first story's default) short of the corner; W4 as drawn
+            double half = 5.5 / 2 / 12;
+            var (s9, e9) = WallJoints.RealEnds(b, w9);
+            Assert.AreEqual(half, s9.Y, 1e-9);
+            Assert.AreEqual(16, e9.Y, 1e-9);
+            Assert.AreEqual(0, WallJoints.RealEnds(b, w4).start.X, 1e-9);
+
+            WallJoints.Flip(b, j); // the engineer turns it round: W9 runs past
+            var f = WallJoints.Of(b).Single();
+            Assert.AreSame(w9, f.Through);
+            Assert.IsTrue(f.Flipped);
+            CollectionAssert.AreEqual(new[] { WallJoints.Key(w4, w9) }, b.FlippedJoints);
+            Assert.AreEqual(half, WallJoints.RealEnds(b, w4).start.X, 1e-9, "now W4 stops at W9's face");
+            var copy = ModelFile.Clone(b);
+            Assert.AreEqual(w9.Id, WallJoints.Of(copy).Single().Through.Id, "kept in the file");
+            WallJoints.Flip(b, f);
+            Assert.AreEqual(0, b.FlippedJoints.Count, "back to the rule: nothing kept");
+
+            w9.End = new Point2(0, 20); // the same length: the E-W one runs past
+            Assert.AreSame(w4, WallJoints.Of(b).Single().Through);
+        }
+
+        [TestMethod]
+        public void Joints_ATee_TheWallEndingPartWay_ButtsIn_CannotTurn_CrossingWallsFlagged()
         {
             var b = Building.New();
             var l2 = BuildingEdits.AddStory(b, 10);
             var w4 = b.AddWall(b.Ground, l2, 0, 0, 20, 0);
-            var w9 = b.AddWall(b.Ground, l2, 0, 0, 0, 16);
-            var meet = ModelChecks.Run(b).Where(i => i.Code == "WallEndsMeet").ToList();
-            Assert.AreEqual(1, meet.Count, "the L drawn to one point: both fill the corner");
-            CollectionAssert.AreEquivalent(new[] { w4.Id, w9.Id }, meet[0].Ids);
-            StringAssert.Contains(meet[0].Message, "runs past");
+            var t = b.AddWall(b.Ground, l2, 10, 0, 10, 12); // ends part way along W4
+            var j = WallJoints.Of(b).Single();
+            Assert.AreEqual(JointKind.Tee, j.Kind);
+            Assert.AreSame(w4, j.Through);
+            Assert.AreSame(t, j.Butting);
+            Assert.IsFalse(j.CanFlip);
+            WallJoints.Flip(b, j);
+            Assert.AreEqual(0, b.FlippedJoints.Count, "a tee is not turned");
+            Assert.AreEqual(5.5 / 2 / 12, WallJoints.RealEnds(b, t).start.Y, 1e-9);
 
-            w4.Start = new Point2(-0.23, 0); // W4 runs past to W9's outside face: W9 butts into it (a T)
-            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "WallEndsMeet" || i.Code == "WallsCross"), "one runs past, the other butts into it");
-
-            w4.Start = new Point2(0, 0);
-            w9.Start = new Point2(0, 0.23); // or W9 stops at W4's face
-            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "WallEndsMeet" || i.Code == "WallsCross"));
-
-            var x = b.AddWall(b.Ground, l2, 10, -5, 10, 5); // runs across W4: each past the other
+            var x = b.AddWall(b.Ground, l2, 5, -5, 5, 5); // runs across W4: each past the other
             Assert.IsTrue(ModelChecks.Run(b).Any(i => i.Code == "WallsCross" && i.Ids.Contains(x.Id) && i.Ids.Contains(w4.Id)));
-            var upper = b.AddWall(l2, b.AddLevel("Roof", 20), 10, -5, 10, 5);
+            var upper = b.AddWall(l2, b.AddLevel("Roof", 20), 5, -5, 5, 5);
             Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "WallsCross" && i.Ids.Contains(upper.Id)), "another story: not in the same space");
+            Assert.IsFalse(WallJoints.Of(b).Any(z => z.Through == upper || z.Butting == upper), "nor a joint");
         }
 
         [TestMethod]

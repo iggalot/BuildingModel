@@ -71,6 +71,25 @@ namespace BuildingModel.Sketch.Tests
         }
 
         [STATestMethod]
+        public void Properties_AWall_FramingAnd3D_OpensTheHostsWallWindow()
+        {
+            var b = Building.New();
+            var l2 = BuildingEdits.AddStory(b, 10);
+            var w = b.AddWall(b.Ground, l2, 0, 0, 20, 0);
+            var s = new SketchCanvas();
+            s.SetBuilding(b, l2.Id);
+            var props = new ObjectProperties(s);
+            s.Select(new[] { w.Id });
+            Assert.IsFalse(props.Children.OfType<System.Windows.Controls.Button>().Any(), "no host window: no button");
+            Wall opened = null;
+            props.OpenWall = x => opened = x;
+            props.Fill();
+            var open = props.Children.OfType<System.Windows.Controls.Button>().Single(x => (x.Content as string)?.StartsWith("Framing and 3D") == true);
+            open.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Assert.AreSame(w, opened);
+        }
+
+        [STATestMethod]
         public void FoundationPlan_TwoWallsAtACorner_EachMarkerExactlyAtItsPoint()
         {
             var b = Building.New();

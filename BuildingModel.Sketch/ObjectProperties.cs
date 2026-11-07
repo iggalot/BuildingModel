@@ -30,6 +30,9 @@ namespace BuildingModel.Sketch
             Fill();
         }
 
+        /// <summary>Opens a wall's window (its framing and 3D: the host's, WoodFraming.Wpf); null: no button.</summary>
+        public Action<Wall> OpenWall { get; set; }
+
         private Building B => sketch.Building;
 
         public void Fill()
@@ -91,6 +94,14 @@ namespace BuildingModel.Sketch
         private void WallProps(Wall w)
         {
             Title($"Wall {w.Id}");
+            if (OpenWall != null)
+            {
+                var open = new Button { Content = "Framing and 3D…", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(0, 2, 0, 6),
+                                        ToolTip = "The wall's framing in elevation and in 3D, its hold-downs and what lands on it from above; a shear wall's design over it (the same window as in the Shear Wall Calculator)." };
+                var wall = w;
+                open.Click += (s, e) => OpenWall(wall);
+                Children.Add(open);
+            }
             Hint("A wall carries its gravity load. Shear walls (the part of a wall that counts, its sheathing and hold-downs) are declared in the Shear Wall Calculator.");
             Number("Start x", w.Start.X, v => w.Start = new Point2(v, w.Start.Y));
             Number("Start y", w.Start.Y, v => w.Start = new Point2(w.Start.X, v));

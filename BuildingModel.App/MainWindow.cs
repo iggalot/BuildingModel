@@ -55,6 +55,10 @@ namespace BuildingModel.App
         private readonly Building3DView view3D = new Building3DView { Visibility = Visibility.Collapsed };
         private readonly ObjectProperties properties;
         private readonly IssueList issueList;
+
+        /// <summary>The wall window (WoodFraming.Wpf, the same as the shear wall app's), while it is open.</summary>
+        private WoodFraming.Wpf.WallWindow wallWindow;
+        private string wallShown, wallLevel;
         private readonly TextBlock summary = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Ui.Muted, FontSize = 11.5 };
         private readonly ToggleButton planTab, tab3D;
 
@@ -102,6 +106,11 @@ namespace BuildingModel.App
             Background = Brushes.White;
             properties = new ObjectProperties(Sketch);
             issueList = new IssueList(Sketch);
+            properties.OpenWall = ShowWall;
+            // the wall window follows the pick (another wall) and the model (an edit, an undo, another app's save)
+            Sketch.SelectionChanged += (s, e) => { if (wallWindow != null && Sketch.Selection.Count() == 1 && Sketch.Building.Find(Sketch.Selection.First()) is Wall w) ShowWall(w); };
+            Sketch.ModelChanged += (s, e) => RefreshWall();
+            Sketch.ActiveLevelChanged += (s, e) => RefreshWall();
 
             // the menu: every command once, named and grouped by what it works on (the keys are shown beside them)
             var menu = new Menu { Background = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
@@ -480,6 +489,34 @@ namespace BuildingModel.App
                 if (r == MessageBoxResult.Yes) cs.ApplyTo(b, force: true);
             }
             Sketch.Commit("Change set applied: " + cs.Summary() + ".");
+        }
+
+        /// <summary>
+        /// Opens (or brings up) the wall window on <paramref name="w"/> on the story of the plan shown: its framing and 3D,
+        /// its hold-downs and what lands on it, a shear wall's design over it (the shear wall app's, saved in the model).
+        /// </summary>
+        private void ShowWall(Wall w)
+        {
+            if (w == null) return;
+            if (wallWindow == null)
+            {
+                wallWindow = new WoodFraming.Wpf.WallWindow { Owner = this };
+                wallWindow.Closed += (s, e) => wallWindow = null;
+            }
+            wallShown = w.Id;
+            wallLevel = Sketch.ActiveLevel?.Id;
+            wallWindow.Show(WoodFraming.Wpf.WallViews.FromModel(Sketch.Building, w, wallLevel));
+            if (!wallWindow.IsVisible) wallWindow.Show();
+            else wallWindow.Activate();
+        }
+
+        /// <summary>The open wall window after an edit: the same wall drawn again, or closed when it is gone.</summary>
+        private void RefreshWall()
+        {
+            if (wallWindow == null) return;
+            var w = Sketch.Building.Walls.FirstOrDefault(x => x.Id == wallShown);
+            if (w == null) { wallWindow.Close(); return; }
+            wallWindow.Show(WoodFraming.Wpf.WallViews.FromModel(Sketch.Building, w, Sketch.ActiveLevel?.Id ?? wallLevel));
         }
     }
 }

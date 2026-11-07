@@ -13,7 +13,10 @@
   <ItemGroup>
     <ProjectReference Include="..\BuildingModel.Core\BuildingModel.Core.csproj" />
     <ProjectReference Include="..\BuildingModel.Sketch\BuildingModel.Sketch.csproj" />
-    <!-- no analysis app: the wind and shear wall apps read this model, not the other way round -->
+    <!-- a wall's framing and 3D (WoodFraming.Wpf): the same wall window as the shear wall app's -->
+    <ProjectReference Include="..\..\WoodFraming\WoodFraming.Wpf\WoodFraming.Wpf.csproj" />
+    <!-- no analysis app: the wind and shear wall apps read this model, not the other way round (the wall window draws the
+         shear wall app's saved design, from the model's Lateral section) -->
   </ItemGroup>
 
 </Project>

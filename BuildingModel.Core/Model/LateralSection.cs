@@ -77,6 +77,69 @@ namespace BuildingModel.Model
         public BuildingModel.Geometry.Point2 Where => new BuildingModel.Geometry.Point2(X, Y);
     }
 
+    /// <summary>One face of a shear wall's sheathing as designed, in words and numbers the views draw.</summary>
+    [DataContract]
+    public sealed class ShearFace
+    {
+        /// <summary>"Structural I 15/32\"", "Gypsum board 1/2\"".</summary>
+        [DataMember(Order = 1)] public string Sheathing { get; set; }
+        /// <summary>Its thickness (in).</summary>
+        [DataMember(Order = 2)] public double ThicknessIn { get; set; } = 0.5;
+        [DataMember(Order = 3, EmitDefaultValue = false)] public bool Gypsum { get; set; }
+        /// <summary>"8d common"; null when it is not nailed at a spacing (gypsum, plaster).</summary>
+        [DataMember(Order = 4, EmitDefaultValue = false)] public string Nail { get; set; }
+        /// <summary>The nails' spacing (in) at the panel edges and in the field (0: not nailed at a spacing).</summary>
+        [DataMember(Order = 5, EmitDefaultValue = false)] public double EdgeIn { get; set; }
+        [DataMember(Order = 6, EmitDefaultValue = false)] public double FieldIn { get; set; }
+    }
+
+    /// <summary>A first-story shear wall's sill anchor bolts as designed.</summary>
+    [DataContract]
+    public sealed class SillAnchors
+    {
+        /// <summary>Each bolt (in) from the shear part's low end (west or south).</summary>
+        [DataMember(Order = 1)] public List<double> PositionsIn { get; set; } = new List<double>();
+        [DataMember(Order = 2)] public double BoltDiaIn { get; set; }
+        [DataMember(Order = 3)] public double SpacingIn { get; set; }
+        [DataMember(Order = 4, EmitDefaultValue = false)] public bool PlateWasher { get; set; }
+    }
+
+    /// <summary>
+    /// A shear wall as the lateral design found it, for the wall views (they draw it, they do not design it): the part that is
+    /// shear wall, its sheathing and nailing, its hold-downs' lever arm, its check, and the sill bolts of a first-story wall.
+    /// </summary>
+    [DataContract]
+    public sealed class ShearWallDesign
+    {
+        [DataMember(Order = 1)] public string WallId { get; set; }
+        /// <summary>The level its wall carries (the top of its story).</summary>
+        [DataMember(Order = 2)] public string LevelId { get; set; }
+        /// <summary>The shear part as built, its two ends on plan (ft): from the face of a wall it butts into.</summary>
+        [DataMember(Order = 3)] public double X0 { get; set; }
+        [DataMember(Order = 4)] public double Y0 { get; set; }
+        [DataMember(Order = 11)] public double X1 { get; set; }
+        [DataMember(Order = 12)] public double Y1 { get; set; }
+
+        /// <summary>The shear part along <paramref name="w"/> (ft from its low end, west or south), as built.</summary>
+        public (double from, double to) Along(Wall w)
+        {
+            bool ew = Math.Abs(w.End.X - w.Start.X) >= Math.Abs(w.End.Y - w.Start.Y);
+            double low = ew ? Math.Min(w.Start.X, w.End.X) : Math.Min(w.Start.Y, w.End.Y);
+            double a = (ew ? X0 : Y0) - low, b = (ew ? X1 : Y1) - low;
+            return (Math.Max(0, Math.Min(a, b)), Math.Min(w.Length, Math.Max(a, b)));
+        }
+        /// <summary>Face 1, then face 2 when it has one.</summary>
+        [DataMember(Order = 5)] public List<ShearFace> Faces { get; set; } = new List<ShearFace>();
+        /// <summary>The hold-downs' lever arm d (in).</summary>
+        [DataMember(Order = 6, EmitDefaultValue = false)] public double ArmIn { get; set; }
+        /// <summary>"OK" or what fails, with the shear: "OK: v = 310 plf of 380 plf".</summary>
+        [DataMember(Order = 7, EmitDefaultValue = false)] public string Check { get; set; }
+        [DataMember(Order = 8, EmitDefaultValue = false)] public bool Fails { get; set; }
+        /// <summary>The hold-down's fasteners ("(12) SDS 1/4 x 2-1/2"), for its label.</summary>
+        [DataMember(Order = 9, EmitDefaultValue = false)] public string Fasteners { get; set; }
+        [DataMember(Order = 10, EmitDefaultValue = false)] public SillAnchors Anchors { get; set; }
+    }
+
     /// <summary>
     /// What the lateral design (the shear wall app) puts on the foundation: its own section of the project file ("Lateral"), written
     /// by the shear wall app each time it saves. The load manager reads its forces; every plan (the shared sketch) draws its points
@@ -112,13 +175,19 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 8, EmitDefaultValue = false)] public List<StoryHoldown> Holdowns { get; set; } = new List<StoryHoldown>();
 
+        /// <summary>Every story's shear walls as designed (<see cref="ShearWallDesign"/>), for the wall views.</summary>
+        [DataMember(Order = 9, EmitDefaultValue = false)] public List<ShearWallDesign> Walls { get; set; } = new List<ShearWallDesign>();
+
+        /// <summary>The design of <paramref name="wallId"/> (null: not a shear wall, or not designed).</summary>
+        public ShearWallDesign DesignOf(string wallId) => (Walls ?? new List<ShearWallDesign>()).FirstOrDefault(w => w.WallId == wallId);
+
         /// <summary>The hold-downs of <paramref name="wallId"/> (its own, at its base).</summary>
         public IEnumerable<StoryHoldown> HoldownsOf(string wallId) => (Holdowns ?? new List<StoryHoldown>()).Where(h => h.IsWall && h.WallId == wallId);
 
         /// <summary>The hold-downs and connections from the story above that land on <paramref name="what"/> ("wall W3", "beam B2").</summary>
         public IEnumerable<StoryHoldown> LandingOn(string what) => (Holdowns ?? new List<StoryHoldown>()).Where(h => h.Onto == what);
 
-        public bool IsEmpty => (Points == null || Points.Count == 0) && (Holdowns == null || Holdowns.Count == 0);
+        public bool IsEmpty => (Points == null || Points.Count == 0) && (Holdowns == null || Holdowns.Count == 0) && (Walls == null || Walls.Count == 0);
 
         private static DataContractJsonSerializer Serializer() =>
             new DataContractJsonSerializer(typeof(LateralSection), new DataContractJsonSerializerSettings { UseSimpleDictionaryFormat = true });

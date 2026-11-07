@@ -117,6 +117,10 @@ namespace BuildingModel.Sketch
         /// Records an edit made to <see cref="Building"/> (by a tool or by the host): an undo step when something changed,
         /// then <see cref="ModelChanged"/>. Returns true when something changed.
         /// </summary>
+        /// <summary>An edit's message as the name of its undo step: without the "Ctrl+Z undoes it" hints.</summary>
+        private static string StepName(string what) =>
+            string.IsNullOrWhiteSpace(what) ? null : System.Text.RegularExpressions.Regex.Replace(what, @"\s*\(?Ctrl\+Z[^.)]*[.)]*", "").Trim();
+
         public bool Commit(string what)
         {
             // a host that only shows the building (the Shear Wall Calculator): its geometry is edited in the Building Model
@@ -133,7 +137,7 @@ namespace BuildingModel.Sketch
             // columns follow what carries them (a beam drawn across one trims it; its support deleted runs it down again)
             var followed = BuildingEdits.FollowSupports(Building);
             if (followed.Count > 0) what = (string.IsNullOrEmpty(what) ? "" : what + " ") + string.Join(" ", followed) + " (Ctrl+Z undoes it.)";
-            bool changed = History.Record(Building);
+            bool changed = History.Record(Building, StepName(what));
             if (ActiveLevel == null || Building.Level(ActiveLevel.Id) == null)
             {
                 ActiveLevel = Building.Level(ActiveLevel?.Id) ?? Building.LevelsBottomUp.LastOrDefault();

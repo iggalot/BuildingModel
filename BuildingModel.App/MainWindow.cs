@@ -72,13 +72,8 @@ namespace BuildingModel.App
         private bool HoldProject(string file)
         {
             if (projectLock != null && string.Equals(projectLock.ModelPath, file, StringComparison.OrdinalIgnoreCase)) return true;
-            var taken = ProjectLock.TryTake(file, "building", "Building Model", out var heldBy);
-            if (taken == null && heldBy != null)
-            {
-                MessageBox.Show(this, $"This project is already open in another Building Model: {heldBy.Describe()}.\n\nSwitch to that window, or close it first.",
-                                "Building Model", MessageBoxButton.OK, MessageBoxImage.Information);
-                return false;
-            }
+            var taken = ProjectDialogs.TakeLock(this, file, "building", "Building Model", out bool refused);
+            if (refused) return false;
             projectLock?.Dispose();
             projectLock = taken;
             return true;
@@ -89,7 +84,8 @@ namespace BuildingModel.App
             projectLock?.Dispose();
             projectLock = null;
         }
-        private bool dirty;
+        /// <summary>Unsaved changes: the suite's undo history knows (an undo back to the saved step is clean).</summary>
+        private bool dirty => Sketch.History.IsDirty;
 
         private SketchCanvas Sketch => view.Canvas;
 
@@ -199,7 +195,8 @@ namespace BuildingModel.App
             root.Children.Add(center);
             Content = root;
 
-            Sketch.ModelChanged += (s, e) => { dirty = true; Update(); };
+            Sketch.ModelChanged += (s, e) => Update();
+            Sketch.History.Changed += (s, e) => Update(); // an undo back to the saved step takes the * away
             Sketch.ActiveLevelChanged += (s, e) => Update();
             KeyDown += (s, e) =>
             {
@@ -255,9 +252,7 @@ namespace BuildingModel.App
         private bool ConfirmDiscard()
         {
             if (!dirty) return true;
-            var r = MessageBox.Show(this, "Save the changes to this building first?", "Building Model", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (r == MessageBoxResult.Cancel) return false;
-            return r == MessageBoxResult.No || Save(false);
+            return ProjectDialogs.SaveChangesFirst(this, "Save the changes to this building first?", "Building Model", () => Save(false));
         }
 
         /// <summary>
@@ -283,7 +278,6 @@ namespace BuildingModel.App
             savedBase = null;
             path = null;
             Sketch.SetBuilding(b, l2.Id);
-            dirty = false;
             if (file != null)
             {
                 path = file;
@@ -317,7 +311,6 @@ namespace BuildingModel.App
                 savedBase = ModelFile.Clone(doc.Building);
                 path = file;
                 Sketch.SetBuilding(doc.Building, null);
-                dirty = false;
                 Update();
                 Sketch.ZoomExtents();
             }
@@ -356,7 +349,7 @@ namespace BuildingModel.App
                 if (report.FileChanged) Diagnostics.Log.Info("Project", report.Summary());
                 if (report.Conflicts.Count > 0)
                     MessageBox.Show(this, report.Summary(), "Save", MessageBoxButton.OK, MessageBoxImage.Information);
-                dirty = false;
+                Sketch.History.MarkSaved();
                 Update();
                 return true;
             }

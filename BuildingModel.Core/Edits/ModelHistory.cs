@@ -7,77 +7,63 @@ using BuildingModel.Serialization;
 namespace BuildingModel.Edits
 {
     /// <summary>
-    /// Undo and redo for the whole building (every level, and the apps' data in the bags): a snapshot is taken after
-    /// every change (<see cref="Record"/>); undo puts the previous snapshot back into the same building object.
+    /// Undo and redo for the whole building (every level, and the apps' data in the bags): the suite's <see cref="EditHistory"/>
+    /// with the building as its snapshot. A snapshot is taken after every change (<see cref="Record"/>); undo puts the previous
+    /// one back into the same building object. <see cref="IsDirty"/> / <see cref="MarkSaved"/>: the app's unsaved changes.
     /// </summary>
     public sealed class ModelHistory
     {
         /// <summary>How many steps are kept; the oldest are dropped.</summary>
-        public const int Limit = 200;
+        public const int Limit = EditHistory.Limit;
 
-        private readonly List<string> states = new List<string>();
-        private int current = -1;
+        /// <summary>The steps themselves (the suite's one undo mechanism).</summary>
+        public EditHistory Steps { get; } = new EditHistory();
 
-        public bool CanUndo => current > 0;
-        public bool CanRedo => current >= 0 && current < states.Count - 1;
-        public int UndoSteps => Math.Max(0, current);
-        public int RedoSteps => CanRedo ? states.Count - 1 - current : 0;
+        public event EventHandler Changed { add => Steps.Changed += value; remove => Steps.Changed -= value; }
+
+        public bool CanUndo => Steps.CanUndo;
+        public bool CanRedo => Steps.CanRedo;
+        public int UndoSteps => Steps.UndoSteps;
+        public int RedoSteps => Steps.RedoSteps;
+
+        /// <summary>True when the building is not as last saved (<see cref="MarkSaved"/>), by the steps.</summary>
+        public bool IsDirty => Steps.IsDirty;
+
+        /// <summary>The building as it is now is what is saved.</summary>
+        public void MarkSaved() => Steps.MarkSaved();
 
         /// <summary>Forgets every step; the building as it is now is the start (new or opened model).</summary>
-        public void Reset(Building b)
-        {
-            states.Clear();
-            states.Add(ModelFile.BuildingToJson(b));
-            current = 0;
-        }
+        public void Reset(Building b, bool isSaved = true) => Steps.Reset(ModelFile.BuildingToJson(b), isSaved);
 
-        /// <summary>Adds a step when the building differs from the last step; a new step drops the undone ones. True when added.</summary>
-        public bool Record(Building b)
-        {
-            string s = ModelFile.BuildingToJson(b);
-            if (current >= 0 && states[current] == s) return false;
-            if (current < states.Count - 1) states.RemoveRange(current + 1, states.Count - current - 1);
-            states.Add(s);
-            current = states.Count - 1;
-            if (states.Count > Limit)
-            {
-                states.RemoveAt(0);
-                current--;
-            }
-            return true;
-        }
+        /// <summary>
+        /// Adds a step when the building differs from the last step; a new step drops the undone ones. <paramref name="what"/>:
+        /// its name for undo ("3 walls declared shear walls"); without one, undo names it from what changed. True when added.
+        /// </summary>
+        public bool Record(Building b, string what = null) => Steps.Record(ModelFile.BuildingToJson(b), what);
 
         /// <summary>
         /// Replaces the current step with the building as it is now, without a step of its own and keeping the steps to
         /// redo: for data an app fills in by itself after a change, an undo or a redo (a new wall's default design), which
         /// must not become an undo step or drop the redo steps. True when the step changed.
         /// </summary>
-        public bool Amend(Building b)
-        {
-            if (current < 0) { Reset(b); return true; }
-            string s = ModelFile.BuildingToJson(b);
-            if (states[current] == s) return false;
-            states[current] = s;
-            return true;
-        }
+        public bool Amend(Building b) => Steps.Amend(ModelFile.BuildingToJson(b));
 
         /// <summary>True when the building's geometry (not only the apps' data) differs from the last step.</summary>
         public bool GeometryChanged(Building b) =>
-            current >= 0 && ModelMerge.GeometryJson(b) != ModelMerge.GeometryJson(ModelFile.BuildingFromJson(states[current]));
+            Steps.Current != null && ModelMerge.GeometryJson(b) != ModelMerge.GeometryJson(ModelFile.BuildingFromJson(Steps.Current));
 
         /// <summary>Puts the last step back into <paramref name="b"/> (an edit that is refused), without a step of its own.</summary>
         public void Revert(Building b)
         {
-            if (current >= 0) Assign(b, ModelFile.BuildingFromJson(states[current]));
+            if (Steps.Current != null) Assign(b, ModelFile.BuildingFromJson(Steps.Current));
         }
 
         /// <summary>Puts the previous step back. Returns what was undone ("W3 added"), or null when there is nothing to undo.</summary>
         public string Undo(Building b)
         {
             if (!CanUndo) return null;
-            string what = Describe(states[current - 1], states[current]);
-            current--;
-            Assign(b, ModelFile.BuildingFromJson(states[current]));
+            string what = Steps.UndoLabel ?? Describe(Steps.Previous, Steps.Current);
+            Assign(b, ModelFile.BuildingFromJson(Steps.Undo()));
             return what;
         }
 
@@ -85,9 +71,8 @@ namespace BuildingModel.Edits
         public string Redo(Building b)
         {
             if (!CanRedo) return null;
-            string what = Describe(states[current], states[current + 1]);
-            current++;
-            Assign(b, ModelFile.BuildingFromJson(states[current]));
+            string what = Steps.RedoLabel ?? Describe(Steps.Current, Steps.Next);
+            Assign(b, ModelFile.BuildingFromJson(Steps.Redo()));
             return what;
         }
 

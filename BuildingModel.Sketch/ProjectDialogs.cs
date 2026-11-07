@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Interop;
 using BuildingModel.Diagnostics;
+using BuildingModel.Serialization;
 
 namespace BuildingModel.Sketch
 {
@@ -66,6 +67,32 @@ namespace BuildingModel.Sketch
         {
             public OwnerHandle(Window w) { Handle = new WindowInteropHelper(w).Handle; }
             public IntPtr Handle { get; }
+        }
+
+        /// <summary>
+        /// The suite's "save first?" before leaving unsaved changes (closing, opening another project). Yes saves with
+        /// <paramref name="save"/>; No leaves them; Cancel stays. True: go on (saved, or not wanted).
+        /// </summary>
+        public static bool SaveChangesFirst(Window owner, string question, string appName, Func<bool> save)
+        {
+            var r = MessageBox.Show(owner, question, appName, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (r == MessageBoxResult.Cancel) return false;
+            return r == MessageBoxResult.No || save();
+        }
+
+        /// <summary>
+        /// Takes the app's lock on the project (<see cref="ProjectLock.TryTake"/>), saying so when another copy of the app has
+        /// it. <paramref name="refused"/>: true when it is held elsewhere (the project must not be opened); false with a null
+        /// lock when it could not be written (a read-only folder): the app goes on without one.
+        /// </summary>
+        public static ProjectLock TakeLock(Window owner, string modelPath, string appId, string appName, out bool refused)
+        {
+            var taken = ProjectLock.TryTake(modelPath, appId, appName, out var heldBy);
+            refused = taken == null && heldBy != null;
+            if (refused)
+                MessageBox.Show(owner, $"This project is already open in another {appName}: {heldBy.Describe()}.\n\nSwitch to that window, or close it first.",
+                                appName, MessageBoxButton.OK, MessageBoxImage.Information);
+            return taken;
         }
     }
 }

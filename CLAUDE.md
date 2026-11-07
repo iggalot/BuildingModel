@@ -15,10 +15,16 @@
   `SNAPSHOT_DIR` saves PNGs). Never create `MainWindow` in a test.
 - **Shared pieces the other apps use:**
   - `ProjectFolder` and `Log`: the project folder and its `logs\`.
-  - `ProjectDialogs`, `Ui`, `WindowFit`, `QuickBuildingPanel` ("New from size"), `ModelChecks`.
+  - `ProjectDialogs` (with `SaveChangesFirst` and `TakeLock`, the suite's "Save first?" and "already open"), `Ui`,
+    `WindowFit`, `QuickBuildingPanel` ("New from size"), `ModelChecks`.
+  - `EditHistory` (`BuildingModel.Core\Edits`): the suite's one undo and redo (text snapshots, step names, the saved
+    step for the unsaved `*`). `ModelHistory` is it with the building as the snapshot; `SketchCanvas.Commit(what)`
+    names the step.
+  - `ProjectWatcher` (`BuildingModel.Core\Serialization`): "the project changed on disk", after a quiet time, without
+    the app's own save (`SavedByMe`). Every app that watches the file uses it.
 - **Several apps, one file** (`BuildingModel.Core\Serialization`; 2026-11-05):
   - `ModelFile.Save` is atomic. It writes `<model>.saving`, then replaces the model, keeping the old one as
-    `<model>.bak`. Watchers see a rename, so handle `Renamed` as well as `Changed`.
+    `<model>.bak`. Watchers see a rename: `ProjectWatcher` handles it.
   - `ModelMerge` is a three-way merge (by object ID, and by data key on each object). `ModelFile.SaveMerged(path,
     doc, base, owns)` is used by the Building Model: its own keys (`Sketch.*` plan images) merge, and every other key
     is always the file's. A stale copy in memory or in undo can never overwrite another app's data.

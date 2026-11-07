@@ -224,6 +224,57 @@ namespace BuildingModel.Tests
 
         // ------------------------------------------------------------------ undo and change sets
 
+        /// <summary>The suite's one undo: named steps, the saved step (an undo back to it is clean), redo dropped by a new step.</summary>
+        [TestMethod]
+        public void EditHistory_StepsNamesAndTheSavedStep()
+        {
+            var h = new EditHistory();
+            int changed = 0;
+            h.Changed += (s, e) => changed++;
+            h.Reset("a");
+            Assert.IsFalse(h.IsDirty, "as opened");
+            Assert.IsFalse(h.Record("a", "nothing"), "the same: no step");
+            Assert.IsTrue(h.Record("b", "B set"));
+            Assert.IsTrue(h.Record("c", "C set"));
+            Assert.IsTrue(h.IsDirty);
+            h.MarkSaved();
+            Assert.IsFalse(h.IsDirty);
+            Assert.AreEqual("C set", h.UndoLabel);
+            Assert.AreEqual("b", h.Undo());
+            Assert.IsTrue(h.IsDirty, "undone past the save");
+            Assert.AreEqual("C set", h.RedoLabel);
+            Assert.AreEqual("c", h.Redo());
+            Assert.IsFalse(h.IsDirty, "back at the saved step");
+            h.Undo();
+            Assert.IsTrue(h.Record("d", "D set"), "a new step after an undo");
+            Assert.IsFalse(h.CanRedo, "the undone step is dropped");
+            Assert.IsTrue(h.IsDirty);
+            h.Undo(); h.Undo();
+            Assert.IsTrue(h.IsDirty, "the saved step was dropped: never clean again by undo");
+            Assert.IsTrue(h.Amend("a2"));
+            Assert.AreEqual(2, h.RedoSteps, "amend keeps the redo steps");
+            Assert.AreEqual("a2", h.Current);
+            Assert.IsTrue(changed > 6);
+            h.Reset("x", isSaved: false);
+            Assert.IsTrue(h.IsDirty, "a new project not saved yet");
+        }
+
+        [TestMethod]
+        public void ModelHistory_UndoNamesTheStepItWasRecordedWith()
+        {
+            var b = TwoStory(out var l2, out _);
+            var h = new ModelHistory();
+            h.Reset(b);
+            b.AddWall(b.Ground, l2, 5, 5, 15, 5);
+            Assert.IsTrue(h.Record(b, "a wall drawn"));
+            Assert.IsTrue(h.IsDirty);
+            Assert.AreEqual("a wall drawn", h.Undo(b));
+            Assert.IsFalse(h.IsDirty);
+            b.AddWall(b.Ground, l2, 5, 8, 15, 8);
+            h.Record(b);
+            StringAssert.Contains(h.Undo(b), "added", "unnamed: from what changed");
+        }
+
         [TestMethod]
         public void History_UndoRedo_SameBuildingObject()
         {

@@ -81,6 +81,19 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 13, EmitDefaultValue = false)] public Dictionary<string, double> Up { get; set; } = new Dictionary<string, double>();
 
+        /// <summary>
+        /// Where its end presses down in the cases it does not lift (ft): the end post's centreline, half a post from the end
+        /// (the tension is at <see cref="X"/>, <see cref="Y"/>, the post's inside face; the lever arm between them is
+        /// L − 1.5 post). Null for a beam end or column base, and in a file saved before it was kept (then at X, Y).
+        /// </summary>
+        [DataMember(Order = 14, EmitDefaultValue = false)] public double? CompressionX { get; set; }
+        [DataMember(Order = 15, EmitDefaultValue = false)] public double? CompressionY { get; set; }
+
+        /// <summary>Where its force acts in one case: at the hold-down when it pulls (+ up), at the post's centreline when it presses.</summary>
+        public BuildingModel.Geometry.Point2 WhereIn(string windCase) =>
+            Up != null && windCase != null && Up.TryGetValue(windCase, out var v) && v < 0 && CompressionX != null && CompressionY != null
+                ? new BuildingModel.Geometry.Point2(CompressionX.Value, CompressionY.Value) : Where;
+
         /// <summary>The largest uplift over the cases (lb, W at strength level; 0 when it only presses down, or none kept).</summary>
         public double MaxUp => Up == null || Up.Count == 0 ? 0 : Math.Max(0, Up.Values.Max());
 
@@ -153,6 +166,16 @@ namespace BuildingModel.Model
         /// <summary>The hold-down's fasteners ("(12) SDS 1/4 x 2-1/2"), for its label.</summary>
         [DataMember(Order = 9, EmitDefaultValue = false)] public string Fasteners { get; set; }
         [DataMember(Order = 10, EmitDefaultValue = false)] public SillAnchors Anchors { get; set; }
+
+        /// <summary>
+        /// Wind case → the wind's shear on the top of the wall from its diaphragm (lb, W at strength level), + toward its high
+        /// end (east for an east-west wall, north for a north-south one): the external load on its free body, which its
+        /// hold-downs, compression posts and sill take. Null in a file saved before it was kept, or not designed.
+        /// </summary>
+        [DataMember(Order = 13, EmitDefaultValue = false)] public Dictionary<string, double> ShearOnTop { get; set; }
+
+        /// <summary>The height the shear acts at above the wall's base (ft): its story's height, as designed.</summary>
+        [DataMember(Order = 14, EmitDefaultValue = false)] public double HeightFt { get; set; }
     }
 
     /// <summary>

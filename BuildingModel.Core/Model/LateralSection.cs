@@ -105,7 +105,10 @@ namespace BuildingModel.Model
         public BuildingModel.Geometry.Point2 Where => new BuildingModel.Geometry.Point2(X, Y);
     }
 
-    /// <summary>One face of a shear wall's sheathing as designed, in words and numbers the views draw.</summary>
+    /// <summary>
+    /// One face of a shear wall's sheathing as designed, in words and numbers the views draw. Its nailing is a connection
+    /// detail, not the model's (owner 2026-11-08): WoodFraming.Connections, the same face by its index.
+    /// </summary>
     [DataContract]
     public sealed class ShearFace
     {
@@ -114,11 +117,6 @@ namespace BuildingModel.Model
         /// <summary>Its thickness (in).</summary>
         [DataMember(Order = 2)] public double ThicknessIn { get; set; } = 0.5;
         [DataMember(Order = 3, EmitDefaultValue = false)] public bool Gypsum { get; set; }
-        /// <summary>"8d common"; null when it is not nailed at a spacing (gypsum, plaster).</summary>
-        [DataMember(Order = 4, EmitDefaultValue = false)] public string Nail { get; set; }
-        /// <summary>The nails' spacing (in) at the panel edges and in the field (0: not nailed at a spacing).</summary>
-        [DataMember(Order = 5, EmitDefaultValue = false)] public double EdgeIn { get; set; }
-        [DataMember(Order = 6, EmitDefaultValue = false)] public double FieldIn { get; set; }
     }
 
     /// <summary>

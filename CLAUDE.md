@@ -38,7 +38,8 @@
   - **Connection details are not in this model (owner 2026-11-07: no god class).** Nailing, sill bolts, diaphragm lines and
     their defaults are `..\WoodFraming\WoodFraming.Connections` (its own "Connections" and "ConnectionDefaults" sections,
     keyed by this model's ids; it references BuildingModel.Core, never the other way). The forces stay here: the
-    hold-downs, the points, the pairs, the diaphragms' wind (`LateralSection`). The BuildingModel.App references
+    hold-downs, the points, the pairs, the diaphragms' wind (`LateralSection`), and each shear wall's sheathing
+    (`ShearFace`: its nailing is in the Connections, owner 2026-11-08). The BuildingModel.App references
     WoodFraming.Connections only for the shared wall window.
   - `ModelFingerprint` (`BuildingModel.Core\Serialization`): short hashes of the geometry (no names or notes), a data
     section, or an app's data. An app stamps what a result was found from (`LateralSection.BasedOn`); `Changed` says

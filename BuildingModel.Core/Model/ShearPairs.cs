@@ -28,7 +28,13 @@ namespace BuildingModel.Model
         public Point2 Dir { get; set; }
         /// <summary>"W3 top", "W3 sill".</summary>
         public string From { get; set; }
-        /// <summary>What takes it: "the Level 2 diaphragm's boundary nailing", "(4) 5/8" anchor bolts", "sill nailing (not designed)".</summary>
+        /// <summary>The level on top of the wall's story (the key of its design): for the sill pair, the story it is the sill of.</summary>
+        public string StoryLevelId { get; set; }
+        /// <summary>
+        /// What takes it, in words: the connections' own describer's (<see cref="ShearPairs.Of"/>), else the model's plain words ("the
+        /// Level 2 diaphragm's boundary nailing into the top plates", "the sill's anchor bolts", "the sill nailing into the Level 2
+        /// floor"). The connections are details, not the model's (owner 2026-11-07).
+        /// </summary>
         public string Connector { get; set; }
         /// <summary>Wind case → the force on the wall (lb, W at strength level, + along <see cref="Dir"/>).</summary>
         public Dictionary<string, double> OnWall { get; set; } = new Dictionary<string, double>();
@@ -42,8 +48,12 @@ namespace BuildingModel.Model
     /// <summary>The horizontal pairs of the shear walls (<see cref="ShearPair"/>) and every diaphragm's free body from them.</summary>
     public static class ShearPairs
     {
-        /// <summary>Every designed shear wall's two pairs, its top and its sill, per story.</summary>
-        public static List<ShearPair> Of(Building b, LateralSection lateral)
+        /// <summary>
+        /// Every designed shear wall's two pairs, its top and its sill, per story. <paramref name="describe"/> names what carries
+        /// each (the connections' section, which the model does not know: WoodFraming.Connections); null or a null answer keeps
+        /// the plain words.
+        /// </summary>
+        public static List<ShearPair> Of(Building b, LateralSection lateral, Func<ShearPair, string> describe = null)
         {
             var list = new List<ShearPair>();
             if (b == null || lateral?.Walls == null) return list;
@@ -68,40 +78,20 @@ namespace BuildingModel.Model
                 string name = w.Id;
                 list.Add(new ShearPair
                 {
-                    WallId = w.Id, LevelId = top.Id, AtTop = true, Start = a, End = e, Dir = dir, From = $"{name} top",
-                    Connector = Boundary(lateral.LineOf(top.Id, w.Id), top.Name),
+                    WallId = w.Id, LevelId = top.Id, StoryLevelId = top.Id, AtTop = true, Start = a, End = e, Dir = dir, From = $"{name} top",
+                    Connector = $"the {top.Name} diaphragm's boundary nailing into the top plates",
                     OnWall = d.ShearOnTop.ToDictionary(kv => kv.Key, kv => kv.Value),
                 });
                 list.Add(new ShearPair
                 {
-                    WallId = w.Id, LevelId = bas.Id, OnFoundation = onFoundation, Start = a, End = e, Dir = dir, From = $"{name} sill",
-                    Connector = onFoundation ? Anchors(d.Anchors) : Nails(d.SillNails, bas.Name),
+                    WallId = w.Id, LevelId = bas.Id, StoryLevelId = top.Id, OnFoundation = onFoundation, Start = a, End = e, Dir = dir, From = $"{name} sill",
+                    Connector = onFoundation ? "the sill's anchor bolts" : $"the sill nailing into the {bas.Name} floor",
                     OnWall = d.ShearOnTop.ToDictionary(kv => kv.Key, kv => -kv.Value),
                 });
             }
+            if (describe != null)
+                foreach (var p in list) p.Connector = describe(p) ?? p.Connector;
             return list;
-        }
-
-        private static string Boundary(DiaphragmLine l, string level)
-        {
-            if (l == null || l.BoundaryIn <= 0) return $"the {level} diaphragm's boundary nailing into the top plates (not designed)";
-            string s = $"the {level} diaphragm's boundary nailing, {l.Nailing}, into the top plates (the collector {l.CollectorLb:0} lb ASD)";
-            return l.Fails == null ? s : $"{s}: {l.Fails}";
-        }
-
-        private static string Nails(SillNails n, string floor)
-        {
-            if (n == null || n.SpacingIn <= 0) return $"the sill nailing into the {floor} floor (not designed)";
-            string s = $"{n.Nail} at {n.SpacingIn:0.#}\" o.c. through the {floor} floor's sheathing into the rim or blocking";
-            return n.Fails == null ? s : $"{s}: {n.Fails}";
-        }
-
-        private static string Anchors(SillAnchors a)
-        {
-            if (a == null || a.BoltDiaIn <= 0) return "the sill's anchor bolts (not designed)";
-            int n = a.PositionsIn?.Count ?? 0;
-            string dia = a.BoltDiaIn.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
-            return $"{(n > 0 ? $"({n}) " : "")}{dia}\" anchor bolts at {a.SpacingIn:0}\" o.c.";
         }
 
         /// <summary>

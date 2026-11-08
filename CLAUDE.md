@@ -32,10 +32,14 @@
     within 1 ft together (`Near`, `Sum`). The Load Manager's free bodies read the same pairs.
   - `ShearPairs` (`BuildingModel.Core\Model`): the horizontal pairs, each shear wall story's shear at its top (into its
     diaphragm) and its sill (into the floor, or the foundation's anchor bolts), and each diaphragm's free body from them
-    and its own wind (`Balance`, with `LateralSection.Diaphragms`, `DiaphragmWind`, which SWC saves). An upper sill's pair names
-    its nailing (`ShearWallDesign.SillNails`, from the `ModelDefaults` `FloorSheathing` and `SillNail`).
-    `LateralSection.DiaphragmLines` (`DiaphragmLine`): each diaphragm's lines of shear walls as SWC designed them (the
-    line shear, the boundary nailing, the collector); a top pair names its line's nailing.
+    and its own wind (`Balance`, with `LateralSection.Diaphragms`, `DiaphragmWind`, which SWC saves). Each pair has
+    `StoryLevelId` (the level on top of its wall's story) and generic words for its connector; `Of`'s optional describer
+    gives the designed ones.
+  - **Connection details are not in this model (owner 2026-11-07: no god class).** Nailing, sill bolts, diaphragm lines and
+    their defaults are `..\WoodFraming\WoodFraming.Connections` (its own "Connections" and "ConnectionDefaults" sections,
+    keyed by this model's ids; it references BuildingModel.Core, never the other way). The forces stay here: the
+    hold-downs, the points, the pairs, the diaphragms' wind (`LateralSection`). The BuildingModel.App references
+    WoodFraming.Connections only for the shared wall window.
   - `ModelFingerprint` (`BuildingModel.Core\Serialization`): short hashes of the geometry (no names or notes), a data
     section, or an app's data. An app stamps what a result was found from (`LateralSection.BasedOn`); `Changed` says
     which part differs now.

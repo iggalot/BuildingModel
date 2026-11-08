@@ -121,37 +121,10 @@ namespace BuildingModel.Model
         [DataMember(Order = 6, EmitDefaultValue = false)] public double FieldIn { get; set; }
     }
 
-    /// <summary>A first-story shear wall's sill anchor bolts as designed.</summary>
-    [DataContract]
-    public sealed class SillAnchors
-    {
-        /// <summary>Each bolt (in) from the shear part's low end (west or south).</summary>
-        [DataMember(Order = 1)] public List<double> PositionsIn { get; set; } = new List<double>();
-        [DataMember(Order = 2)] public double BoltDiaIn { get; set; }
-        [DataMember(Order = 3)] public double SpacingIn { get; set; }
-        [DataMember(Order = 4, EmitDefaultValue = false)] public bool PlateWasher { get; set; }
-    }
-
-    /// <summary>
-    /// An upper-story shear wall's sill nailed through the floor sheathing into the rim or blocking, as designed (the wall's
-    /// shear out of its base, SDPWS 4.3.6.4.1): the nail, its spacing, and what one nail takes.
-    /// </summary>
-    [DataContract]
-    public sealed class SillNails
-    {
-        /// <summary>"16d common".</summary>
-        [DataMember(Order = 1)] public string Nail { get; set; }
-        [DataMember(Order = 2)] public double SpacingIn { get; set; }
-        /// <summary>One nail's adjusted lateral value Z' (lb, ASD, CD = 1.6) and the floor sheathing it crosses (in).</summary>
-        [DataMember(Order = 3)] public double ZPrimeLb { get; set; }
-        [DataMember(Order = 4)] public double SheathingIn { get; set; }
-        /// <summary>No nail can take it at the closest spacing: what fails, in a sentence (null: it works).</summary>
-        [DataMember(Order = 5, EmitDefaultValue = false)] public string Fails { get; set; }
-    }
-
     /// <summary>
     /// A shear wall as the lateral design found it, for the wall views (they draw it, they do not design it): the part that is
-    /// shear wall, its sheathing and nailing, its hold-downs' lever arm, its check, and the sill bolts of a first-story wall.
+    /// shear wall, its sheathing and nailing, its hold-downs' lever arm, its check. Its sill's anchor bolts or nailing are
+    /// details, not the model's (owner 2026-11-07): the "Connections" section (WoodFraming.Connections).
     /// </summary>
     [DataContract]
     public sealed class ShearWallDesign
@@ -182,9 +155,6 @@ namespace BuildingModel.Model
         [DataMember(Order = 8, EmitDefaultValue = false)] public bool Fails { get; set; }
         /// <summary>The hold-down's fasteners ("(12) SDS 1/4 x 2-1/2"), for its label.</summary>
         [DataMember(Order = 9, EmitDefaultValue = false)] public string Fasteners { get; set; }
-        [DataMember(Order = 10, EmitDefaultValue = false)] public SillAnchors Anchors { get; set; }
-        /// <summary>An upper-story wall's sill nailing (null on the first story, or before a design).</summary>
-        [DataMember(Order = 15, EmitDefaultValue = false)] public SillNails SillNails { get; set; }
 
         /// <summary>
         /// Wind case → the wind's shear on the top of the wall from its diaphragm (lb, W at strength level), + toward its high
@@ -195,56 +165,6 @@ namespace BuildingModel.Model
 
         /// <summary>The height the shear acts at above the wall's base (ft): its story's height, as designed.</summary>
         [DataMember(Order = 14, EmitDefaultValue = false)] public double HeightFt { get; set; }
-    }
-
-    /// <summary>
-    /// One line of shear walls in one level's diaphragm, as the lateral design found it (ROADMAP step 6, owner 2026-11-07:
-    /// the diaphragm's line shear and collectors): the walls on the line (under the diaphragm, their tops, and above it, their
-    /// sills) take or give the line's force R per case; the diaphragm delivers it along its whole depth on the line, v = R /
-    /// depth; the boundary nailing along the line is sized for it (SDPWS Table 4.2A or 4.2C), and the top plates carry the
-    /// difference between the diaphragm's even delivery and the walls' shear parts (the collector, SDPWS 4.1.4).
-    /// </summary>
-    [DataContract]
-    public sealed class DiaphragmLine
-    {
-        [DataMember(Order = 1)] public string LevelId { get; set; }
-        /// <summary>The roof's diaphragm (else a floor's): which sheathing defaults it was designed with.</summary>
-        [DataMember(Order = 2)] public bool Roof { get; set; }
-        /// <summary>The line where the diaphragm reaches along it (ft): its two ends, west to east or south to north.</summary>
-        [DataMember(Order = 3)] public double X0 { get; set; }
-        [DataMember(Order = 4)] public double Y0 { get; set; }
-        [DataMember(Order = 5)] public double X1 { get; set; }
-        [DataMember(Order = 6)] public double Y1 { get; set; }
-        /// <summary>The diaphragm's depth along the line (ft): its length on the line, any gap left out.</summary>
-        [DataMember(Order = 7)] public double DepthFt { get; set; }
-        /// <summary>The shear walls on the line (under it and standing on it).</summary>
-        [DataMember(Order = 8)] public List<string> WallIds { get; set; } = new List<string>();
-        /// <summary>Wind case → the line's unit shear (plf, W at strength level, R / depth, + east or north on the diaphragm).</summary>
-        [DataMember(Order = 9)] public Dictionary<string, double> Shear { get; set; } = new Dictionary<string, double>();
-        /// <summary>The worst unit shear, ASD (0.6 W, plf).</summary>
-        [DataMember(Order = 10)] public double ShearAsdPlf { get; set; }
-        /// <summary>The sheathing ("Sheathing and Single-Floor, 10d, 19/32\" min., 2\" framing").</summary>
-        [DataMember(Order = 11)] public string Sheathing { get; set; }
-        [DataMember(Order = 12)] public bool Blocked { get; set; }
-        /// <summary>The nail spacing at the boundary (along the line) and at the other panel edges, or the supported edges (in).</summary>
-        [DataMember(Order = 13)] public double BoundaryIn { get; set; }
-        [DataMember(Order = 14)] public double EdgesIn { get; set; }
-        [DataMember(Order = 15)] public string Nail { get; set; }
-        /// <summary>The nailing's ASD allowable unit shear (plf).</summary>
-        [DataMember(Order = 16)] public double AllowablePlf { get; set; }
-        /// <summary>The worst collector force along the line (lb, ASD), and where (ft from the line's start).</summary>
-        [DataMember(Order = 17)] public double CollectorLb { get; set; }
-        [DataMember(Order = 18)] public double CollectorAtFt { get; set; }
-        /// <summary>What carries it ("DF-L No. 2 2x4 double top plate: 5 16d common each side of a splice"), or why not designed.</summary>
-        [DataMember(Order = 19, EmitDefaultValue = false)] public string Collector { get; set; }
-        /// <summary>A construction requirement with the nailing (3" framing, staggered), else null.</summary>
-        [DataMember(Order = 20, EmitDefaultValue = false)] public string Note { get; set; }
-        /// <summary>What does not work (null: it works).</summary>
-        [DataMember(Order = 21, EmitDefaultValue = false)] public string Fails { get; set; }
-
-        /// <summary>"10d at 4\" o.c. at the boundary, 6\" at the other panel edges (blocked)".</summary>
-        public string Nailing => BoundaryIn <= 0 ? "(not designed)" :
-            $"{Nail} at {BoundaryIn.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}\" o.c. at the boundary, {EdgesIn.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}\" at the {(Blocked ? "other panel edges (blocked)" : "supported edges (unblocked)")}";
     }
 
     /// <summary>
@@ -336,16 +256,6 @@ namespace BuildingModel.Model
         /// (<see cref="ShearPairs"/>) each diaphragm's free body. Empty in a file saved before it was kept.
         /// </summary>
         [DataMember(Order = 10, EmitDefaultValue = false)] public List<DiaphragmWind> Diaphragms { get; set; } = new List<DiaphragmWind>();
-
-        /// <summary>
-        /// Each diaphragm's lines of shear walls as designed (<see cref="DiaphragmLine"/>): the line's unit shear, the boundary
-        /// nailing, and the collector along it. Empty in a file saved before it was kept.
-        /// </summary>
-        [DataMember(Order = 11, EmitDefaultValue = false)] public List<DiaphragmLine> DiaphragmLines { get; set; } = new List<DiaphragmLine>();
-
-        /// <summary>The line of <paramref name="levelId"/>'s diaphragm that <paramref name="wallId"/> is on (null: none).</summary>
-        public DiaphragmLine LineOf(string levelId, string wallId) =>
-            (DiaphragmLines ?? new List<DiaphragmLine>()).FirstOrDefault(l => l.LevelId == levelId && l.WallIds != null && l.WallIds.Contains(wallId));
 
         /// <summary>The design of <paramref name="wallId"/> (null: not a shear wall, or not designed).</summary>
         public ShearWallDesign DesignOf(string wallId) => (Walls ?? new List<ShearWallDesign>()).FirstOrDefault(w => w.WallId == wallId);

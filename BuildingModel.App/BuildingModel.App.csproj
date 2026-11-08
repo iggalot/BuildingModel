@@ -15,6 +15,8 @@
     <ProjectReference Include="..\BuildingModel.Sketch\BuildingModel.Sketch.csproj" />
     <!-- a wall's framing and 3D (WoodFraming.Wpf): the same wall window as the shear wall app's -->
     <ProjectReference Include="..\..\WoodFraming\WoodFraming.Wpf\WoodFraming.Wpf.csproj" />
+    <!-- the connections the wall window shows (its sill's anchor bolts): details, not the model's -->
+    <ProjectReference Include="..\..\WoodFraming\WoodFraming.Connections\WoodFraming.Connections.csproj" />
     <!-- no analysis app: the wind and shear wall apps read this model, not the other way round (the wall window draws the
          shear wall app's saved design, from the model's Lateral section) -->
   </ItemGroup>

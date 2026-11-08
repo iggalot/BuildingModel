@@ -258,28 +258,6 @@ namespace BuildingModel.Model
         /// <summary>The roof's rafters or trusses: their spacing (in), for the wind uplift on each one's tie to the wall.</summary>
         [DataMember(Order = 14)] public double RafterSpacing { get; set; }
 
-        /// <summary>
-        /// The floors' sheathing thickness (in): what an upper story's sill is nailed through into the rim or blocking (the
-        /// gap of its nails, AWC TR12); and the sill nail (a common nail by pennyweight, NDS Appendix Table L4).
-        /// </summary>
-        [DataMember(Order = 15)] public double FloorSheathing { get; set; }
-        [DataMember(Order = 16)] public string SillNail { get; set; }
-
-        /// <summary>
-        /// The diaphragms' wood structural panels (SDPWS Tables 4.2A and 4.2C): the grade ("SheathingAndSingleFloor" or
-        /// "StructuralI"); the floors' nail and whether they are blocked (their thickness: <see cref="FloorSheathing"/>); the
-        /// roof's thickness (in), nail and blocking; the nailed face's nominal width of the framing at the panel edges and
-        /// boundaries (in); and the nail of a top plate's splice where the plates are a collector.
-        /// </summary>
-        [DataMember(Order = 17)] public string DiaphragmGrade { get; set; }
-        [DataMember(Order = 18)] public string FloorNail { get; set; }
-        [DataMember(Order = 19)] public bool FloorBlocked { get; set; }
-        [DataMember(Order = 20)] public double RoofSheathing { get; set; }
-        [DataMember(Order = 21)] public string RoofNail { get; set; }
-        [DataMember(Order = 22)] public bool RoofBlocked { get; set; }
-        [DataMember(Order = 23)] public double DiaphragmFramingWidth { get; set; }
-        [DataMember(Order = 24)] public string SpliceNail { get; set; }
-
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -299,16 +277,6 @@ namespace BuildingModel.Model
             StudGrade = "No2";
             WallDeflectionLimit = 240;
             RafterSpacing = 24;
-            FloorSheathing = 23.0 / 32.0;
-            SillNail = "16d";
-            DiaphragmGrade = "SheathingAndSingleFloor";
-            FloorNail = "10d";
-            FloorBlocked = true;
-            RoofSheathing = 7.0 / 16.0;
-            RoofNail = "8d";
-            RoofBlocked = false;
-            DiaphragmFramingWidth = 2;
-            SpliceNail = "16d";
         }
 
         [OnDeserializing]

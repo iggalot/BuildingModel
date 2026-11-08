@@ -24,7 +24,8 @@
     the app's own save (`SavedByMe`). Every app that watches the file uses it.
   - `LateralSection` (`BuildingModel.Core\Model`): what the lateral design relays to the model, the foundation points with
     their forces per wind case and their connector. The sketch draws them on the Ground plan (`Connections`, a host may
-    give live ones; `ShowConnections`). The format is here so every app reads it without reading another app.
+    give live ones; `ShowConnections`). The format is here so every app reads it without reading another app. Its `Cases` are each wind case once for each way the shear
+    walls share it (`<name> (rigid)`, `(flexible)`; `WindOf` gives the wind's name).
   - `ConnectionPairs` (`BuildingModel.Core\Model`): every story hold-down as a pair of equal and opposite forces (member
     above, member below or the foundation), and the one rule every drawing uses to show a pair's halves (`Drawn`: the
     Internal forces toggle, `SketchCanvas.ShowInternalForces`, the selection as the body, WISE), and those landing

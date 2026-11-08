@@ -194,9 +194,29 @@ namespace BuildingModel.Model
         [DataMember(Order = 2)] public string Saved { get; set; }
         /// <summary>The model's revision it was found on (the file's revision after that save).</summary>
         [DataMember(Order = 3)] public int ModelRevision { get; set; }
-        /// <summary>The load cases, in order: the wind calculator's own case names (the load manager takes everything else about
-        /// each case, its direction and roof pressures, from the wind calculator). A "From" map in files saved before is ignored.</summary>
+        /// <summary>
+        /// The load cases, in order: each wind calculator case by its own name, once for each way the shear walls share it
+        /// ("&lt;name&gt; (rigid)", "&lt;name&gt; (flexible)": the diaphragm taken rigid and flexible, owner 2026-11-07: the same
+        /// wind, two analyses, kept apart and never mixed, so every free body is one analysis and balances). The load manager
+        /// takes everything else about the wind, its direction and roof pressures, from the wind calculator by
+        /// <see cref="WindOf"/>. A "From" map in files saved before is ignored.
+        /// </summary>
         [DataMember(Order = 4)] public List<string> Cases { get; set; } = new List<string>();
+
+        /// <summary>The two ways the shear walls share a wind among them, as the case names end.</summary>
+        public const string Rigid = "rigid", Flexible = "flexible";
+
+        /// <summary>The wind calculator's case a lateral case is ("Case 1 … (rigid)" → "Case 1 …"; a name with no sharing as it is).</summary>
+        public static string WindOf(string lateralCase)
+        {
+            if (lateralCase == null) return null;
+            foreach (var tag in new[] { Rigid, Flexible })
+            {
+                string tail = $" ({tag})";
+                if (lateralCase.EndsWith(tail, StringComparison.Ordinal)) return lateralCase.Substring(0, lateralCase.Length - tail.Length);
+            }
+            return lateralCase;
+        }
         [DataMember(Order = 5)] public List<LateralPoint> Points { get; set; } = new List<LateralPoint>();
         /// <summary>How the forces were found, in a sentence (shown with them).</summary>
         [DataMember(Order = 6, EmitDefaultValue = false)] public string Note { get; set; }

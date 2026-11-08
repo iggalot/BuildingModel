@@ -69,7 +69,7 @@ namespace BuildingModel.Model
                 list.Add(new ShearPair
                 {
                     WallId = w.Id, LevelId = top.Id, AtTop = true, Start = a, End = e, Dir = dir, From = $"{name} top",
-                    Connector = $"the {top.Name} diaphragm's boundary nailing into the top plates",
+                    Connector = Boundary(lateral.LineOf(top.Id, w.Id), top.Name),
                     OnWall = d.ShearOnTop.ToDictionary(kv => kv.Key, kv => kv.Value),
                 });
                 list.Add(new ShearPair
@@ -80,6 +80,13 @@ namespace BuildingModel.Model
                 });
             }
             return list;
+        }
+
+        private static string Boundary(DiaphragmLine l, string level)
+        {
+            if (l == null || l.BoundaryIn <= 0) return $"the {level} diaphragm's boundary nailing into the top plates (not designed)";
+            string s = $"the {level} diaphragm's boundary nailing, {l.Nailing}, into the top plates (the collector {l.CollectorLb:0} lb ASD)";
+            return l.Fails == null ? s : $"{s}: {l.Fails}";
         }
 
         private static string Nails(SillNails n, string floor)

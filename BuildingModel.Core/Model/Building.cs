@@ -258,6 +258,13 @@ namespace BuildingModel.Model
         /// <summary>The roof's rafters or trusses: their spacing (in), for the wind uplift on each one's tie to the wall.</summary>
         [DataMember(Order = 14)] public double RafterSpacing { get; set; }
 
+        /// <summary>
+        /// The floors' sheathing thickness (in): what an upper story's sill is nailed through into the rim or blocking (the
+        /// gap of its nails, AWC TR12); and the sill nail (a common nail by pennyweight, NDS Appendix Table L4).
+        /// </summary>
+        [DataMember(Order = 15)] public double FloorSheathing { get; set; }
+        [DataMember(Order = 16)] public string SillNail { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -277,6 +284,8 @@ namespace BuildingModel.Model
             StudGrade = "No2";
             WallDeflectionLimit = 240;
             RafterSpacing = 24;
+            FloorSheathing = 23.0 / 32.0;
+            SillNail = "16d";
         }
 
         [OnDeserializing]

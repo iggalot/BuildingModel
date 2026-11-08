@@ -32,7 +32,8 @@
     within 1 ft together (`Near`, `Sum`). The Load Manager's free bodies read the same pairs.
   - `ShearPairs` (`BuildingModel.Core\Model`): the horizontal pairs, each shear wall story's shear at its top (into its
     diaphragm) and its sill (into the floor, or the foundation's anchor bolts), and each diaphragm's free body from them
-    and its own wind (`Balance`, with `LateralSection.Diaphragms`, `DiaphragmWind`, which SWC saves).
+    and its own wind (`Balance`, with `LateralSection.Diaphragms`, `DiaphragmWind`, which SWC saves). An upper sill's pair names
+    its nailing (`ShearWallDesign.SillNails`, from the `ModelDefaults` `FloorSheathing` and `SillNail`).
   - `ModelFingerprint` (`BuildingModel.Core\Serialization`): short hashes of the geometry (no names or notes), a data
     section, or an app's data. An app stamps what a result was found from (`LateralSection.BasedOn`); `Changed` says
     which part differs now.

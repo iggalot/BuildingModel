@@ -133,6 +133,23 @@ namespace BuildingModel.Model
     }
 
     /// <summary>
+    /// An upper-story shear wall's sill nailed through the floor sheathing into the rim or blocking, as designed (the wall's
+    /// shear out of its base, SDPWS 4.3.6.4.1): the nail, its spacing, and what one nail takes.
+    /// </summary>
+    [DataContract]
+    public sealed class SillNails
+    {
+        /// <summary>"16d common".</summary>
+        [DataMember(Order = 1)] public string Nail { get; set; }
+        [DataMember(Order = 2)] public double SpacingIn { get; set; }
+        /// <summary>One nail's adjusted lateral value Z' (lb, ASD, CD = 1.6) and the floor sheathing it crosses (in).</summary>
+        [DataMember(Order = 3)] public double ZPrimeLb { get; set; }
+        [DataMember(Order = 4)] public double SheathingIn { get; set; }
+        /// <summary>No nail can take it at the closest spacing: what fails, in a sentence (null: it works).</summary>
+        [DataMember(Order = 5, EmitDefaultValue = false)] public string Fails { get; set; }
+    }
+
+    /// <summary>
     /// A shear wall as the lateral design found it, for the wall views (they draw it, they do not design it): the part that is
     /// shear wall, its sheathing and nailing, its hold-downs' lever arm, its check, and the sill bolts of a first-story wall.
     /// </summary>
@@ -166,6 +183,8 @@ namespace BuildingModel.Model
         /// <summary>The hold-down's fasteners ("(12) SDS 1/4 x 2-1/2"), for its label.</summary>
         [DataMember(Order = 9, EmitDefaultValue = false)] public string Fasteners { get; set; }
         [DataMember(Order = 10, EmitDefaultValue = false)] public SillAnchors Anchors { get; set; }
+        /// <summary>An upper-story wall's sill nailing (null on the first story, or before a design).</summary>
+        [DataMember(Order = 15, EmitDefaultValue = false)] public SillNails SillNails { get; set; }
 
         /// <summary>
         /// Wind case → the wind's shear on the top of the wall from its diaphragm (lb, W at strength level), + toward its high

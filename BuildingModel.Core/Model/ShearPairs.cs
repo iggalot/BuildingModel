@@ -75,11 +75,18 @@ namespace BuildingModel.Model
                 list.Add(new ShearPair
                 {
                     WallId = w.Id, LevelId = bas.Id, OnFoundation = onFoundation, Start = a, End = e, Dir = dir, From = $"{name} sill",
-                    Connector = onFoundation ? Anchors(d.Anchors) : $"the sill nailing into the {bas.Name} floor (not designed)",
+                    Connector = onFoundation ? Anchors(d.Anchors) : Nails(d.SillNails, bas.Name),
                     OnWall = d.ShearOnTop.ToDictionary(kv => kv.Key, kv => -kv.Value),
                 });
             }
             return list;
+        }
+
+        private static string Nails(SillNails n, string floor)
+        {
+            if (n == null || n.SpacingIn <= 0) return $"the sill nailing into the {floor} floor (not designed)";
+            string s = $"{n.Nail} at {n.SpacingIn:0.#}\" o.c. through the {floor} floor's sheathing into the rim or blocking";
+            return n.Fails == null ? s : $"{s}: {n.Fails}";
         }
 
         private static string Anchors(SillAnchors a)

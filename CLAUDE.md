@@ -30,6 +30,9 @@
     above, member below or the foundation), and the one rule every drawing uses to show a pair's halves (`Drawn`: the
     Internal forces toggle, `SketchCanvas.ShowInternalForces`, the selection as the body, WISE), and those landing
     within 1 ft together (`Near`, `Sum`). The Load Manager's free bodies read the same pairs.
+  - `ShearPairs` (`BuildingModel.Core\Model`): the horizontal pairs, each shear wall story's shear at its top (into its
+    diaphragm) and its sill (into the floor, or the foundation's anchor bolts), and each diaphragm's free body from them
+    and its own wind (`Balance`, with `LateralSection.Diaphragms`, `DiaphragmWind`, which SWC saves).
   - `ModelFingerprint` (`BuildingModel.Core\Serialization`): short hashes of the geometry (no names or notes), a data
     section, or an app's data. An app stamps what a result was found from (`LateralSection.BasedOn`); `Changed` says
     which part differs now.

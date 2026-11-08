@@ -179,6 +179,32 @@ namespace BuildingModel.Model
     }
 
     /// <summary>
+    /// One level's own wind on its diaphragm, per case, as the lateral design applied it (W at strength level): the force
+    /// (lb, + east and north) at <see cref="X"/>, <see cref="Y"/> (its center of mass) and the moment about that point (lb·ft,
+    /// counter-clockwise +). The shears of the walls of the story above (standing on it) are not in it: they are pairs
+    /// (<see cref="ShearPairs"/>).
+    /// </summary>
+    [DataContract]
+    public sealed class DiaphragmWind
+    {
+        [DataMember(Order = 1)] public string LevelId { get; set; }
+        [DataMember(Order = 2)] public double X { get; set; }
+        [DataMember(Order = 3)] public double Y { get; set; }
+        [DataMember(Order = 4)] public Dictionary<string, double> Fx { get; set; } = new Dictionary<string, double>();
+        [DataMember(Order = 5)] public Dictionary<string, double> Fy { get; set; } = new Dictionary<string, double>();
+        /// <summary>
+        /// The moment about (X, Y) per case where the analysis puts the load at a known place (the rigid diaphragm: at the
+        /// center of mass with the case's torsion). A flexible diaphragm's case is not in it: it spreads the load by
+        /// tributary width, so where its resultant acts is the analysis's own assumption, and only ΣF is checked.
+        /// </summary>
+        [DataMember(Order = 6, EmitDefaultValue = false)] public Dictionary<string, double> Mz { get; set; } = new Dictionary<string, double>();
+
+        public double FxOf(string c) => c != null && Fx != null && Fx.TryGetValue(c, out var v) ? v : 0;
+        public double FyOf(string c) => c != null && Fy != null && Fy.TryGetValue(c, out var v) ? v : 0;
+        public double? MzOf(string c) => c != null && Mz != null && Mz.TryGetValue(c, out var v) ? v : (double?)null;
+    }
+
+    /// <summary>
     /// What the lateral design (the shear wall app) puts on the foundation: its own section of the project file ("Lateral"), written
     /// by the shear wall app each time it saves. The load manager reads its forces; every plan (the shared sketch) draws its points
     /// and connectors on the foundation plan. The format is here, in the building model, so no app reads another app's own code.
@@ -235,6 +261,12 @@ namespace BuildingModel.Model
 
         /// <summary>Every story's shear walls as designed (<see cref="ShearWallDesign"/>), for the wall views.</summary>
         [DataMember(Order = 9, EmitDefaultValue = false)] public List<ShearWallDesign> Walls { get; set; } = new List<ShearWallDesign>();
+
+        /// <summary>
+        /// Every level's own wind on its diaphragm per case (<see cref="DiaphragmWind"/>): with the shear walls' shear
+        /// (<see cref="ShearPairs"/>) each diaphragm's free body. Empty in a file saved before it was kept.
+        /// </summary>
+        [DataMember(Order = 10, EmitDefaultValue = false)] public List<DiaphragmWind> Diaphragms { get; set; } = new List<DiaphragmWind>();
 
         /// <summary>The design of <paramref name="wallId"/> (null: not a shear wall, or not designed).</summary>
         public ShearWallDesign DesignOf(string wallId) => (Walls ?? new List<ShearWallDesign>()).FirstOrDefault(w => w.WallId == wallId);

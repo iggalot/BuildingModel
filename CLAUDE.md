@@ -36,7 +36,9 @@
     diaphragm) and its sill (into the floor, or the foundation's anchor bolts), and each diaphragm's free body from them
     and its own wind (`Balance`, with `LateralSection.Diaphragms`, `DiaphragmWind`, which SWC saves). Each pair has
     `StoryLevelId` (the level on top of its wall's story) and generic words for its connector; `Of`'s optional describer
-    gives the designed ones.
+    gives the designed ones. `Drawn` says which half a plan shows (the hold-downs' WISE rule); a picked diaphragm is in
+    the body as `DiaphragmKey(levelId)`, and the plan draws its free body in one case (`SketchCanvas.FreeBodyCase`,
+    `DiaphragmCase`).
   - **Connection details are not in this model (owner 2026-11-07: no god class).** Nailing, sill bolts, diaphragm lines and
     their defaults are `..\WoodFraming\WoodFraming.Connections` (its own "Connections" and "ConnectionDefaults" sections,
     keyed by this model's ids; it references BuildingModel.Core, never the other way). The forces stay here: the

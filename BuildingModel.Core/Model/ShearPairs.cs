@@ -97,8 +97,8 @@ namespace BuildingModel.Model
         /// <summary>
         /// Whether a drawing shows one half of a horizontal pair: the same rule as the hold-downs' (<see cref="ConnectionPairs.Drawn"/>,
         /// the owner's WISE rule). <paramref name="onWall"/>: the half on the wall, else the half on the diaphragm (or the
-        /// foundation). A diaphragm is not a member one picks, so it is in the body only when the whole structure is drawn
-        /// (<paramref name="body"/> null or empty). With the internal forces shown, both halves; off, a pair inside the body is
+        /// foundation). A level's diaphragm is in the body when the whole structure is drawn
+        /// (<paramref name="body"/> null or empty) or when it was picked (<see cref="DiaphragmKey"/> in the body: its free body). With the internal forces shown, both halves; off, a pair inside the body is
         /// not drawn, at the cut the half on the body's wall, on the foundation the wall's half (the support).
         /// </summary>
         public static bool Drawn(ShearPair p, bool onWall, ICollection<string> body, bool showInternal)
@@ -108,10 +108,13 @@ namespace BuildingModel.Model
             bool all = body == null || body.Count == 0;
             bool wall = all || body.Contains(p.WallId);
             if (p.OnFoundation) return onWall && wall;
-            bool diaphragm = all;
+            bool diaphragm = all || body.Contains(DiaphragmKey(p.LevelId));
             if (wall && diaphragm) return false;
             return onWall ? wall : diaphragm;
         }
+
+        /// <summary>A level's diaphragm as a member of a drawn body (its pieces picked on the plan): "diaphragm@L2".</summary>
+        public static string DiaphragmKey(string levelId) => "diaphragm@" + levelId;
 
         /// <summary>The worst case of a pair's half (lb, W at strength level, signed along <see cref="ShearPair.Dir"/>; 0: none).</summary>
         public static double Worst(ShearPair p, bool onWall)

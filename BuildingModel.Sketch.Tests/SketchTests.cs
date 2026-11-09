@@ -105,6 +105,18 @@ namespace BuildingModel.Sketch.Tests
             v.Canvas.SetInternalForces(false);
             var none = Render(v, "sketch-shear-pairs-level2-off");
             Assert.IsTrue(Count(none, SketchCanvas.Palette.Shear, 20) < 20, "inside the whole structure: not drawn");
+
+            // the diaphragm picked: its free body in one case, the half of the pair on it and its own wind
+            var lat = LateralSection.Read(b);
+            lat.Cases = new System.Collections.Generic.List<string> { "A", "B" };
+            lat.Diaphragms.Add(new DiaphragmWind { LevelId = l2.Id, X = 30, Y = 20, Fy = { ["A"] = -5000, ["B"] = 3000 } });
+            LateralSection.Write(b, lat);
+            Assert.AreEqual("A", SketchCanvas.DiaphragmCase(lat, l2.Id), "the most wind on it");
+            Assert.AreEqual("B", SketchCanvas.DiaphragmCase(lat, l2.Id, "B"), "the case asked for");
+            v.Canvas.Select(new[] { b.Diaphragms.First(d => d.LevelId == l2.Id).Id });
+            var fbd = Render(v, "sketch-shear-pairs-diaphragm");
+            Assert.IsTrue(Count(fbd, SketchCanvas.Palette.Shear, 20) > 80, "the diaphragm's free body: its pair's half and its wind");
+            v.Canvas.Select(new string[0]);
             v.Canvas.SetBuilding(b, b.Ground.Id);
             v.Canvas.ZoomExtents();
             var ground = Render(v, "sketch-shear-pairs-ground");

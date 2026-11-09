@@ -303,10 +303,14 @@ namespace BuildingModel.Sketch
             return mi;
         }
 
-        /// <summary>The walls, beams and columns selected (the body for <see cref="ShowInternalForces"/>); null: none selected.</summary>
+        /// <summary>
+        /// The walls, beams and columns selected (the body for <see cref="ShowInternalForces"/>), and a level's diaphragm when
+        /// one of its pieces is (<see cref="ShearPairs.DiaphragmKey"/>: its free body); null: none selected.
+        /// </summary>
         private HashSet<string> BodyIds(Building b)
         {
             var ids = new HashSet<string>(Selection.Where(id => b.Walls.Any(w => w.Id == id) || b.Beams.Any(x => x.Id == id) || b.Columns.Any(x => x.Id == id)));
+            foreach (var d in b.Diaphragms.Where(x => Selection.Contains(x.Id))) ids.Add(ShearPairs.DiaphragmKey(d.LevelId));
             return ids.Count == 0 ? null : ids;
         }
 
@@ -341,7 +345,9 @@ namespace BuildingModel.Sketch
         /// into its diaphragm, the sills of the walls standing on it, on the foundation plan the anchor bolts' reactions. Each
         /// half drawn by the shared rule (<see cref="ShearPairs.Drawn"/>, as the hold-downs'): an arrow along the shear part,
         /// beside the wall (the top's on one side, the sill's on the other), the worst case's direction and force (ASD, 0.6 W),
-        /// "W4 top 2.0k" on the wall, "on L2 2.0k" on the diaphragm.
+        /// "W4 top 2.0k" on the wall, "on L2 2.0k" on the diaphragm. A picked diaphragm is drawn as its free body in one wind
+        /// case (<see cref="DiaphragmCase(LateralSection, string, string)"/>): every pair on it in that case and its own wind at
+        /// its point (Fx, Fy; Mz where the analysis gives it), ASD.
         /// </summary>
         private void DrawShearPairs(DrawingContext ctx, Building b, Level level)
         {
@@ -351,11 +357,15 @@ namespace BuildingModel.Sketch
             var pen = new Pen(ink, 1.4);
             pen.Freeze();
             var body = BodyIds(b);
+            // a picked diaphragm: its free body in one case
+            var wind = body != null && body.Contains(ShearPairs.DiaphragmKey(level.Id)) ? lat.Diaphragms?.FirstOrDefault(d => d.LevelId == level.Id) : null;
+            string one = wind == null ? null : DiaphragmCase(lat, level.Id, FreeBodyCase);
+            if (wind != null && one != null) DrawDiaphragmWind(ctx, wind, one, ink);
             foreach (var p in ShearPairs.Of(b, lat).Where(x => x.LevelId == level.Id))
                 foreach (bool onWall in new[] { true, false })
                 {
                     if (!ShearPairs.Drawn(p, onWall, body, ShowInternalForces)) continue;
-                    double f = ShearPairs.Worst(p, onWall);
+                    double f = one != null ? (onWall ? p.OnWallIn(one) : p.OnOtherIn(one)) : ShearPairs.Worst(p, onWall);
                     if (Math.Abs(f) < 1) continue;
                     Point a = ToScreen(p.Start), e = ToScreen(p.End);
                     var u = e - a;
@@ -384,6 +394,49 @@ namespace BuildingModel.Sketch
                     ctx.DrawText(ft, new Point(box.X + 2, box.Y + 1));
                     memberLabels.Add(box);
                 }
+        }
+
+        /// <summary>
+        /// The wind case a picked diaphragm's free body is drawn in: <paramref name="wanted"/> when the lateral design has it,
+        /// else the case with the most wind on the level (|Fx| + |Fy|); null: no wind on it.
+        /// </summary>
+        public static string DiaphragmCase(LateralSection lat, string levelId, string wanted = null)
+        {
+            var w = lat?.Diaphragms?.FirstOrDefault(d => d.LevelId == levelId);
+            var cases = lat?.Cases ?? new List<string>();
+            if (w == null || cases.Count == 0) return null;
+            if (wanted != null && cases.Contains(wanted)) return wanted;
+            return cases.OrderByDescending(c => Math.Abs(w.FxOf(c)) + Math.Abs(w.FyOf(c))).First();
+        }
+
+        /// <summary>The wind case a picked diaphragm's free body is drawn in (null: the one with the most wind on it); an app sets it.</summary>
+        public string FreeBodyCase { get; set; }
+
+        /// <summary>A diaphragm's own wind in one case at its point: an arrow each way (ASD, 0.6 W), and its moment where known.</summary>
+        private void DrawDiaphragmWind(DrawingContext ctx, DiaphragmWind w, string windCase, Brush ink)
+        {
+            var at = ToScreen(new Point2(w.X, w.Y));
+            double fx = 0.6 * w.FxOf(windCase), fy = 0.6 * w.FyOf(windCase);
+            var heavy = new Pen(ink, 2.4);
+            heavy.Freeze();
+            foreach (var (f, d) in new[] { (fx, new Vector(1, 0)), (fy, new Vector(0, -1)) })
+            {
+                if (Math.Abs(f) < 1) continue;
+                var dir = f > 0 ? d : -d;
+                Point tip = at, tail = at - dir * 46;
+                ctx.DrawLine(heavy, tail, tip);
+                var side = new Vector(-dir.Y, dir.X);
+                ctx.DrawLine(heavy, tip, tip - dir * 9 + side * 4.5);
+                ctx.DrawLine(heavy, tip, tip - dir * 9 - side * 4.5);
+            }
+            double? mz = w.MzOf(windCase);
+            string text = $"wind {windCase}: Fx {fx / 1000:0.0}k, Fy {fy / 1000:0.0}k" + (mz.HasValue ? $", Mz {0.6 * mz.Value / 1000:0.0}k·ft" : "") + " (ASD)";
+            var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 9.5 * LabelScale, ink, Dpi);
+            var box = new Rect(at.X + 8, at.Y + 8, ft.Width + 4, ft.Height + 2);
+            ctx.DrawRectangle(HoldownMarks.LabelBack, null, box);
+            ctx.DrawText(ft, new Point(box.X + 2, box.Y + 1));
+            memberLabels.Add(box);
+            ctx.DrawEllipse(ink, null, at, 3, 3);
         }
 
         /// <summary>

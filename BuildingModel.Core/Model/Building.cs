@@ -258,6 +258,9 @@ namespace BuildingModel.Model
         /// <summary>The roof's rafters or trusses: their spacing (in), for the wind uplift on each one's tie to the wall.</summary>
         [DataMember(Order = 14)] public double RafterSpacing { get; set; }
 
+        /// <summary>The floors' joists (nominal sawn size): their depth is the rim's, a collector where no wall is under a line of shear walls.</summary>
+        [DataMember(Order = 15)] public string FloorJoistSize { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -277,6 +280,7 @@ namespace BuildingModel.Model
             StudGrade = "No2";
             WallDeflectionLimit = 240;
             RafterSpacing = 24;
+            FloorJoistSize = "2x10";
         }
 
         [OnDeserializing]

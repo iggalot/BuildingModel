@@ -7,7 +7,9 @@
 - **Branch:** `dev/ui-pass-2`.
 - **What this is:** the backbone. The building is drawn once and every app reads it from one project file
   (`<folder>\<folder>.bldg.json`).
-  - **No hard-coded engineering defaults anywhere:** they live in `ModelDefaults`, in the file.
+  - **No hard-coded engineering defaults anywhere:** they live in `ModelDefaults`, in the file. They are edited in
+    Building > Model defaults (`BuildingModel.Sketch.ModelDefaultsWindow`, one undo step): the new stories and roofs, and
+    the framing (studs, lumber, rafters, `FloorJoistSize`, `RoofBlockingSize`).
   - **No loads in these classes:** loads are the Load Manager's section.
   - **This repo references no analysis app.** The wind and shear wall adapters live in their apps.
 - **Build:** `MSBuild BuildingModel.sln -restore`.

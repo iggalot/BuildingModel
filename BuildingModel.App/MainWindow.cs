@@ -150,6 +150,7 @@ namespace BuildingModel.App
             Item(building, "_Name…", null, RenameBuilding);
             Item(building, "New from _size…", null, () => view.NewFromSize(), "A box L × B with its stories, a diaphragm on each level and the outside shear walls (replaces the drawing; Undo puts it back)");
             Item(building, "_Roof…", null, () => view.EditRoof(), "Flat, gable or hip; the slope (4:12, 6:12...), ridge, parapet and eaves");
+            Item(building, "Model _defaults…", null, EditDefaults, "The framing (studs, lumber, rafters, floor joists, roof blocking) and what a new story, roof or quick building starts with: every app reads them");
             building.Items.Add(new Separator());
             Item(building, "What the analysis apps _read…", null, BuildingSummary, "L, B, stories, the roof and each level's share of each face, as the wind and shear wall apps read them");
 
@@ -372,6 +373,13 @@ namespace BuildingModel.App
         }
 
         /// <summary>BUILDING > NAME: the building's name (one undo step).</summary>
+        private void EditDefaults()
+        {
+            var d = ModelDefaultsWindow.Edit(this, Sketch.Building.Defaults ?? new ModelDefaults());
+            if (d == null) return;
+            Sketch.Edit("Model defaults set.", b => b.Defaults = d);
+        }
+
         private void RenameBuilding()
         {
             string s = TextPrompt.Ask("The building's name", Sketch.Building.Name ?? "");

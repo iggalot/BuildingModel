@@ -30,6 +30,8 @@
     walls share it (`<name> (rigid)`, `(flexible)`; `WindOf` gives the wind's name). Its `Walls` are every declared shear
     wall (designed or not): the sketch bands each one's shear part on the plans (`ShowShearParts`; SWC, which draws its own,
     turns it off), so the Building Model shows where the hold-downs go.
+  - `ProjectStatus` (`BuildingModel.Core\Model`): the hub's mark of the open problems ("Hub.Status"), here so every app reads
+    it without the hub; the hub writes it (`DesignHub.HubStatus.From`), the apps show their steps' items on opening (`Words`).
   - `ConnectionPairs` (`BuildingModel.Core\Model`): every story hold-down as a pair of equal and opposite forces (member
     above, member below or the foundation), and the one rule every drawing uses to show a pair's halves (`Drawn`: the
     Internal forces toggle, `SketchCanvas.ShowInternalForces`, the selection as the body, WISE), and those landing

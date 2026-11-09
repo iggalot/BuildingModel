@@ -99,6 +99,7 @@ namespace BuildingModel.Tests
             Assert.AreEqual(240, d.WallDeflectionLimit);
             Assert.AreEqual(24, d.RafterSpacing);                           // in., the roof framing (wind uplift on the ties)
             Assert.AreEqual("2x10", d.FloorJoistSize);                     // the floors' joists: the rim's depth
+            Assert.AreEqual("2x6", d.RoofBlockingSize);                    // the roof's blocking: its collector or chord where no wall is under it
         }
 
         [TestMethod]

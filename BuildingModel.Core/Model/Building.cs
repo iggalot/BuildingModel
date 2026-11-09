@@ -261,6 +261,12 @@ namespace BuildingModel.Model
         /// <summary>The floors' joists (nominal sawn size): their depth is the rim's, a collector where no wall is under a line of shear walls.</summary>
         [DataMember(Order = 15)] public string FloorJoistSize { get; set; }
 
+        /// <summary>
+        /// The roof's blocking between its rafters or trusses (nominal sawn size): a continuous line of it, strapped across every
+        /// joint, is the roof diaphragm's collector or chord where no wall is under it (owner 2026-11-09).
+        /// </summary>
+        [DataMember(Order = 16)] public string RoofBlockingSize { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -281,6 +287,7 @@ namespace BuildingModel.Model
             WallDeflectionLimit = 240;
             RafterSpacing = 24;
             FloorJoistSize = "2x10";
+            RoofBlockingSize = "2x6";
         }
 
         [OnDeserializing]

@@ -84,6 +84,33 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual(l2, v.Canvas.ActiveLevel);
         }
 
+        /// <summary>
+        /// The shear walls' horizontal pairs drawn on the plans (ShearPairs.Drawn, the hold-downs' rule): with the internal
+        /// forces shown, level 2 gets both halves of the east wall's top pair; the ground plan its sill's anchor reaction; with
+        /// the internal forces off and the whole structure drawn, level 2 none (inside the body).
+        /// </summary>
+        [STATestMethod]
+        public void Render_TheShearPairs_OnTheirLevels()
+        {
+            var b = Sample(out var l2, out _);
+            var w = b.Walls[3]; // the east wall of the first story, x = 60
+            LateralSection.Write(b, new LateralSection { Walls = { new ShearWallDesign { WallId = w.Id, LevelId = l2.Id, X0 = 60, Y0 = 0, X1 = 60, Y1 = 40,
+                ShearOnTop = new System.Collections.Generic.Dictionary<string, double> { ["A"] = 5000, ["B"] = -3000 } } } });
+            var v = new SketchView();
+            v.Canvas.SetBuilding(b, l2.Id);
+            v.Canvas.ZoomExtents();
+            var both = Render(v, "sketch-shear-pairs-level2");
+            int n2 = Count(both, SketchCanvas.Palette.Shear, 20);
+            Assert.IsTrue(n2 > 80, $"both halves of the top pair drawn: {n2}");
+            v.Canvas.SetInternalForces(false);
+            var none = Render(v, "sketch-shear-pairs-level2-off");
+            Assert.IsTrue(Count(none, SketchCanvas.Palette.Shear, 20) < 20, "inside the whole structure: not drawn");
+            v.Canvas.SetBuilding(b, b.Ground.Id);
+            v.Canvas.ZoomExtents();
+            var ground = Render(v, "sketch-shear-pairs-ground");
+            Assert.IsTrue(Count(ground, SketchCanvas.Palette.Shear, 20) > 30, "the sill's anchor reaction on the foundation plan");
+        }
+
         [STATestMethod]
         public void Render_TheGroundShowsTheWallsStandingOnIt_Cut()
         {

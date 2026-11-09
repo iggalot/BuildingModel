@@ -27,6 +27,8 @@ namespace BuildingModel.Sketch
             public static readonly Color GridMajor = Color.FromRgb(0xDF, 0xE2, 0xE7);
             public static readonly Color Ink = Color.FromRgb(0x24, 0x29, 0x33);
             public static readonly Color Muted = Color.FromRgb(0x6B, 0x72, 0x80);
+            /// <summary>The shear walls' horizontal pairs (their arrows and labels).</summary>
+            public static readonly Color Shear = Color.FromRgb(0x0F, 0x76, 0x6E);
             public static readonly Color DiaphragmFill = Color.FromArgb(0x55, 0xD9, 0xC2, 0x8C);   // sand
             public static readonly Color DiaphragmEdge = Color.FromRgb(0x7A, 0x63, 0x3E);          // brown-gray
             public static readonly Color ShearWall = Color.FromRgb(0x1D, 0x4E, 0xD8);
@@ -199,7 +201,7 @@ namespace BuildingModel.Sketch
             }
             if (ShowSpans) foreach (var d in b.DiaphragmsOn(level)) SpanMarker(ctx, b, d, ShowLabels);
             // the hold-downs after the members' labels, so theirs keep off them (the shared rule, as in every app)
-            if (ShowConnections) DrawConnections(ctx, b, level, foundation);
+            if (ShowConnections) { DrawShearPairs(ctx, b, level); DrawConnections(ctx, b, level, foundation); }
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
 
             DrawOver?.Invoke(this, new SketchDrawEventArgs(ctx, this));
@@ -330,6 +332,58 @@ namespace BuildingModel.Sketch
             HoldownMarks.Draw(ctx, markers, m => new FormattedText(m.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 9.5 * LabelScale, m.Ink, dip),
                               outline, taken);
             memberLabels.AddRange(taken.Skip(had)); // a host's own labels keep off these too
+        }
+
+        private static readonly Brush ShearInk = B(Palette.Shear);
+
+        /// <summary>
+        /// The shear walls' horizontal pairs acting at this level (<see cref="ShearPairs"/>): the tops of the walls under it
+        /// into its diaphragm, the sills of the walls standing on it, on the foundation plan the anchor bolts' reactions. Each
+        /// half drawn by the shared rule (<see cref="ShearPairs.Drawn"/>, as the hold-downs'): an arrow along the shear part,
+        /// beside the wall (the top's on one side, the sill's on the other), the worst case's direction and force (ASD, 0.6 W),
+        /// "W4 top 2.0k" on the wall, "on L2 2.0k" on the diaphragm.
+        /// </summary>
+        private void DrawShearPairs(DrawingContext ctx, Building b, Level level)
+        {
+            var lat = Connections != null ? Connections() : LateralSection.Read(b);
+            if (lat == null || lat.IsEmpty || level == null) return;
+            var ink = lat.Stale(b) != null ? MutedBrush : ShearInk;
+            var pen = new Pen(ink, 1.4);
+            pen.Freeze();
+            var body = BodyIds(b);
+            foreach (var p in ShearPairs.Of(b, lat).Where(x => x.LevelId == level.Id))
+                foreach (bool onWall in new[] { true, false })
+                {
+                    if (!ShearPairs.Drawn(p, onWall, body, ShowInternalForces)) continue;
+                    double f = ShearPairs.Worst(p, onWall);
+                    if (Math.Abs(f) < 1) continue;
+                    Point a = ToScreen(p.Start), e = ToScreen(p.End);
+                    var u = e - a;
+                    if (u.Length < 12) continue;
+                    u.Normalize();
+                    var n = new Vector(-u.Y, u.X);
+                    double off = (p.AtTop ? 1 : -1) * (onWall ? 10 : 17); // clear of the wall's band, the top's on one side, the sill's on the other
+                    Point s0 = a + n * off + u * 4, s1 = e + n * off - u * 4;
+                    ctx.DrawLine(pen, s0, s1);
+                    // the head in the force's direction (+ along the pair's Dir; the screen's y is down)
+                    var dir = ToScreen(new Point2(p.Middle.X + p.Dir.X, p.Middle.Y + p.Dir.Y)) - ToScreen(p.Middle);
+                    if (dir.Length < 1e-9) continue;
+                    dir.Normalize();
+                    if (f < 0) dir = -dir;
+                    Point tip = Vector.Multiply(dir, u) > 0 ? s1 : s0;
+                    var side = new Vector(-dir.Y, dir.X);
+                    ctx.DrawLine(pen, tip, tip - dir * 7 + side * 3.5);
+                    ctx.DrawLine(pen, tip, tip - dir * 7 - side * 3.5);
+                    string text = (onWall ? p.From : $"on {level.Name}") + $" {0.6 * Math.Abs(f) / 1000:0.0}k";
+                    // the label beside its arrow, away from the wall, kept for the other labels to keep off
+                    var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 9 * LabelScale, ink, Dpi);
+                    var away = n * Math.Sign(off);
+                    Point c = s0 + (s1 - s0) * (onWall ? 0.3 : 0.7) + away * (5 + Math.Abs(away.X) * ft.Width / 2 + Math.Abs(away.Y) * ft.Height / 2);
+                    var box = new Rect(c.X - ft.Width / 2 - 2, c.Y - ft.Height / 2 - 1, ft.Width + 4, ft.Height + 2);
+                    ctx.DrawRectangle(HoldownMarks.LabelBack, null, box);
+                    ctx.DrawText(ft, new Point(box.X + 2, box.Y + 1));
+                    memberLabels.Add(box);
+                }
         }
 
         /// <summary>

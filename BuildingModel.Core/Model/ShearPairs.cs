@@ -95,6 +95,37 @@ namespace BuildingModel.Model
         }
 
         /// <summary>
+        /// Whether a drawing shows one half of a horizontal pair: the same rule as the hold-downs' (<see cref="ConnectionPairs.Drawn"/>,
+        /// the owner's WISE rule). <paramref name="onWall"/>: the half on the wall, else the half on the diaphragm (or the
+        /// foundation). A diaphragm is not a member one picks, so it is in the body only when the whole structure is drawn
+        /// (<paramref name="body"/> null or empty). With the internal forces shown, both halves; off, a pair inside the body is
+        /// not drawn, at the cut the half on the body's wall, on the foundation the wall's half (the support).
+        /// </summary>
+        public static bool Drawn(ShearPair p, bool onWall, ICollection<string> body, bool showInternal)
+        {
+            if (p == null) return false;
+            if (showInternal) return true;
+            bool all = body == null || body.Count == 0;
+            bool wall = all || body.Contains(p.WallId);
+            if (p.OnFoundation) return onWall && wall;
+            bool diaphragm = all;
+            if (wall && diaphragm) return false;
+            return onWall ? wall : diaphragm;
+        }
+
+        /// <summary>The worst case of a pair's half (lb, W at strength level, signed along <see cref="ShearPair.Dir"/>; 0: none).</summary>
+        public static double Worst(ShearPair p, bool onWall)
+        {
+            double best = 0;
+            foreach (var kv in p?.OnWall ?? new Dictionary<string, double>())
+            {
+                double f = onWall ? kv.Value : -kv.Value;
+                if (Math.Abs(f) > Math.Abs(best)) best = f;
+            }
+            return best;
+        }
+
+        /// <summary>
         /// One diaphragm's free body in one case (lb, lb·ft): its own wind (<see cref="DiaphragmWind"/>), each wall of the story
         /// under it pushing back on it at its top, each wall of the story above pushing on it at its sill. ΣFx, ΣFy, and ΣMz
         /// about the wind's point where the wind's moment is known (rigid), else null.

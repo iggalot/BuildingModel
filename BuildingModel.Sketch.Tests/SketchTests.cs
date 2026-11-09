@@ -123,6 +123,27 @@ namespace BuildingModel.Sketch.Tests
             Assert.IsTrue(Count(ground, SketchCanvas.Palette.Shear, 20) > 30, "the sill's anchor reaction on the foundation plan");
         }
 
+        /// <summary>The declared shear walls marked on the plan (the Lateral section's, read only): a band on the shear part; the shear wall app turns it off.</summary>
+        [STATestMethod]
+        public void Render_TheDeclaredShearWalls_ABandOnTheirShearPart()
+        {
+            var b = Sample(out var l2, out _);
+            var w = b.Walls[3]; // the east wall of the first story, x = 60
+            var v = new SketchView();
+            v.Canvas.SetBuilding(b, l2.Id);
+            v.Canvas.ZoomExtents();
+            var c = SketchCanvas.Palette.ShearWall;
+            var band = System.Windows.Media.Color.FromRgb((byte)(255 - 0.4 * (255 - c.R)), (byte)(255 - 0.4 * (255 - c.G)), (byte)(255 - 0.4 * (255 - c.B))); // 40 % over the paper
+            int before = Count(Render(v, "sketch-shear-parts-none"), band, 25);
+            LateralSection.Write(b, new LateralSection { Walls = { new ShearWallDesign { WallId = w.Id, LevelId = l2.Id, X0 = 60, Y0 = 10, X1 = 60, Y1 = 30 } } });
+            v.Canvas.Refresh();
+            int on = Count(Render(v, "sketch-shear-parts"), band, 25);
+            Assert.IsTrue(on > before + 100, $"the band along the 20 ft part: {before} → {on}");
+            v.Canvas.ShowShearParts = false;
+            v.Canvas.Refresh();
+            Assert.IsTrue(Count(Render(v, "sketch-shear-parts-off"), band, 25) < before + 20, "off: the host draws its own");
+        }
+
         [STATestMethod]
         public void Render_TheGroundShowsTheWallsStandingOnIt_Cut()
         {

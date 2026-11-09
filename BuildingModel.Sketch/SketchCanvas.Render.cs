@@ -166,6 +166,7 @@ namespace BuildingModel.Sketch
                 foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? WallPen, w.Start, w.End);
             }
             if (ShowJoints) DrawJoints(ctx, b, walls);
+            if (ShowShearParts) DrawShearParts(ctx, b, walls);
 
             // beams in this level's framing (brown, dash-dot as on framing plans) and the columns under it (filled squares)
             foreach (var bm in b.BeamsOn(level))
@@ -268,6 +269,37 @@ namespace BuildingModel.Sketch
                 var c = p + u * inset;
                 var n = new Vector(-u.Y, u.X) * 5;
                 ctx.DrawLine(j.Flipped ? FlippedJointPen : JointPen, c - n, c + n);
+            }
+        }
+
+        /// <summary>
+        /// Mark the shear walls the shear wall app declared (read only: the model's "Lateral" section, <see cref="ShearWallDesign"/>,
+        /// every declared wall, designed or not): a band along each one's shear part, where the hold-downs go at its ends. On by
+        /// default; the shear wall app, which draws its own, turns it off.
+        /// </summary>
+        public bool ShowShearParts { get; set; } = true;
+
+        private static readonly Pen ShearPartPen = P(Color.FromArgb(0x66, Palette.ShearWall.R, Palette.ShearWall.G, Palette.ShearWall.B), 7);
+        private static readonly Pen StaleShearPartPen = P(Color.FromArgb(0x50, Palette.Muted.R, Palette.Muted.G, Palette.Muted.B), 7);
+        private static readonly Brush ShearWallInk = B(Palette.ShearWall), FailsInk = B(Palette.Error);
+
+        /// <summary>The shear parts of the walls shown (<see cref="ShowShearParts"/>), with a short tag at each: "SW", "SW fails".</summary>
+        private void DrawShearParts(DrawingContext ctx, Building b, List<Wall> walls)
+        {
+            var lat = Connections != null ? Connections() : LateralSection.Read(b);
+            if (lat?.Walls == null || lat.Walls.Count == 0) return;
+            var pen = lat.Stale(b) != null ? StaleShearPartPen : ShearPartPen;
+            foreach (var w in walls)
+            {
+                // one part on every story of the wall: this story's design, else any of the wall's
+                var d = lat.Walls.FirstOrDefault(x => x.WallId == w.Id && x.LevelId == w.TopLevelId) ?? lat.Walls.FirstOrDefault(x => x.WallId == w.Id);
+                if (d == null) continue;
+                var a = new Point2(d.X0, d.Y0);
+                var e = new Point2(d.X1, d.Y1);
+                if (Snapper.Dist(a, e) < 1e-6) continue;
+                Line(ctx, pen, a, e);
+                if (ShowLabels)
+                    Label(ctx, d.Fails ? "SW fails" : "SW", ToScreen(new Point2(a.X + 0.15 * (e.X - a.X), a.Y + 0.15 * (e.Y - a.Y))) + new Vector(6, -6), d.Fails ? FailsInk : ShearWallInk, 9, false);
             }
         }
 

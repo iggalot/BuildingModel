@@ -36,7 +36,19 @@ namespace BuildingModel.App
             if (args.Length > 0)
             {
                 Diagnostics.Log.Info("App", "Started with " + args[0]);
-                if (File.Exists(args[0])) w.Open(args[0]);
+                if (File.Exists(args[0]))
+                {
+                    w.Open(args[0]);
+                    // the hub's "Fix it in the Building Model": the member its first error names (--select BM1), once the window has its size
+                    int at = Array.FindIndex(args, a => string.Equals(a, "--select", StringComparison.OrdinalIgnoreCase));
+                    if (at > 0 && at + 1 < args.Length)
+                    {
+                        string id = args[at + 1];
+                        EventHandler shown = null;
+                        shown = (s, e) => { w.ContentRendered -= shown; w.ShowAt(id); };
+                        w.ContentRendered += shown;
+                    }
+                }
                 else Diagnostics.Log.Warning("App", "The file to open does not exist: " + args[0], null);
             }
             return app.Run(w);
@@ -347,6 +359,19 @@ namespace BuildingModel.App
             if (!ConfirmDiscard()) return;
             string file = ProjectDialogs.OpenModelPath(this);
             if (file != null) Open(file);
+        }
+
+        /// <summary>
+        /// Goes to a member (the hub's <c>--select</c>): the first error naming it, shown as clicking it in the issues
+        /// list does (its level, every member it names selected, zoomed to; <see cref="ModelChecks.IssueFor"/>), else the member itself.
+        /// </summary>
+        public void ShowAt(string id)
+        {
+            var issue = ModelChecks.IssueFor(Sketch.Issues, id);
+            if (issue != null) Sketch.ShowIssue(issue);
+            else if (Sketch.Building.Find(id) != null) Sketch.SelectAndShow(id);
+            else return;
+            Log.Info("App", "Shown at " + id + (issue != null ? ": " + issue.Message : ""));
         }
 
         public void Open(string file)

@@ -39,6 +39,20 @@ namespace BuildingModel.Tests
             StringAssert.Contains(e.Message, "one support");
         }
 
+        /// <summary>The hub's --select BM1: the error naming the beam is the one shown (its level, the beam selected).</summary>
+        [TestMethod]
+        public void IssueFor_TheErrorNamingTheBeam()
+        {
+            var b = Story(out var l2);
+            b.AddWall(b.Ground, l2, 0, 0, 0, 20);
+            var bm = b.AddBeam(l2, 0, 10, 20, 10);
+            var all = ModelChecks.Run(b);
+            var e = ModelChecks.IssueFor(all, bm.Id);
+            Assert.AreEqual("BeamNotHeldUp", e.Code);
+            Assert.AreEqual(l2.Id, e.LevelId);
+            Assert.IsNull(ModelChecks.IssueFor(all, "nothing"));
+        }
+
         [TestMethod]
         public void NoSupport_AnError()
         {

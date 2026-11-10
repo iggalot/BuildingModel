@@ -33,6 +33,13 @@ namespace BuildingModel.Checks
         /// <summary>Openings over this share of a level's gross diaphragm: ASCE 7-22 Table 12.3-1, horizontal irregularity 3.</summary>
         public const double DiscontinuityRatio = 0.5;
 
+        /// <summary>
+        /// The issue to show for a member (the hub's <c>--select</c>): the first error naming it, else the first warning,
+        /// else null.
+        /// </summary>
+        public static ModelIssue IssueFor(IEnumerable<ModelIssue> issues, string id) =>
+            issues?.Where(i => i.Ids.Contains(id)).OrderBy(i => i.Severity == Severity.Error ? 0 : 1).FirstOrDefault();
+
         public static List<ModelIssue> Run(Building b)
         {
             var issues = new List<ModelIssue>();

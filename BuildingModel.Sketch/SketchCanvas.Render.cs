@@ -204,6 +204,7 @@ namespace BuildingModel.Sketch
             // the hold-downs after the members' labels, so theirs keep off them (the shared rule, as in every app)
             if (ShowConnections) { DrawShearPairs(ctx, b, level); DrawConnections(ctx, b, level, foundation); }
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
+            DrawProposedWalls(ctx);
 
             DrawOver?.Invoke(this, new SketchDrawEventArgs(ctx, this));
             // grips: hollow squares stretch (ends, corners); the filled diamond in a wall's middle moves the selection
@@ -282,6 +283,35 @@ namespace BuildingModel.Sketch
         private static readonly Pen ShearPartPen = P(Color.FromArgb(0x66, Palette.ShearWall.R, Palette.ShearWall.G, Palette.ShearWall.B), 7);
         private static readonly Pen StaleShearPartPen = P(Color.FromArgb(0x50, Palette.Muted.R, Palette.Muted.G, Palette.Muted.B), 7);
         private static readonly Brush ShearWallInk = B(Palette.ShearWall), FailsInk = B(Palette.Error);
+
+        /// <summary>
+        /// Walls proposed from the plan's lines (Walls from the plan…), drawn over the plan until each is added or skipped: the
+        /// one under review (<see cref="ProposedWall"/>) bold, the others faint. Null or empty: none.
+        /// </summary>
+        public IList<Segment2> ProposedWalls { get => proposedWalls; set { proposedWalls = value; InvalidateVisual(); } }
+        private IList<Segment2> proposedWalls;
+
+        /// <summary>The proposed wall under review (an index into <see cref="ProposedWalls"/>; −1: none).</summary>
+        public int ProposedWall { get => proposedWall; set { proposedWall = value; InvalidateVisual(); } }
+        private int proposedWall = -1;
+
+        private static readonly Pen ProposedPen = P(Color.FromArgb(0x70, Palette.Preview.R, Palette.Preview.G, Palette.Preview.B), 3, 3, 2);
+        private static readonly Pen ProposedNowPen = P(Palette.Select, 5);
+
+        private void DrawProposedWalls(DrawingContext ctx)
+        {
+            var list = proposedWalls;
+            if (list == null || list.Count == 0) return;
+            for (int i = 0; i < list.Count; i++)
+                if (i != proposedWall) Line(ctx, ProposedPen, list[i].A, list[i].B);
+            if (proposedWall >= 0 && proposedWall < list.Count)
+            {
+                var s = list[proposedWall];
+                Line(ctx, ProposedNowPen, s.A, s.B);
+                Label(ctx, $"proposed wall {proposedWall + 1} of {list.Count}, {Snapper.Dist(s.A, s.B):0.##} ft",
+                      ToScreen(new Point2((s.A.X + s.B.X) / 2, (s.A.Y + s.B.Y) / 2)) + new Vector(8, -18), B(Palette.Select), 10, true, bold: true);
+            }
+        }
 
         // the model's version (bumped by SetBuilding, Commit and undo/redo) and the stamp the last answer was for
         private int modelVersion;
@@ -977,7 +1007,13 @@ namespace BuildingModel.Sketch
                     case SketchTool.Wall:
                         var e = Snapper.Ortho(cursor, a);
                         Line(ctx, P(Palette.ShearWall, 4, 2, 1.5), a, e);
-                        Label(ctx, $"{Snapper.Dist(a, e):0.##} ft", ToScreen(e) + new Vector(10, -18), B(Palette.Preview));
+                        if (WallDrawnBy != WallLine.Centre && ActiveLevel != null)
+                        {
+                            // drawn along a face: where its centreline goes (half the story's stud depth to the wall's side)
+                            var c = WallsFromPlan.CentreOf(a, e, WallDrawnBy, WallJoints.ThicknessOf(Building, null, ActiveLevel.Id));
+                            Line(ctx, PreviewPen, c.A, c.B);
+                        }
+                        Label(ctx, $"{Snapper.Dist(a, e):0.##} ft" + (WallDrawnBy == WallLine.Centre ? "" : $", along its {WallLineWords(WallDrawnBy)}"), ToScreen(e) + new Vector(10, -18), B(Palette.Preview));
                         break;
                     case SketchTool.Cut:
                         var cr = new Rect2(a.X, a.Y, cursor.X, cursor.Y);

@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using BuildingModel.Checks;
@@ -388,6 +390,62 @@ namespace BuildingModel.Tests
             // off: the faces as before; no plan lines given: nothing to pair (the model's own lines are never paired)
             Assert.AreEqual(SnapModes.Endpoint, Snapper.Find(new Point2(0.45, 0.4), 0.6, plan, SnapModes.Default & ~SnapModes.WallCentre, planLines: plan).Kind);
             Assert.AreNotEqual(SnapModes.WallCentre, Snapper.Find(new Point2(10, 0.05), 0.6, plan, SnapModes.Default).Kind);
+        }
+
+        /// <summary>
+        /// A wall drawn along a face: its centreline half the thickness to the side the wall lies on. Clockwise round the
+        /// outside of a building (the left face), the walls go inside; the run's corner is found again.
+        /// </summary>
+        [TestMethod]
+        public void WallByAFace_TheCentrelineHalfTheThicknessIn_TheCornerFoundAgain()
+        {
+            double t = 0.5;
+            // clockwise round the outside, south-west corner first: up the west face, then east along the north face
+            var west = WallsFromPlan.CentreOf(new Point2(0, 0), new Point2(0, 30), WallLine.LeftFace, t);
+            Assert.AreEqual(new Point2(0.25, 0), west.A, "the wall lies to the right going north: east of the line");
+            var north = WallsFromPlan.CentreOf(new Point2(0, 30), new Point2(40, 30), WallLine.LeftFace, t);
+            Assert.AreEqual(new Point2(0, 29.75), north.A, "going east, to the right is south");
+            Assert.AreEqual(new Point2(0.25, 29.75), WallsFromPlan.RunJoint(west, north), "the corner: both centres 3 in in");
+            Assert.AreEqual(new Point2(-0.25, 0), WallsFromPlan.CentreOf(new Point2(0, 0), new Point2(0, 30), WallLine.RightFace, t).A);
+            Assert.AreEqual(new Point2(5, 5), WallsFromPlan.CentreOf(new Point2(5, 5), new Point2(9, 5), WallLine.Centre, t).A);
+            // straight on: no corner, the previous end
+            Assert.AreEqual(north.B, WallsFromPlan.RunJoint(north, new Segment2(north.B, new Point2(60, 29.75))));
+        }
+
+        /// <summary>
+        /// Walls from a CAD layer: a 40 x 30 ft box of 2x6 walls (6 in) with a 2x4 wall (3 1/2 in) across it, the outside
+        /// wall's south line drawn in two pieces. Four outside walls and the tee; their centres meet; a wall already drawn and
+        /// a pair 12 in apart are left out.
+        /// </summary>
+        [TestMethod]
+        public void WallsFromPlan_ThePairsOfLines_TheirCentres_JoinedAndRunOnToMeet()
+        {
+            double o = 0.5, i2 = 3.5 / 12;
+            var lines = new List<Segment2>
+            {
+                new Segment2(new Point2(0, 0), new Point2(15, 0)), new Segment2(new Point2(15, 0), new Point2(40, 0)), // south, outside, two pieces
+                new Segment2(new Point2(40, 0), new Point2(40, 30)), new Segment2(new Point2(40, 30), new Point2(0, 30)), new Segment2(new Point2(0, 30), new Point2(0, 0)),
+                new Segment2(new Point2(o, o), new Point2(40 - o, o)), new Segment2(new Point2(40 - o, o), new Point2(40 - o, 30 - o)),
+                new Segment2(new Point2(40 - o, 30 - o), new Point2(o, 30 - o)), new Segment2(new Point2(o, 30 - o), new Point2(o, o)),
+                new Segment2(new Point2(20 - i2 / 2, o), new Point2(20 - i2 / 2, 30 - o)), new Segment2(new Point2(20 + i2 / 2, o), new Point2(20 + i2 / 2, 30 - o)), // the 2x4 across
+                new Segment2(new Point2(50, 0), new Point2(60, 0)), new Segment2(new Point2(50, 1), new Point2(60, 1)), // 12 in apart: not a wall
+            };
+            var walls = WallsFromPlan.Propose(lines);
+            Assert.AreEqual(5, walls.Count, string.Join("; ", walls.Select(w => $"{w.A}-{w.B}")));
+            var south = walls.Single(w => Math.Abs(w.A.Y - 0.25) < 1e-9 && Math.Abs(w.B.Y - 0.25) < 1e-9);
+            Assert.AreEqual(0.25, south.A.X, 1e-9, "run on to the west wall's centre");
+            Assert.AreEqual(39.75, south.B.X, 1e-9, "one wall, not two pieces: to the east wall's centre");
+            var tee = walls.Single(w => Math.Abs(w.A.X - 20) < 1e-9 && Math.Abs(w.B.X - 20) < 1e-9);
+            Assert.AreEqual(0.25, tee.A.Y, 1e-9, "the tee runs on to the south wall's centre");
+            Assert.AreEqual(29.75, tee.B.Y, 1e-9);
+            var west = walls.Single(w => Math.Abs(w.A.X - 0.25) < 1e-9 && Math.Abs(w.B.X - 0.25) < 1e-9);
+            Assert.AreEqual(0.25, west.A.Y, 1e-9);
+            Assert.AreEqual(29.75, west.B.Y, 1e-9);
+
+            // the south wall drawn already: not proposed again
+            var again = WallsFromPlan.Propose(lines, new[] { new Segment2(new Point2(0.25, 0.25), new Point2(39.75, 0.25)) });
+            Assert.AreEqual(4, again.Count);
+            Assert.IsFalse(again.Any(w => Math.Abs(w.A.Y - 0.25) < 1e-9 && Math.Abs(w.B.Y - 0.25) < 1e-9));
         }
 
         [TestMethod]

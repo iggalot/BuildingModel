@@ -22,6 +22,12 @@
   - `EditHistory` (`BuildingModel.Core\Edits`): the suite's one undo and redo (text snapshots, step names, the saved
     step for the unsaved `*`). `ModelHistory` is it with the building as the snapshot; `SketchCanvas.Commit(what)`
     names the step.
+  - Drawing on a CAD plan that shows the walls' faces (owner 2026-11-09): `Snapper` with `SnapModes.WallCentre` (midway
+    between two lines 3.5 to 7.25 in apart, the plan's lines only); `SketchCanvas.SnapToPlan` (the **Plan snap** toggle:
+    off, nothing on the underlay snaps, for a busy plan); `SketchCanvas.WallDrawnBy` (**Wall: centreline / left face /
+    right face**, `WallsFromPlan.CentreOf`, `RunJoint`); **Walls from the plan…** (Underlay ▾, editor only:
+    `WallsFromPlan.Propose`, `PlanWallReview`, `PlanWallsWindow`, one undo step a wall). `SnapAt(point)` is the cursor's
+    snap, for the tests.
   - `ProjectWatcher` (`BuildingModel.Core\Serialization`): "the project changed on disk", after a quiet time, without
     the app's own save (`SavedByMe`). Every app that watches the file uses it.
   - `LateralSection` (`BuildingModel.Core\Model`): what the lateral design relays to the model, the foundation points with

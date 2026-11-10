@@ -234,6 +234,7 @@ namespace BuildingModel.Sketch
         // ------------------------------------------------------------------ the file's content (loaded, not saved)
 
         [IgnoreDataMember] private List<double[]> paths;   // CAD: x, y pairs in image units (the last value of each array is 1 when closed)
+        [IgnoreDataMember] private List<string> pathLayers; // CAD: each path's layer, in the order of paths
         [IgnoreDataMember] private System.Windows.Media.Geometry linework;
         [IgnoreDataMember] private BitmapSource bitmap;
         [IgnoreDataMember] private bool loaded;
@@ -249,6 +250,7 @@ namespace BuildingModel.Sketch
             var box = drawing.Bounds(layers);
             if (kept.Count == 0 || box.IsEmpty) throw new ArgumentException("There is no linework on the chosen layers.");
             double k = DxfFeetPerUnit / VectorUnitFeet; // image units per drawing unit
+            pathLayers = kept.Where(p => p.Points.Count > 1).Select(p => p.Layer ?? "0").ToList();
             paths = kept.Where(p => p.Points.Count > 1).Select(p =>
             {
                 var xy = new double[p.Points.Count * 2 + 1];
@@ -304,6 +306,7 @@ namespace BuildingModel.Sketch
             bitmap = previous.bitmap;
             linework = previous.linework;
             paths = previous.paths;
+            pathLayers = previous.pathLayers;
             loaded = true;
         }
 
@@ -407,6 +410,36 @@ namespace BuildingModel.Sketch
                     double x1 = xy[2 * i], y1 = xy[2 * i + 1], x2 = xy[2 * j], y2 = xy[2 * j + 1];
                     if (c.X < Math.Min(x1, x2) - t || c.X > Math.Max(x1, x2) + t || c.Y < Math.Min(y1, y2) - t || c.Y > Math.Max(y1, y2) + t) continue;
                     Point a = PixelToWorld(new Point(x1, y1)), b = PixelToWorld(new Point(x2, y2));
+                    list.Add(new Segment2(new Point2(a.X, a.Y), new Point2(b.X, b.Y)));
+                }
+            }
+            return list;
+        }
+
+        /// <summary>The CAD layers shown, with the number of paths on each, most first (empty for a picture).</summary>
+        public List<(string layer, int count)> LayersShown()
+        {
+            EnsureLoaded();
+            return (pathLayers ?? new List<string>()).GroupBy(l => l).Select(g => (g.Key, g.Count()))
+                   .OrderByDescending(x => x.Item2).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        /// <summary>Every CAD segment on <paramref name="layer"/> (null: all shown), in world ft. Empty for a picture.</summary>
+        public List<Segment2> SegmentsOn(string layer)
+        {
+            var list = new List<Segment2>();
+            EnsureLoaded();
+            if (paths == null || !(FeetPerPixel > 0)) return list;
+            for (int k = 0; k < paths.Count; k++)
+            {
+                if (layer != null && (pathLayers == null || k >= pathLayers.Count || pathLayers[k] != layer)) continue;
+                var xy = paths[k];
+                int n = (xy.Length - 1) / 2;
+                bool closed = xy[xy.Length - 1] > 0;
+                for (int i = 0; i < (closed ? n : n - 1); i++)
+                {
+                    int j = (i + 1) % n;
+                    Point a = PixelToWorld(new Point(xy[2 * i], xy[2 * i + 1])), b = PixelToWorld(new Point(xy[2 * j], xy[2 * j + 1]));
                     list.Add(new Segment2(new Point2(a.X, a.Y), new Point2(b.X, b.Y)));
                 }
             }

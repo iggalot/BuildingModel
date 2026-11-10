@@ -15,6 +15,7 @@ namespace BuildingModel.Sketch
     public partial class SketchCanvas
     {
         private Point2? first;                 // the first point of the command under way
+        private string runWall;                // the last wall of the run under way (drawn by a face: its centre is joined to the next one's)
         private Point2 cursor;                 // the cursor in ft, snapped
         private Point2 rawCursor;              // without snaps
         private SnapResult snap;
@@ -99,6 +100,7 @@ namespace BuildingModel.Sketch
         public void ResetCommand()
         {
             first = null;
+            runWall = null;
             copyOnce = false;
             bool dragging = grip != null || windowFrom != null;
             grip = null;
@@ -114,7 +116,9 @@ namespace BuildingModel.Sketch
             string lvl = ActiveLevel?.Name ?? "the level";
             switch (Tool)
             {
-                case SketchTool.Wall: return first == null ? $"Wall under {lvl}: click or type the start (x,y). Esc ends." : "Wall: click or type the end (@dx,dy or a length). Walls are square. Right-click ends the run.";
+                case SketchTool.Wall:
+                    string by = WallDrawnBy == WallLine.Centre ? "" : $" Drawn along its {WallLineWords(WallDrawnBy)}: the wall lies to the {(WallDrawnBy == WallLine.LeftFace ? "right" : "left")} of the line, its centreline half its stud depth in.";
+                    return (first == null ? $"Wall under {lvl}: click or type the start (x,y). Esc ends." : "Wall: click or type the end (@dx,dy or a length). Walls are square. Right-click ends the run.") + by;
                 case SketchTool.Diaphragm: return first == null ? $"Diaphragm on {lvl}: first corner." : "Diaphragm: opposite corner (or @width,depth).";
                 case SketchTool.Opening: return first == null ? $"Opening in {lvl}: first corner." : "Opening: opposite corner (or @width,depth).";
                 case SketchTool.Cut: return first == null ? $"Cut from the diaphragms of {lvl}: first corner of the area to take away." : "Cut: opposite corner (or @width,depth).";
@@ -164,8 +168,28 @@ namespace BuildingModel.Sketch
                     if (first == null) { first = p; break; }
                     var end = Snapper.Ortho(p, first.Value);
                     if (Snapper.Dist(end, first.Value) < BuildingEdits.MinimumWall) return;
-                    var w = b.AddWall(below, level, first.Value.X, first.Value.Y, end.X, end.Y);
-                    Commit($"Wall {w.Id} added, {w.Length:0.##} ft.");
+                    if (WallDrawnBy == WallLine.Centre)
+                    {
+                        var w = b.AddWall(below, level, first.Value.X, first.Value.Y, end.X, end.Y);
+                        Commit($"Wall {w.Id} added, {w.Length:0.##} ft.");
+                    }
+                    else
+                    {
+                        // the clicks are on a face: the centreline half the story's stud depth to the wall's side, and the run's
+                        // previous wall met again at the corner (both centrelines moved in)
+                        var c = WallsFromPlan.CentreOf(first.Value, end, WallDrawnBy, WallJoints.ThicknessOf(b, null, level.Id));
+                        var prev = runWall == null ? null : b.Walls.FirstOrDefault(x => x.Id == runWall);
+                        var start = c.A;
+                        if (prev != null)
+                        {
+                            start = WallsFromPlan.RunJoint(new Segment2(prev.Start, prev.End), c);
+                            prev.End = start;
+                        }
+                        if (Snapper.Dist(start, c.B) < BuildingEdits.MinimumWall) return;
+                        var w = b.AddWall(below, level, start.X, start.Y, c.B.X, c.B.Y);
+                        Commit($"Wall {w.Id} added along its {WallLineWords(WallDrawnBy)}, {w.Length:0.##} ft (its centreline {WallJoints.ThicknessOf(b, w, level.Id) * 6:0.##} in in from the line).");
+                        runWall = w.Id;
+                    }
                     first = end; // the next wall starts here
                     break;
 
@@ -493,6 +517,19 @@ namespace BuildingModel.Sketch
         {
             mouseInside = true;
             rawCursor = ToWorld(pos);
+            snap = SnapAt(rawCursor);
+            cursor = snap.Point;
+            CursorMoved?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// The snap the cursor would take at <paramref name="world"/> (ft) with the tool, the command under way and the aids as
+        /// they are: what the plan shows under the cursor (none: the point itself).
+        /// </summary>
+        public SnapResult SnapAt(Point2 world)
+        {
+            var rawCursor = world;
+            SnapResult snap;
             // picking on the plan itself (its scale, its line, its base point): snap only to its own CAD lines, never to the
             // walls or the grid, which would pull the pick off the feature on the plan
             bool onPlan = Tool == SketchTool.Calibrate || Tool == SketchTool.PlanStraighten || (Tool == SketchTool.PlanMove && first == null);
@@ -508,7 +545,8 @@ namespace BuildingModel.Sketch
                 var lines = segments;
                 var extra = ExtraSnapLines?.Invoke(rawCursor, PixelsToFeet(10));
                 if (extra != null) lines = segments.Concat(extra).ToList();
-                var own = PlanLinesNear(rawCursor, PixelsToFeet(10));
+                // the underlay's own lines, unless turned off (a busy plan)
+                var own = SnapToPlan ? PlanLinesNear(rawCursor, PixelsToFeet(10)) : new List<Segment2>();
                 if (own.Count > 0) lines = lines.Concat(own).ToList();
                 var modes = SnapModes;
                 if (!ShowGrid) modes &= ~SnapModes.Grid;
@@ -517,12 +555,11 @@ namespace BuildingModel.Sketch
                 var hostPoints = ExtraSnapPoints?.Invoke();
                 if (hostPoints != null) points.AddRange(hostPoints);
                 // a CAD plan's walls drawn as two lines: their centres (both lines, however close the view is zoomed)
-                var pairs = (modes & SnapModes.WallCentre) != 0 ? PlanLinesNear(rawCursor, Math.Max(PixelsToFeet(10), 0.75)) : null;
+                var pairs = SnapToPlan && (modes & SnapModes.WallCentre) != 0 ? PlanLinesNear(rawCursor, Math.Max(PixelsToFeet(10), 0.75)) : null;
                 snap = Snapper.Find(rawCursor, PixelsToFeet(10), lines, modes, first ?? HostFrom?.Invoke(), GridSpacing, points, pairs);
             }
             else snap = new SnapResult { Point = rawCursor };
-            cursor = snap.Point;
-            CursorMoved?.Invoke(this, EventArgs.Empty);
+            return snap;
         }
 
         /// <summary>A left click the host takes first (true: used, the tool does not see it).</summary>

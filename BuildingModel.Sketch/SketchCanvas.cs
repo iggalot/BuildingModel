@@ -395,6 +395,41 @@ namespace BuildingModel.Sketch
         public SketchTool Tool { get; private set; } = SketchTool.Select;
         public bool SnapOn { get; set; } = true;
         public SnapModes SnapModes { get; set; } = SnapModes.Default;
+
+        /// <summary>
+        /// The snaps also find the underlay's own CAD lines (their ends, middles, crossings, and the wall centres between two
+        /// of them). Off when a busy plan clutters the snaps: then only the model's own lines and points snap. The plan tools
+        /// (its scale, straighten, move) always snap to its lines.
+        /// </summary>
+        public bool SnapToPlan { get; set; } = true;
+
+        public void ToggleSnapToPlan()
+        {
+            SnapToPlan = !SnapToPlan;
+            Say(SnapToPlan ? "Snaps to the underlay's lines on: their ends, middles, crossings and the wall centres between two of them."
+                           : "Snaps to the underlay's lines off: only the model's own lines and points snap.");
+            ToolChanged?.Invoke(this, EventArgs.Empty);
+            InvalidateVisual();
+        }
+
+        /// <summary>What the Wall tool's clicks are on: the wall's centreline (the model's), or its left or right face (a plan's lines).</summary>
+        public WallLine WallDrawnBy
+        {
+            get => wallDrawnBy;
+            set
+            {
+                if (wallDrawnBy == value) return;
+                wallDrawnBy = value;
+                runWall = null; // a run is drawn one way
+                ToolChanged?.Invoke(this, EventArgs.Empty);
+                if (Tool == SketchTool.Wall) Say(Prompt());
+                InvalidateVisual();
+            }
+        }
+        private WallLine wallDrawnBy = WallLine.Centre;
+
+        /// <summary>"centreline", "left face", "right face".</summary>
+        public static string WallLineWords(WallLine by) => by == WallLine.LeftFace ? "left face" : by == WallLine.RightFace ? "right face" : "centreline";
         public bool Ortho { get; set; }
         public double GridSpacing { get; set; } = 1;
         public bool ShowGrid { get; set; } = true;

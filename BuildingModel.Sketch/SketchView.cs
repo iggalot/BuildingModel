@@ -28,7 +28,35 @@ namespace BuildingModel.Sketch
         public SketchCanvas Canvas { get; } = new SketchCanvas();
 
         private readonly Dictionary<SketchTool, ToggleButton> tools = new Dictionary<SketchTool, ToggleButton>();
-        private readonly ToggleButton snap, ortho, grid, issuesButton, planButton;
+        private readonly ToggleButton snap, ortho, grid, issuesButton, planButton, planSnap, wallBy;
+
+        /// <summary>The Wall tool's line: centreline, left face or right face.</summary>
+        private void WallByMenu()
+        {
+            var menu = new ContextMenu { PlacementTarget = wallBy, Placement = PlacementMode.Top };
+            foreach (var (by, tip) in new[]
+            {
+                (WallLine.Centre, "The clicks are on the wall's centreline (the model's line)."),
+                (WallLine.LeftFace, "The clicks are on the wall's left face as you go: the wall lies to the right. Clockwise round the outside of a building."),
+                (WallLine.RightFace, "The clicks are on the wall's right face as you go: the wall lies to the left. Anticlockwise round the outside of a building."),
+            })
+            {
+                var line = by;
+                var m = new MenuItem { Header = "Draw walls along their " + SketchCanvas.WallLineWords(line), ToolTip = tip, IsCheckable = true, IsChecked = Canvas.WallDrawnBy == line };
+                m.Click += (s, e) => { Canvas.WallDrawnBy = line; UpdateButtons(); };
+                menu.Items.Add(m);
+            }
+            menu.Closed += (s, e) => UpdateButtons();
+            menu.IsOpen = true;
+        }
+
+        /// <summary>Walls from the plan…: the walls a CAD layer shows, proposed one by one (<see cref="PlanWallsWindow"/>).</summary>
+        public void OpenWallsFromPlan()
+        {
+            if (Canvas.Building?.Below(Canvas.ActiveLevel) == null) { Canvas.Say("Show the level the walls carry (they run from the level below up to it).", true); return; }
+            var w = new PlanWallsWindow(Canvas) { Owner = Window.GetWindow(this) };
+            w.Show();
+        }
         private readonly Button undo, redo;
         private readonly StackPanel levelBar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBox command = new TextBox { Width = 120, VerticalContentAlignment = VerticalAlignment.Center, BorderBrush = Ui.Line, Padding = new Thickness(3, 1, 3, 1) };
@@ -94,9 +122,15 @@ namespace BuildingModel.Sketch
             snap = Ui.Toggle("", "Snap", "Object snaps (F3): points (columns, beam ends; hold-downs in Shear Walls), ends, middles, crossings, square to, grid", (s, e) => Canvas.ToggleSnap());
             ortho = Ui.Toggle("", "Ortho", "Ortho (F8): move, copy and measure straight across or up", (s, e) => Canvas.ToggleOrtho());
             grid = Ui.Toggle("", "Grid", "The grid: 1 ft lines, heavier every 10 ft, labelled in feet along the edges (coarser when zoomed out); snaps when Snap is on", (s, e) => { Canvas.ShowGrid = grid.IsChecked == true; Canvas.Refresh(); });
+            planSnap = Ui.Toggle("", "Plan snap", "Snap to the underlay's lines too: their ends, middles, crossings, and the wall centres between two of them. " +
+                                                  "Turn it off when a busy plan clutters the snaps (the model's own lines and points still snap).", (s, e) => { Canvas.ToggleSnapToPlan(); UpdateButtons(); });
+            wallBy = Ui.Toggle("", "Wall: centreline ▾", "What the Wall tool's clicks are on: the wall's centreline, or its left or right face " +
+                                                         "(a plan shows the faces: the centreline goes half the stud depth in)", (s, e) => WallByMenu());
             viewBar.Children.Add(snap);
+            viewBar.Children.Add(planSnap);
             viewBar.Children.Add(ortho);
             viewBar.Children.Add(grid);
+            viewBar.Children.Add(wallBy);
             viewBar.Children.Add(Ui.Separator());
             issuesButton = Ui.Toggle("", "Issues", "Show the issues on the plan (circle: error, triangle: warning). Click a marker to select what it is about.",
                                      (s, e) => { Canvas.ShowIssues = issuesButton.IsChecked == true; Canvas.Refresh(); });
@@ -181,14 +215,20 @@ namespace BuildingModel.Sketch
         {
             Canvas.EnabledTools.Remove(tool);
             if (tools.TryGetValue(tool, out var b)) b.Visibility = Visibility.Collapsed;
+            UpdateButtons(); // the Wall tool's own button (Wall: centreline) goes with it
         }
 
         public void UpdateButtons()
         {
             foreach (var kv in tools) kv.Value.IsChecked = Canvas.Tool == kv.Key;
             snap.IsChecked = Canvas.SnapOn;
+            planSnap.IsChecked = Canvas.SnapToPlan;
             ortho.IsChecked = Canvas.Ortho;
             grid.IsChecked = Canvas.ShowGrid;
+            wallBy.Content = Ui.Content("", "Wall: " + SketchCanvas.WallLineWords(Canvas.WallDrawnBy) + " ▾");
+            wallBy.IsChecked = Canvas.WallDrawnBy != WallLine.Centre;
+            wallBy.Visibility = Canvas.EnabledTools.Contains(SketchTool.Wall) && (!tools.TryGetValue(SketchTool.Wall, out var wt) || wt.Visibility == Visibility.Visible)
+                ? Visibility.Visible : Visibility.Collapsed;
             issuesButton.IsChecked = Canvas.ShowIssues;
             planButton.IsChecked = Canvas.ShowUnderlay && Canvas.PlanOf(Canvas.ActiveLevel) != null;
             undo.IsEnabled = Canvas.History.CanUndo;
@@ -291,6 +331,9 @@ namespace BuildingModel.Sketch
                 s2.IsCheckable = true; s2.IsChecked = Canvas.Ortho;
                 var s3 = Item(menu, "Grid", null, true, () => { Canvas.ShowGrid = !Canvas.ShowGrid; Canvas.Refresh(); UpdateButtons(); });
                 s3.IsCheckable = true; s3.IsChecked = Canvas.ShowGrid;
+                var s4 = Item(menu, "Snap to the underlay's lines", null, true, () => { Canvas.ToggleSnapToPlan(); UpdateButtons(); },
+                              "Off when a busy plan clutters the snaps: only the model's own lines and points snap.");
+                s4.IsCheckable = true; s4.IsChecked = Canvas.SnapToPlan;
             }
             menu.IsOpen = true;
         }
@@ -373,10 +416,18 @@ namespace BuildingModel.Sketch
             }
             void ZoomToPlan() { var r = u?.WorldBounds() ?? Rect.Empty; if (!r.IsEmpty) Canvas.ZoomTo(r); }
 
+            void SnapItem()
+            {
+                var sn = Item(menu, "Snap to its lines", true, () => { Canvas.ToggleSnapToPlan(); UpdateButtons(); },
+                              "The snaps find the plan's CAD lines and the wall centres between two of them. Off when a busy plan clutters the snaps.");
+                sn.IsCheckable = true;
+                sn.IsChecked = Canvas.SnapToPlan;
+            }
             if (!PlanEditing)
             {
                 Item(menu, Canvas.ShowUnderlay ? "Hide the plans" : "Show the plans", true, () => { Canvas.ShowUnderlay = !Canvas.ShowUnderlay; Canvas.Refresh(); UpdateButtons(); },
                      "Only on this screen: the plans stay in the building model.");
+                SnapItem();
                 Item(menu, "Zoom to the plan", u != null, ZoomToPlan);
                 if (EditPlansRequested != null)
                 {
@@ -390,6 +441,10 @@ namespace BuildingModel.Sketch
 
             bool movable = u != null && !u.Locked;
             Item(menu, u == null ? "Import a plan (DXF, PDF, image)..." : "Replace the plan (DXF, PDF, image)...", level != null, ImportPlan);
+            menu.Items.Add(new Separator());
+            Item(menu, "Walls from the plan...", u != null && u.IsDxf && Canvas.EnabledTools.Contains(SketchTool.Wall), OpenWallsFromPlan,
+                 "Pick the layer the walls are drawn on: each pair of parallel lines a stud wall apart is proposed as a wall on its centreline, to add or skip one by one.");
+            SnapItem();
             menu.Items.Add(new Separator());
             Item(menu, "Set scale: click two points, type the distance", movable, () => Canvas.SetTool(SketchTool.Calibrate),
                  "Pick the two ends of a long dimension on the plan; the plan is rescaled about the first point.");

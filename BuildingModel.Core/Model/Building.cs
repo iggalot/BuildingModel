@@ -255,7 +255,7 @@ namespace BuildingModel.Model
         [DataMember(Order = 12)] public string StudGrade { get; set; }
         [DataMember(Order = 13)] public double WallDeflectionLimit { get; set; }
 
-        /// <summary>The roof's rafters or trusses: their spacing (in), for the wind uplift on each one's tie to the wall.</summary>
+        /// <summary>The roof's rafters or trusses: their spacing (in), for the wind uplift on each one's tie to the wall, and the roof a beam running along them carries.</summary>
         [DataMember(Order = 14)] public double RafterSpacing { get; set; }
 
         /// <summary>The floors' joists (nominal sawn size): their depth is the rim's, a collector where no wall is under a line of shear walls.</summary>
@@ -266,6 +266,9 @@ namespace BuildingModel.Model
         /// joint, is the roof diaphragm's collector or chord where no wall is under it (owner 2026-11-09).
         /// </summary>
         [DataMember(Order = 16)] public string RoofBlockingSize { get; set; }
+
+        /// <summary>The floors' joists: their spacing (in), for the floor a beam running along them carries (half a spacing each side).</summary>
+        [DataMember(Order = 17)] public double FloorJoistSpacing { get; set; }
 
         public ModelDefaults() => Start();
 
@@ -288,6 +291,7 @@ namespace BuildingModel.Model
             RafterSpacing = 24;
             FloorJoistSize = "2x10";
             RoofBlockingSize = "2x6";
+            FloorJoistSpacing = 16;
         }
 
         [OnDeserializing]

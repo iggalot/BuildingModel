@@ -29,7 +29,7 @@ namespace BuildingModel.Sketch
         private readonly TextBox storyHeight = new TextBox(), pitch = new TextBox(), parapet = new TextBox(), overhang = new TextBox(),
                                  newLength = new TextBox(), newWidth = new TextBox(), newStories = new TextBox();
         private readonly ComboBox studFirst = new ComboBox(), studAbove = new ComboBox(), studSpacing = new ComboBox(), species = new ComboBox(),
-                                  grade = new ComboBox(), deflection = new ComboBox(), rafterSpacing = new ComboBox(), floorJoist = new ComboBox(),
+                                  grade = new ComboBox(), deflection = new ComboBox(), rafterSpacing = new ComboBox(), floorJoist = new ComboBox(), joistSpacing = new ComboBox(),
                                   roofBlocking = new ComboBox();
         private ModelDefaults shown;
         /// <summary>What was wrong with the values typed when OK was pressed (null: nothing).</summary>
@@ -85,7 +85,8 @@ namespace BuildingModel.Sketch
             Add("Lumber species", species, "The framing's species (NDS Supplement Tables 4A/4B), for the studs, plates, rims and blocking.");
             Add("Lumber grade", grade);
             Add("Wall deflection limit (L/n)", deflection, "Under wind (IBC Table 1604.3: 240 with brittle finishes).");
-            Add("Rafter or truss spacing", rafterSpacing, "For the wind uplift on each one's tie to the wall.");
+            Add("Rafter or truss spacing", rafterSpacing, "For the wind uplift on each one's tie to the wall, and the roof a beam along the rafters carries (half a spacing each side).");
+            Add("Floor joist spacing", joistSpacing, "The floor a beam along the joists carries (a trimmer: half a spacing each side).");
             Add("Floor joists (the rim)", floorJoist, "Their depth is the rim's: a collector or chord where no wall is under a line or an edge.");
             Add("Roof blocking", roofBlocking, "The roof's continuous blocking between its rafters: its collector or chord where no wall is under it.");
 
@@ -158,6 +159,7 @@ namespace BuildingModel.Sketch
             Fill(grade, Grades.Select(x => x.Key), d.StudGrade, k => Grades.FirstOrDefault(x => x.Key == k).Name ?? k, Same);
             Fill(deflection, DeflectionLimits, d.WallDeflectionLimit, v => $"L/{Num(v)}", Near);
             Fill(rafterSpacing, RafterSpacings, d.RafterSpacing, v => $"{Num(v)}\" o.c.", Near);
+            Fill(joistSpacing, RafterSpacings, d.FloorJoistSpacing, v => $"{Num(v)}\" o.c.", Near);
             Fill(floorJoist, MemberSizes, d.FloorJoistSize, s => s, Same);
             Fill(roofBlocking, MemberSizes, d.RoofBlockingSize, s => s, Same);
         }
@@ -190,6 +192,7 @@ namespace BuildingModel.Sketch
             d.StudGrade = Picked(grade, d.StudGrade);
             d.WallDeflectionLimit = Picked(deflection, d.WallDeflectionLimit);
             d.RafterSpacing = Picked(rafterSpacing, d.RafterSpacing);
+            d.FloorJoistSpacing = Picked(joistSpacing, d.FloorJoistSpacing);
             d.FloorJoistSize = Picked(floorJoist, d.FloorJoistSize);
             d.RoofBlockingSize = Picked(roofBlocking, d.RoofBlockingSize);
             Problem = bad.Count == 0 ? null : string.Join("\n", bad);

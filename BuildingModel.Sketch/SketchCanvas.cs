@@ -86,6 +86,7 @@ namespace BuildingModel.Sketch
         public void SetBuilding(Building b, string activeLevelId)
         {
             Building = b ?? Building.New();
+            modelVersion++;
             if (Building.Ground == null) Building.Levels.Insert(0, new Level { Id = Building.NewId("L"), Name = "Ground", Elevation = 0 });
             var converted = PlanImage.Migrate(Building); // plans in older formats; part of opening, not an undo step
             History.Reset(Building);
@@ -138,6 +139,7 @@ namespace BuildingModel.Sketch
             var followed = BuildingEdits.FollowSupports(Building);
             if (followed.Count > 0) what = (string.IsNullOrEmpty(what) ? "" : what + " ") + string.Join(" ", followed) + " (Ctrl+Z undoes it.)";
             bool changed = History.Record(Building, StepName(what));
+            if (changed) modelVersion++; // what the views worked out from the model (LateralOutOfDate) is found again
             if (ActiveLevel == null || Building.Level(ActiveLevel.Id) == null)
             {
                 ActiveLevel = Building.Level(ActiveLevel?.Id) ?? Building.LevelsBottomUp.LastOrDefault();
@@ -181,6 +183,7 @@ namespace BuildingModel.Sketch
         {
             ResetCommand();
             string what = undo ? History.Undo(Building) : History.Redo(Building);
+            modelVersion++;
             if (what == null) { Say(undo ? "Nothing to undo." : "Nothing to redo."); return; }
             var keep = ActiveLevel?.Id;
             ActiveLevel = Building.Level(keep) ?? Building.LevelsBottomUp.LastOrDefault();

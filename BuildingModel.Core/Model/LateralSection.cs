@@ -342,6 +342,28 @@ namespace BuildingModel.Model
             return null;
         }
 
+        /// <summary>
+        /// The inputs any app can find again from the model (the building, the wind's inputs) that have changed since the
+        /// design was saved (<see cref="BasedOn"/>), in words: "The building and the wind inputs changed since the shear walls
+        /// were saved." Null when none changed, or the design was saved before the stamps (it cannot tell). The shear wall
+        /// app's own inputs are its to compare (the hub does, with its code).
+        /// </summary>
+        public string ChangedSince(Building b)
+        {
+            var changed = Serialization.ModelFingerprint.ChangedFromModel(BasedOn, b);
+            if (changed == null || changed.Count == 0) return null;
+            var words = changed.Select(Serialization.ModelFingerprint.Words).ToList();
+            string list = words.Count == 1 ? words[0] : string.Join(", ", words.Take(words.Count - 1)) + " and " + words.Last();
+            return char.ToUpperInvariant(list[0]) + list.Substring(1) + " changed since the shear walls were saved.";
+        }
+
+        /// <summary>
+        /// Why this design may not be the project's any more, for every app's views (null: it is): a wall it names gone or moved
+        /// (<see cref="Stale"/>), else an input changed since it was saved (<see cref="ChangedSince"/>). One routine, so the
+        /// plans, the wall views and the Load Manager say the same.
+        /// </summary>
+        public string OutOfDate(Building b) => Stale(b) ?? ChangedSince(b);
+
         private static double Dist(BuildingModel.Geometry.Point2 a, BuildingModel.Geometry.Point2 b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
     }
 }

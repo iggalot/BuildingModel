@@ -79,21 +79,28 @@ namespace BuildingModel.Serialization
             return basedOn.Where(kv => Recompute(b, kv.Key) is string now && now != kv.Value).Select(kv => kv.Key).ToList();
         }
 
-        /// <summary>"the building", "the Wind inputs", or the part's own name.</summary>
-        public static string Words(string part) =>
-            part == GeometryPart ? "the building" : part != null && part.StartsWith("data:", StringComparison.Ordinal) ? $"the {part.Substring(5).ToLowerInvariant()} inputs" : part;
+        /// <summary>"the building", "the wind inputs", "the connection defaults", or the part's own name.</summary>
+        public static string Words(string part)
+        {
+            if (part == GeometryPart) return "the building";
+            if (part == null || !part.StartsWith("data:", StringComparison.Ordinal)) return part;
+            // the section's key in words: "ConnectionDefaults" → "connection defaults"
+            string key = System.Text.RegularExpressions.Regex.Replace(part.Substring(5), "(?<=[a-z])(?=[A-Z])", " ").ToLowerInvariant();
+            return key.EndsWith("defaults", StringComparison.Ordinal) ? $"the {key}" : $"the {key} inputs";
+        }
 
         /// <summary>
         /// The parts whose fingerprint differs between <paramref name="basedOn"/> (stored with a result) and
-        /// <paramref name="now"/>, in <paramref name="now"/>'s order. A part missing on either side counts as changed;
-        /// no <paramref name="basedOn"/> at all (a result saved before fingerprints) gives null: unknown.
+        /// <paramref name="now"/>, in <paramref name="now"/>'s order. A part the stamp does not have was not kept when the
+        /// result was saved (a part added to the stamp since): unknown, not changed, so an older result is not called out of
+        /// date for it. No <paramref name="basedOn"/> at all (a result saved before fingerprints) gives null: unknown.
         /// </summary>
         public static List<string> Changed(IDictionary<string, string> basedOn, IDictionary<string, string> now)
         {
             if (basedOn == null || basedOn.Count == 0) return null;
             var list = new List<string>();
             foreach (var kv in now ?? new Dictionary<string, string>())
-                if (!basedOn.TryGetValue(kv.Key, out var was) || was != kv.Value) list.Add(kv.Key);
+                if (basedOn.TryGetValue(kv.Key, out var was) && was != kv.Value) list.Add(kv.Key);
             return list;
         }
     }

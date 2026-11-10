@@ -283,12 +283,34 @@ namespace BuildingModel.Sketch
         private static readonly Pen StaleShearPartPen = P(Color.FromArgb(0x50, Palette.Muted.R, Palette.Muted.G, Palette.Muted.B), 7);
         private static readonly Brush ShearWallInk = B(Palette.ShearWall), FailsInk = B(Palette.Error);
 
+        // the model's version (bumped by SetBuilding, Commit and undo/redo) and the stamp the last answer was for
+        private int modelVersion;
+        private string outOfDateKey, outOfDateWords;
+
+        /// <summary>
+        /// <see cref="LateralSection.OutOfDate"/> for the plans, its fingerprints found again only when the model or the saved
+        /// stamp has changed (the geometry's is a copy of the whole building: not on every frame).
+        /// </summary>
+        private string LateralOutOfDate(Building b, LateralSection lat)
+        {
+            string stale = lat.Stale(b);
+            if (stale != null || lat.BasedOn == null || lat.BasedOn.Count == 0) return stale;
+            string key = modelVersion + "|" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(b) + "|" +
+                         string.Join(";", lat.BasedOn.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Key + "=" + kv.Value));
+            if (key != outOfDateKey)
+            {
+                outOfDateKey = key;
+                outOfDateWords = lat.ChangedSince(b);
+            }
+            return outOfDateWords;
+        }
+
         /// <summary>The shear parts of the walls shown (<see cref="ShowShearParts"/>), with a short tag at each: "SW", "SW fails".</summary>
         private void DrawShearParts(DrawingContext ctx, Building b, List<Wall> walls)
         {
             var lat = Connections != null ? Connections() : LateralSection.Read(b);
             if (lat?.Walls == null || lat.Walls.Count == 0) return;
-            var pen = lat.Stale(b) != null ? StaleShearPartPen : ShearPartPen;
+            var pen = LateralOutOfDate(b, lat) != null ? StaleShearPartPen : ShearPartPen;
             foreach (var w in walls)
             {
                 // one part on every story of the wall: this story's design, else any of the wall's
@@ -386,7 +408,7 @@ namespace BuildingModel.Sketch
         {
             var lat = Connections != null ? Connections() : LateralSection.Read(b);
             if (lat == null || lat.IsEmpty || level == null) return;
-            var ink = lat.Stale(b) != null ? MutedBrush : ShearInk;
+            var ink = LateralOutOfDate(b, lat) != null ? MutedBrush : ShearInk;
             var pen = new Pen(ink, 1.4);
             pen.Freeze();
             var body = BodyIds(b);
@@ -480,7 +502,7 @@ namespace BuildingModel.Sketch
         {
             var list = new List<HoldownMarker>();
             if (lat == null || lat.IsEmpty) return list;
-            bool stale = lat.Stale(b) != null;
+            bool stale = LateralOutOfDate(b, lat) != null;
             foreach (var p in lat.Points ?? new List<LateralPoint>())
             {
                 bool missing = p.Connector == null && p.MaxUp > 0;
@@ -507,7 +529,7 @@ namespace BuildingModel.Sketch
         {
             var list = new List<HoldownMarker>();
             if (lat?.Holdowns == null || level == null) return list;
-            bool stale = lat.Stale(b) != null;
+            bool stale = LateralOutOfDate(b, lat) != null;
             string late = stale ? "  (out of date)" : "";
             // each hold-down is half of a pair of equal and opposite forces: drawn by the one rule of every drawing
             // (ConnectionPairs.Drawn), for the body drawn (the selection; none: the whole structure)

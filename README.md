@@ -17,7 +17,7 @@ The repos are on GitHub; commit locally, push only when asked. Branch: `dev/ui-p
 |---|---|
 | `BuildingModel.Core` | The model (levels, diaphragms, openings, walls, notes, roof, project defaults, data bags), the geometry rules and queries (exterior walls, the roof's ridge and mean height, the envelope: L × B and each level's share of each face), the checks, the edits (move, copy, mirror, split, join, cut, stories), the undo history, change sets, typed coordinates, the JSON file. No UI, no analysis app. |
 | `BuildingModel.Sketch` | The shared WPF sketcher (`SketchCanvas`, `SketchView`): draws and edits the model one level at a time, with snaps, typed points, grips (move the selection, change a wall's length), undo, plan underlays (DXF, image), error markers, notes, the roof window, 3D (`Building3DView`), a properties panel and an issue list. Apps host it and add their own overlays. |
-| `BuildingModel.App` | The standalone Building Model app (`BuildingModel.exe`): draw the building, levels, 3D, checks, a summary of what the apps read, apply change sets. |
+| `BuildingModel.App` | The standalone Building Model app (`BuildingModel.exe`): draw the building, levels, 3D, checks, a summary of what the apps read, reads other apps' saves as they come (it watches the file). |
 | `BuildingModel.Tests` | Model, geometry, envelope, roof and defaults, edits, history, change sets (MSTest). |
 | `BuildingModel.Sketch.Tests` | The sketcher on an STA thread: tools, keys, grips, undo, issues, notes, host hooks, roof window, 3D, underlays; renders PNG snapshots when `SNAPSHOT_DIR` is set. |
 

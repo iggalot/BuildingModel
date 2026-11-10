@@ -68,6 +68,10 @@ namespace BuildingModel.App
         private Building savedBase;
         /// <summary>This app's hold on the open project (one Building Model per project).</summary>
         private ProjectLock projectLock;
+        /// <summary>Another app's save of the open project (<see cref="FromOtherApp"/>).</summary>
+        private ProjectWatcher watcher;
+        /// <summary>The file as another app last saved it while there were unsaved changes here: its data is the other apps' (<see cref="TakeTheirs"/>).</summary>
+        private Building theirs;
 
         /// <summary>The data keys the Building Model writes (the plan images); every other app's data is kept as the file has it.</summary>
         private static bool OwnsData(string key) => key.StartsWith("Sketch.", StringComparison.Ordinal) || key == PlanImage.OldShearWallKey;
@@ -86,6 +90,9 @@ namespace BuildingModel.App
 
         private void LetGoOfProject()
         {
+            watcher?.Dispose();
+            watcher = null;
+            theirs = null;
             projectLock?.Dispose();
             projectLock = null;
             SetViewOnly(false);
@@ -137,6 +144,7 @@ namespace BuildingModel.App
             properties.OpenWall = ShowWall;
             // the wall window follows the pick (another wall) and the model (an edit, an undo, another app's save)
             Sketch.SelectionChanged += (s, e) => { if (wallWindow != null && Sketch.Selection.Count() == 1 && Sketch.Building.Find(Sketch.Selection.First()) is Wall w) ShowWall(w); };
+            Sketch.ModelChanged += (s, e) => TakeTheirs(); // first: an undo must not bring back another app's data from before its save
             Sketch.ModelChanged += (s, e) => RefreshWall();
             Sketch.ActiveLevelChanged += (s, e) => RefreshWall();
 
@@ -154,8 +162,6 @@ namespace BuildingModel.App
             Item(file, "_Open…", "Ctrl+O", OpenDialog);
             editingItems.Add(Item(file, "_Save", "Ctrl+S", () => Save(false)));
             editingItems.Add(Item(file, "Save _as…", null, () => Save(true), "Save as a new project folder"));
-            file.Items.Add(new Separator());
-            editingItems.Add(Item(file, "Apply changes from another app…", null, ApplyChanges, "Apply a change set proposed by another app (the shear wall designer)"));
             file.Items.Add(new Separator());
             Item(file, "E_xit", "Alt+F4", Close);
 
@@ -352,6 +358,8 @@ namespace BuildingModel.App
                 doc = ModelFile.Load(file);
                 savedBase = ModelFile.Clone(doc.Building);
                 path = file;
+                theirs = null;
+                Watch();
                 Sketch.SetBuilding(doc.Building, null);
                 Update();
                 Sketch.ZoomExtents();
@@ -390,9 +398,13 @@ namespace BuildingModel.App
                 doc.Version = ModelDocument.CurrentVersion;
                 // merged with what another app saved meanwhile (the wind, the loads, the shear walls): their work is kept
                 var report = ModelFile.SaveMerged(path, doc, savedBase, OwnsData);
+                Watch();
+                watcher?.SavedByMe();
                 savedBase = ModelFile.Clone(doc.Building);
+                // the saved building has the other apps' data as the file had it: shown from now on
+                theirs = ModelFile.Clone(doc.Building);
                 if (report.GeometryTaken) Sketch.SetBuilding(ModelFile.Clone(doc.Building), Sketch.ActiveLevel?.Id);
-                else doc.Building = Sketch.Building;
+                else { TakeTheirs(); doc.Building = Sketch.Building; }
                 if (report.FileChanged) Diagnostics.Log.Info("Project", report.Summary());
                 if (report.Conflicts.Count > 0)
                     MessageBox.Show(this, report.Summary(), "Save", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -516,24 +528,63 @@ namespace BuildingModel.App
             MessageBox.Show(this, text, "What the analysis apps read from this model", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void ApplyChanges()
+        // ------------------------------------------------------------------ another app's save
+
+        /// <summary>Watches the open project for another app's save (<see cref="FromOtherApp"/>); none without a project.</summary>
+        private void Watch()
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog { InitialDirectory = ProjectFolder.DialogFolder, Filter = "Change set (*.bldgchanges.json)|*.bldgchanges.json|JSON (*.json)|*.json|All files (*.*)|*.*", Title = "Apply a change set" };
-            if (dlg.ShowDialog(this) != true) return;
-            ChangeSet cs;
-            try { cs = ChangeSet.FromJson(File.ReadAllText(dlg.FileName)); }
-            catch (Exception ex) { MessageBox.Show(this, ex.Message, "Apply changes", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
-            string intro = $"{cs.Author} proposes: {cs.Summary()}." + (cs.BaseRevision != doc.Revision ? $"\n\nIt was made on revision {cs.BaseRevision}; this model is at revision {doc.Revision}." : "");
-            if (MessageBox.Show(this, intro + "\n\nApply it?", "Apply changes", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-            var b = Sketch.Building;
-            var conflicts = cs.ApplyTo(b);
-            if (conflicts.Count > 0)
+            if (watcher != null && string.Equals(watcher.ModelPath, path, StringComparison.OrdinalIgnoreCase)) return;
+            watcher?.Dispose();
+            watcher = null;
+            if (string.IsNullOrEmpty(path)) return;
+            watcher = new ProjectWatcher(path);
+            watcher.ChangedOnDisk += (s, e) => FromOtherApp();
+        }
+
+        /// <summary>
+        /// Another app saved the project (the wind, the loads, the shear walls and their hold-downs). Nothing unsaved here (or
+        /// view only): the file is read again, whole. Unsaved changes here: they are kept, and the other apps' data is taken
+        /// from the file onto them (<see cref="TakeTheirs"/>), as the save's merge will take it. Nothing is saved in answer.
+        /// </summary>
+        private void FromOtherApp()
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            ModelDocument d;
+            try { d = ModelFile.Load(path); }
+            catch (IOException) { if (File.Exists(path)) watcher?.CheckAgain(); return; } // still being written: try again shortly
+            catch (Exception ex) when (ex is InvalidDataException || ex is System.Runtime.Serialization.SerializationException || ex is ArgumentException)
             {
-                var r = MessageBox.Show(this, $"{conflicts.Count} change{(conflicts.Count == 1 ? "" : "s")} could not be applied:\n\n• " + string.Join("\n• ", conflicts.Take(12)) +
-                                              "\n\nYes: take the proposed version of these too.\nNo: keep the model's.", "Conflicts", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                if (r == MessageBoxResult.Yes) cs.ApplyTo(b, force: true);
+                Log.Warning("Project", "The changed file could not be read", ex);
+                return;
             }
-            Sketch.Commit("Change set applied: " + cs.Summary() + ".");
+            if (!dirty || viewOnly)
+            {
+                doc = d;
+                savedBase = ModelFile.Clone(d.Building);
+                theirs = null;
+                Sketch.SetBuilding(d.Building, Sketch.ActiveLevel?.Id);
+                Update();
+                RefreshWall();
+                Log.Info("Project", $"Read again: another app saved the project (revision {d.Revision}).");
+                Sketch.Say($"Another app saved the project: read again (revision {d.Revision}).");
+                return;
+            }
+            theirs = d.Building;
+            TakeTheirs();
+            Update();
+            RefreshWall();
+            Sketch.Refresh();
+            Log.Info("Project", $"Another app saved the project (revision {d.Revision}): its data taken, the unsaved changes here kept.");
+            Sketch.Say($"Another app saved the project (revision {d.Revision}): its work is shown, and your unsaved changes are kept. Save to keep them.");
+        }
+
+        /// <summary>
+        /// The other apps' data as the file has it, on the building being edited (<see cref="ModelMerge.TakeOthersData"/>): after
+        /// another app's save, and again after every edit, undo and redo (an undo puts back a snapshot from before their save).
+        /// </summary>
+        private void TakeTheirs()
+        {
+            if (theirs != null) ModelMerge.TakeOthersData(theirs, Sketch.Building, OwnsData);
         }
 
         /// <summary>

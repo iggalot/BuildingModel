@@ -200,10 +200,10 @@ the plan. `Building3DView` shows the building in 3D.
 
 ## Building Model app (`BuildingModel.App`)
 
-`BuildingModel.exe`: a menu bar replaces the row of buttons. Every command appears once, grouped as **File** (new, open, save, apply changes), **Edit** (undo, the edits with their keys), **Building** (name, new from size, roof, what the analysis apps read), **Levels** (add, insert, copy the story below, delete) and **View** (plan, 3D, zoom). The Plan / 3D switch sits at the right.
+`BuildingModel.exe`: a menu bar replaces the row of buttons. Every command appears once, grouped as **File** (new, open, save), **Edit** (undo, the edits with their keys), **Building** (name, new from size, roof, what the analysis apps read), **Levels** (add, insert, copy the story below, delete) and **View** (plan, 3D, zoom). The Plan / 3D switch sits at the right.
 It covers New, Open, Save (`*.bldg.json`), + level, insert a mezzanine, copy a story up, delete a level,
 the plan and 3D, a properties panel, the issue list (live), a summary of what the analysis apps read (the
-envelope and the roof; no analysis app is run), the Roof window, and Apply changes (a change set from an analysis app, with its conflicts).
+envelope and the roof; no analysis app is run), and the Roof window. It watches the project file (`ProjectWatcher`): another app's save is read again at once (nothing unsaved), or its data is taken onto the unsaved changes (`ModelMerge.TakeOthersData`, again after every edit and undo) as the save will take it. There is no manual "apply changes" step (removed 2026-11-10: nothing wrote change sets any more).
 
 ## Shear wall adapter (`ShearWallCalculator.ModelAdapter`, in the shear wall repo)
 

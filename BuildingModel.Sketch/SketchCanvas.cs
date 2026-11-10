@@ -515,7 +515,7 @@ namespace BuildingModel.Sketch
 
         public void Refresh() => InvalidateVisual();
 
-        internal void Say(string text, bool warning = false) => Status?.Invoke(this, new SketchStatusEventArgs(text, warning));
+        public void Say(string text, bool warning = false) => Status?.Invoke(this, new SketchStatusEventArgs(text, warning));
 
         // ------------------------------------------------------------------ view (screen = (OriginX + x·Zoom, OriginY − y·Zoom))
 

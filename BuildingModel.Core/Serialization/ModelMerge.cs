@@ -118,6 +118,37 @@ namespace BuildingModel.Serialization
         }
 
         /// <summary>
+        /// The other apps' data from the file (<paramref name="file"/>) onto the building being edited (<paramref name="into"/>),
+        /// for an app with unsaved changes when another app saves: the keys it does not <paramref name="owns"/> become the
+        /// file's, on the building and on every object the file has too (by ID). The same rule as the save's merge ("not this
+        /// app's: the file's"), so what is shown is what will be saved. An object the file does not have (drawn or copied since)
+        /// keeps its own, as the merge keeps it. Nothing of this app's is touched.
+        /// </summary>
+        public static void TakeOthersData(Building file, Building into, Func<string, bool> owns)
+        {
+            if (file == null || into == null) return;
+            void Take(ModelObject from, ModelObject to)
+            {
+                if (from == null || to == null) return;
+                foreach (string k in to.Data.Keys.Where(k => !owns(k)).ToList()) to.SetData(k, null);
+                foreach (var kv in from.Data.Where(kv => !owns(kv.Key)).ToList()) to.SetData(kv.Key, kv.Value);
+            }
+            Take(file, into);
+            void Each<T>(List<T> f, List<T> t) where T : ModelObject
+            {
+                var byId = (f ?? new List<T>()).Where(x => x?.Id != null).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
+                foreach (var x in t ?? new List<T>()) if (x?.Id != null && byId.TryGetValue(x.Id, out var from)) Take(from, x);
+            }
+            Each(file.Levels, into.Levels);
+            Each(file.Diaphragms, into.Diaphragms);
+            Each(file.Openings, into.Openings);
+            Each(file.Walls, into.Walls);
+            Each(file.Notes, into.Notes);
+            Each(file.Beams, into.Beams);
+            Each(file.Columns, into.Columns);
+        }
+
+        /// <summary>
         /// An app that writes only its own data (no geometry): copies the keys it <paramref name="owns"/> from
         /// <paramref name="mine"/> onto <paramref name="latest"/> (the file as it is now), on the building and on every object
         /// by ID; an owned key that <paramref name="mine"/> no longer has is removed. Everything else stays the file's.

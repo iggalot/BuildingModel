@@ -163,6 +163,17 @@ namespace BuildingModel.Model
 
         /// <summary>The height the shear acts at above the wall's base (ft): its story's height, as designed.</summary>
         [DataMember(Order = 14, EmitDefaultValue = false)] public double HeightFt { get; set; }
+
+        /// <summary>
+        /// Declared but not designed (no shear on it yet: no wind set up, or no story forces): no shear check, nailing or
+        /// hold-downs. Its faces are only what its card asks for. Every view says so (<see cref="NotDesignedWarning"/>).
+        /// </summary>
+        [DataMember(Order = 15, EmitDefaultValue = false)] public bool NotDesigned { get; set; }
+
+        /// <summary>The words every app shows on a shear wall that is not designed (<see cref="NotDesigned"/>).</summary>
+        public const string NotDesignedWarning =
+            "NOT DESIGNED: no shear check, nailing or hold-downs yet. The sheathing shown is only what its card asks for, not a design. " +
+            "The Shear Wall Calculator designs it once the wind is set up; do not build from it until then.";
     }
 
     /// <summary>
@@ -263,6 +274,19 @@ namespace BuildingModel.Model
 
         /// <summary>The hold-downs and connections from the story above that land on <paramref name="what"/> ("wall W3", "beam B2").</summary>
         public IEnumerable<StoryHoldown> LandingOn(string what) => (Holdowns ?? new List<StoryHoldown>()).Where(h => h.Onto == what);
+
+        /// <summary>The declared shear walls not designed yet (<see cref="ShearWallDesign.NotDesigned"/>), one per wall story.</summary>
+        public List<ShearWallDesign> NotDesigned() => (Walls ?? new List<ShearWallDesign>()).Where(w => w.NotDesigned).ToList();
+
+        /// <summary>"2 shear walls are not designed (W1, W4): ...", or null when every one is designed.</summary>
+        public string NotDesignedWords()
+        {
+            var n = NotDesigned();
+            if (n.Count == 0) return null;
+            var ids = n.Select(w => w.WallId).Distinct().ToList();
+            return $"{(ids.Count == 1 ? "1 shear wall is" : ids.Count + " shear walls are")} not designed ({string.Join(", ", ids)}): no shear check, " +
+                   "nailing or hold-downs, and no forces from them in the foundation. The Shear Wall Calculator designs them once the wind is set up.";
+        }
 
         public bool IsEmpty => (Points == null || Points.Count == 0) && (Holdowns == null || Holdowns.Count == 0) && (Walls == null || Walls.Count == 0);
 

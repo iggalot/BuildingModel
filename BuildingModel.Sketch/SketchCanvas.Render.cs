@@ -299,7 +299,8 @@ namespace BuildingModel.Sketch
                 if (Snapper.Dist(a, e) < 1e-6) continue;
                 Line(ctx, pen, a, e);
                 if (ShowLabels)
-                    Label(ctx, d.Fails ? "SW fails" : "SW", ToScreen(new Point2(a.X + 0.15 * (e.X - a.X), a.Y + 0.15 * (e.Y - a.Y))) + new Vector(6, -6), d.Fails ? FailsInk : ShearWallInk, 9, false);
+                    Label(ctx, d.NotDesigned ? "SW NOT DESIGNED" : d.Fails ? "SW fails" : "SW", ToScreen(new Point2(a.X + 0.15 * (e.X - a.X), a.Y + 0.15 * (e.Y - a.Y))) + new Vector(6, -6),
+                          d.Fails || d.NotDesigned ? FailsInk : ShearWallInk, 9, false, bold: d.NotDesigned);
             }
         }
 

@@ -4,6 +4,7 @@ using System;
 using BuildingModel.Geometry;
 using BuildingModel.Model;
 using BuildingModel.Edits;
+using BuildingModel.Statics;
 
 namespace BuildingModel.Checks
 {
@@ -130,6 +131,7 @@ namespace BuildingModel.Checks
             }
 
             BeamColumnChecks(b, issues);
+            BeamStabilityChecks(b, issues);
             RoofChecks(b, Add);
             OverlapChecks(b, Add);
             foreach (var i in issues) Locate(b, i);
@@ -302,6 +304,41 @@ namespace BuildingModel.Checks
                                       "If the column is meant to carry the beam, or stand on it, snap one onto the other.",
                         });
                 }
+            }
+        }
+
+        /// <summary>
+        /// BeamNotHeldUp, an error (owner 2026-11-10: the model is not valid, nothing is calculated anywhere; leaving the one
+        /// beam out would be dangerous): a beam above the ground with fewer than two supports, or beams resting on each other
+        /// with nothing under them (a mechanism), found by <see cref="BeamSupports.Unstable"/>. A cantilever past its last
+        /// support stands (two supports behind it), at one end or both.
+        /// </summary>
+        private static void BeamStabilityChecks(Building b, List<ModelIssue> issues)
+        {
+            foreach (var lv in b.Levels.Where(l => l.Elevation > 0))
+            {
+                if (!b.Beams.Any(m => m.LevelId == lv.Id)) continue;
+                var supports = BeamSupports.Of(b, lv);
+                var unstable = BeamSupports.Unstable(b, lv, supports);
+                if (unstable.Count == 0) continue;
+                string Held(string id) => supports[id].Count == 0 ? "nothing under it"
+                    : string.Join(", ", supports[id].Select(s => $"{s.On} at its {s.Name}"));
+                // a beam on fewer than two: its own error; the rest resting on one another: one error together
+                foreach (var id in unstable.Where(id => supports[id].Count < 2))
+                    issues.Add(new ModelIssue
+                    {
+                        Severity = Severity.Error, Code = "BeamNotHeldUp", Ids = new List<string> { id }, LevelId = lv.Id,
+                        Message = $"Beam {id} on {lv.Name} has {(supports[id].Count == 0 ? "no support" : "one support")} ({Held(id)}): a beam needs two to stand " +
+                                  "(an end may run past one as a cantilever). Draw the wall, column or beam that holds it up. Nothing is calculated until it stands.",
+                    });
+                var rest = unstable.Where(id => supports[id].Count >= 2).ToList();
+                if (rest.Count > 0)
+                    issues.Add(new ModelIssue
+                    {
+                        Severity = Severity.Error, Code = "BeamNotHeldUp", Ids = rest, LevelId = lv.Id,
+                        Message = $"{(rest.Count == 1 ? "Beam" : "Beams")} {string.Join(", ", rest)} on {lv.Name} rest on each other with nothing under where they meet " +
+                                  $"({string.Join("; ", rest.Select(id => $"{id}: {Held(id)}"))}): a mechanism, they cannot stand. Draw a column, a post or a wall under that point. Nothing is calculated until they stand.",
+                    });
             }
         }
 

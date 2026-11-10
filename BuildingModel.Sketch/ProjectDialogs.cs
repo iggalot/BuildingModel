@@ -85,12 +85,32 @@ namespace BuildingModel.Sketch
         /// it. <paramref name="refused"/>: true when it is held elsewhere (the project must not be opened); false with a null
         /// lock when it could not be written (a read-only folder): the app goes on without one.
         /// </summary>
-        public static ProjectLock TakeLock(Window owner, string modelPath, string appId, string appName, out bool refused)
+        public static ProjectLock TakeLock(Window owner, string modelPath, string appId, string appName, out bool refused) =>
+            TakeLock(owner, modelPath, appId, appName, false, out refused, out _);
+
+        /// <summary>The question when someone else has the project and the app can open it to look at only.</summary>
+        public static string ViewOnlyQuestion(string others) =>
+            others + "\n\nOpen it view only? You can look at the plan, the results and the reports; nothing can be changed or saved, and no one's work is held up.";
+
+        /// <summary>
+        /// As above; with <paramref name="offerViewOnly"/>, someone else's project (another person, or another PC) can be
+        /// opened to look at only: <paramref name="viewOnly"/> true, no lock taken, not refused. This person's own other copy
+        /// of the app is still refused (switch to that window).
+        /// </summary>
+        public static ProjectLock TakeLock(Window owner, string modelPath, string appId, string appName, bool offerViewOnly, out bool refused, out bool viewOnly)
         {
+            viewOnly = false;
             // one person per project: someone else's hub or app has it (another person, or another PC)
             string others = ProjectLock.OthersMessage(modelPath);
             if (others != null)
             {
+                if (offerViewOnly)
+                {
+                    viewOnly = MessageBox.Show(owner, ViewOnlyQuestion(others), appName, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+                    refused = !viewOnly;
+                    if (viewOnly) Log.Info("Lock", "Opened view only (someone else has it): " + modelPath);
+                    return null;
+                }
                 refused = true;
                 MessageBox.Show(owner, others, appName, MessageBoxButton.OK, MessageBoxImage.Information);
                 return null;

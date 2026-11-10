@@ -21,7 +21,7 @@ namespace BuildingModel.Sketch.Tests
     {
         private const int W = 1200, H = 720;
 
-        private static Building Sample(out Level l2, out Level roof)
+        internal static Building Sample(out Level l2, out Level roof)
         {
             var b = Building.New("Sample");
             l2 = b.AddLevel("Level 2", 10);

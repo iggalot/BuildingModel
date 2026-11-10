@@ -76,10 +76,11 @@ namespace BuildingModel.App
         private bool HoldProject(string file)
         {
             if (projectLock != null && string.Equals(projectLock.ModelPath, file, StringComparison.OrdinalIgnoreCase)) return true;
-            var taken = ProjectDialogs.TakeLock(this, file, "building", "Building Model", out bool refused);
+            var taken = ProjectDialogs.TakeLock(this, file, "building", "Building Model", true, out bool refused, out bool lookOnly);
             if (refused) return false;
             projectLock?.Dispose();
             projectLock = taken;
+            SetViewOnly(lookOnly);
             return true;
         }
 
@@ -87,6 +88,33 @@ namespace BuildingModel.App
         {
             projectLock?.Dispose();
             projectLock = null;
+            SetViewOnly(false);
+        }
+
+        /// <summary>
+        /// Someone else's project, opened to look at only: no lock, no saves, the tools that change anything hidden or off
+        /// (the sketch puts back any edit), "(view only)" in the title and a banner. Opened again once they have closed it,
+        /// it is worked on as usual.
+        /// </summary>
+        private bool viewOnly;
+        private readonly Border viewOnlyBanner = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x3F, 0x4A, 0x5C)), Padding = new Thickness(10, 5, 10, 5), Visibility = Visibility.Collapsed,
+            Child = new TextBlock
+            {
+                Text = "View only: someone else is working on this project. You can look at it; nothing can be changed or saved here. Open it again once they have closed it.",
+                Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap,
+            },
+        };
+        private readonly System.Collections.Generic.List<MenuItem> editingItems = new System.Collections.Generic.List<MenuItem>();
+
+        private void SetViewOnly(bool on)
+        {
+            viewOnly = on;
+            view.ViewOnly = on;
+            viewOnlyBanner.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            properties.IsEnabled = !on;
+            foreach (var m in editingItems) m.IsEnabled = !on;
         }
         /// <summary>Unsaved changes: the suite's undo history knows (an undo back to the saved step is clean).</summary>
         private bool dirty => Sketch.History.IsDirty;
@@ -124,42 +152,42 @@ namespace BuildingModel.App
             var file = Item(menu, "_File", null, null);
             Item(file, "_New project…", "Ctrl+N", () => New(), "A new design project: pick or make its folder");
             Item(file, "_Open…", "Ctrl+O", OpenDialog);
-            Item(file, "_Save", "Ctrl+S", () => Save(false));
-            Item(file, "Save _as…", null, () => Save(true), "Save as a new project folder");
+            editingItems.Add(Item(file, "_Save", "Ctrl+S", () => Save(false)));
+            editingItems.Add(Item(file, "Save _as…", null, () => Save(true), "Save as a new project folder"));
             file.Items.Add(new Separator());
-            Item(file, "Apply changes from another app…", null, ApplyChanges, "Apply a change set proposed by another app (the shear wall designer)");
+            editingItems.Add(Item(file, "Apply changes from another app…", null, ApplyChanges, "Apply a change set proposed by another app (the shear wall designer)"));
             file.Items.Add(new Separator());
             Item(file, "E_xit", "Alt+F4", Close);
 
             var edit = Item(menu, "_Edit", null, null);
-            Item(edit, "_Undo", "Ctrl+Z", () => Sketch.Undo());
-            Item(edit, "_Redo", "Ctrl+Y", () => Sketch.Redo());
+            editingItems.Add(Item(edit, "_Undo", "Ctrl+Z", () => Sketch.Undo()));
+            editingItems.Add(Item(edit, "_Redo", "Ctrl+Y", () => Sketch.Redo()));
             edit.Items.Add(new Separator());
             Item(edit, "Select all on this level", "Ctrl+A", () => Sketch.Select(Sketch.Building.VisibleIds(Sketch.ActiveLevel)));
-            Item(edit, "_Delete", "Del", () => Sketch.DeleteSelected());
+            editingItems.Add(Item(edit, "_Delete", "Del", () => Sketch.DeleteSelected()));
             edit.Items.Add(new Separator());
-            Item(edit, "_Move", "M", () => Sketch.SetTool(SketchTool.Move));
-            Item(edit, "_Copy and place", "Ctrl+C", () => Sketch.CopyAndPlace(), "One copy of the selection follows the cursor straight across or up; click to place it");
-            Item(edit, "Copy several", "C", () => Sketch.SetTool(SketchTool.Copy));
-            Item(edit, "M_irror", "I", () => Sketch.SetTool(SketchTool.Mirror));
-            Item(edit, "_Split a wall", "X", () => Sketch.SetTool(SketchTool.Split));
-            Item(edit, "_Join two walls", "J", () => Sketch.JoinSelected());
+            editingItems.Add(Item(edit, "_Move", "M", () => Sketch.SetTool(SketchTool.Move)));
+            editingItems.Add(Item(edit, "_Copy and place", "Ctrl+C", () => Sketch.CopyAndPlace(), "One copy of the selection follows the cursor straight across or up; click to place it"));
+            editingItems.Add(Item(edit, "Copy several", "C", () => Sketch.SetTool(SketchTool.Copy)));
+            editingItems.Add(Item(edit, "M_irror", "I", () => Sketch.SetTool(SketchTool.Mirror)));
+            editingItems.Add(Item(edit, "_Split a wall", "X", () => Sketch.SetTool(SketchTool.Split)));
+            editingItems.Add(Item(edit, "_Join two walls", "J", () => Sketch.JoinSelected()));
             Item(edit, "Measure", "T", () => Sketch.SetTool(SketchTool.Measure));
 
             var building = Item(menu, "_Building", null, null);
-            Item(building, "_Name…", null, RenameBuilding);
-            Item(building, "New from _size…", null, () => view.NewFromSize(), "A box L × B with its stories, a diaphragm on each level and the outside shear walls (replaces the drawing; Undo puts it back)");
-            Item(building, "_Roof…", null, () => view.EditRoof(), "Flat, gable or hip; the slope (4:12, 6:12...), ridge, parapet and eaves");
-            Item(building, "Model _defaults…", null, EditDefaults, "The framing (studs, lumber, rafters, floor joists, roof blocking) and what a new story, roof or quick building starts with: every app reads them");
+            editingItems.Add(Item(building, "_Name…", null, RenameBuilding));
+            editingItems.Add(Item(building, "New from _size…", null, () => view.NewFromSize(), "A box L × B with its stories, a diaphragm on each level and the outside shear walls (replaces the drawing; Undo puts it back)"));
+            editingItems.Add(Item(building, "_Roof…", null, () => view.EditRoof(), "Flat, gable or hip; the slope (4:12, 6:12...), ridge, parapet and eaves"));
+            editingItems.Add(Item(building, "Model _defaults…", null, EditDefaults, "The framing (studs, lumber, rafters, floor joists, roof blocking) and what a new story, roof or quick building starts with: every app reads them"));
             building.Items.Add(new Separator());
             Item(building, "What the analysis apps _read…", null, BuildingSummary, "L, B, stories, the roof and each level's share of each face, as the wind and shear wall apps read them");
 
             var levels = Item(menu, "_Levels", null, null);
-            Item(levels, "_Add a level on top…", null, AddLevel, "Asks the story height");
-            Item(levels, "_Insert a level under this one…", null, InsertLevel, "A mezzanine or an added floor");
-            Item(levels, "_Copy the story below onto this level", null, CopyStoryBelow);
+            editingItems.Add(Item(levels, "_Add a level on top…", null, AddLevel, "Asks the story height"));
+            editingItems.Add(Item(levels, "_Insert a level under this one…", null, InsertLevel, "A mezzanine or an added floor"));
+            editingItems.Add(Item(levels, "_Copy the story below onto this level", null, CopyStoryBelow));
             levels.Items.Add(new Separator());
-            Item(levels, "_Delete this level…", null, DeleteLevel, "The level shown and the story under it; the levels above come down");
+            editingItems.Add(Item(levels, "_Delete this level…", null, DeleteLevel, "The level shown and the story under it; the levels above come down"));
 
             var viewMenu = Item(menu, "_View", null, null);
             Item(viewMenu, "_Plan", null, () => ShowPlan(true));
@@ -201,8 +229,10 @@ namespace BuildingModel.App
 
             var root = new DockPanel();
             DockPanel.SetDock(appBar, Dock.Top);
+            DockPanel.SetDock(viewOnlyBanner, Dock.Top);
             DockPanel.SetDock(sideBorder, Dock.Right);
             root.Children.Add(appBar);
+            root.Children.Add(viewOnlyBanner);
             root.Children.Add(sideBorder);
             root.Children.Add(center);
             Content = root;
@@ -245,7 +275,7 @@ namespace BuildingModel.App
                            $"\n{above.Count} level{(above.Count == 1 ? "" : "s")} above the ground" + (above.Count > 0 ? $", top at {above.Last().Elevation:0.##} ft" : "") +
                            $"\n{b.Walls.Count} walls, {b.Openings.Count} openings, {b.Notes.Count} notes." +
                            $"\nRevision {doc.Revision}{(dirty ? " (not saved)" : "")}";
-            Title = $"{(string.IsNullOrEmpty(path) ? "New building" : Path.GetFileName(path))}{(dirty ? " *" : "")} — Building Model";
+            Title = $"{(string.IsNullOrEmpty(path) ? "New building" : Path.GetFileName(path))}{(dirty ? " *" : "")}{(viewOnly ? " (view only)" : "")} — Building Model";
             view3D.HighlightLevelId = Sketch.ActiveLevel?.Id;
             if (view3D.Visibility == Visibility.Visible) view3D.Show(b);
         }
@@ -263,7 +293,7 @@ namespace BuildingModel.App
 
         private bool ConfirmDiscard()
         {
-            if (!dirty) return true;
+            if (!dirty || viewOnly) return true; // view only: nothing was changed (every edit is put back)
             return ProjectDialogs.SaveChangesFirst(this, "Save the changes to this building first?", "Building Model", () => Save(false));
         }
 
@@ -338,6 +368,11 @@ namespace BuildingModel.App
         /// </summary>
         private bool Save(bool saveAs)
         {
+            if (viewOnly)
+            {
+                MessageBox.Show(this, "View only: someone else is working on this project, so it is not saved from here.", "Save", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
             if (saveAs || string.IsNullOrEmpty(path))
             {
                 string file = ProjectDialogs.NewProjectPath(this, out bool existing);

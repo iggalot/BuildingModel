@@ -48,6 +48,9 @@ namespace BuildingModel.Edits
         /// </summary>
         public bool Amend(Building b) => Steps.Amend(ModelFile.BuildingToJson(b));
 
+        /// <summary>True when anything in the building (its geometry or an app's data) differs from the last step.</summary>
+        public bool Differs(Building b) => Steps.Current != null && ModelFile.BuildingToJson(b) != Steps.Current;
+
         /// <summary>True when the building's geometry (not only the apps' data) differs from the last step.</summary>
         public bool GeometryChanged(Building b) =>
             Steps.Current != null && ModelMerge.GeometryJson(b) != ModelMerge.GeometryJson(ModelFile.BuildingFromJson(Steps.Current));

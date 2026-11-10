@@ -398,6 +398,46 @@ namespace BuildingModel.Sketch
         /// </summary>
         public bool PlanEditing { get; set; } = true;
 
+        /// <summary>
+        /// Someone else's project, to look at only: the canvas puts back every edit (<see cref="SketchCanvas.ViewOnly"/>),
+        /// and every tool that changes something is hidden (Select and Measure stay), with undo and redo, From size,
+        /// Roof and the plans' editing. Set back to false (a project of one's own opened next), all of it is as it was.
+        /// </summary>
+        public bool ViewOnly
+        {
+            get => viewOnlyWas != null;
+            set
+            {
+                if (value == ViewOnly) return;
+                if (value)
+                {
+                    viewOnlyWas = (Canvas.EnabledTools.ToList(), tools.Where(kv => kv.Value.Visibility == Visibility.Visible).Select(kv => kv.Key).ToList(),
+                                   PlanEditing, ShowBuildingTools);
+                    Canvas.ViewOnly = true;
+                    if (Canvas.Tool != SketchTool.Select && Canvas.Tool != SketchTool.Measure) Canvas.SetTool(SketchTool.Select);
+                    foreach (SketchTool t in Enum.GetValues(typeof(SketchTool)))
+                        if (t != SketchTool.Select && t != SketchTool.Measure) HideTool(t);
+                    undo.Visibility = redo.Visibility = Visibility.Collapsed;
+                    PlanEditing = false;
+                    ShowBuildingTools = false;
+                }
+                else
+                {
+                    var was = viewOnlyWas.Value;
+                    viewOnlyWas = null;
+                    Canvas.ViewOnly = false;
+                    foreach (var t in was.enabled) Canvas.EnabledTools.Add(t);
+                    foreach (var t in was.shown) if (tools.TryGetValue(t, out var b)) b.Visibility = Visibility.Visible;
+                    undo.Visibility = redo.Visibility = Visibility.Visible;
+                    PlanEditing = was.planEditing;
+                    ShowBuildingTools = was.buildingTools;
+                    UpdateButtons();
+                }
+            }
+        }
+
+        private (List<SketchTool> enabled, List<SketchTool> shown, bool planEditing, bool buildingTools)? viewOnlyWas;
+
         /// <summary>Raised by "Edit plans in the Building Model editor..." when <see cref="PlanEditing"/> is off (the item shows only when handled).</summary>
         public event EventHandler EditPlansRequested;
 

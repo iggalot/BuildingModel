@@ -70,7 +70,10 @@
     app per project; a second copy is refused. `Holders(model)` lists who has it, on any PC sharing the folder. A lock
     left by a crash is stale and taken over. The app ids are `building`, `wind`, `shearwalls`, `loads` and `hub`
     (`HubId`). One person per project: `HeldByOthers` and `OthersMessage` name another person or PC that has it, and
-    `ProjectDialogs.TakeLock` refuses it then.
+    `ProjectDialogs.TakeLock` refuses it then, or with `offerViewOnly` asks "Open it view only?" (no lock taken).
+  - **View only** (2026-11-09): `SketchCanvas.ViewOnly` puts back every edit at `Commit` (the geometry and the apps' data:
+    `ModelHistory.Differs`; `EditRefused` for a host that changed its own copies), and `SketchView.ViewOnly` leaves only
+    Select and Measure (false puts the tools back). The Building Model, SWC and the Load Manager use it.
   - `SketchCanvas.GeometryLocked`: a host that only shows the building (the Shear Wall Calculator) gets any edit that
     moves, adds or deletes something put back. The apps' data on objects still changes.
 - **Geometry is edited only here.** The other apps show it, and open this app on the project (Edit building).

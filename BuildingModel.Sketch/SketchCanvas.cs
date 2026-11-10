@@ -124,6 +124,17 @@ namespace BuildingModel.Sketch
 
         public bool Commit(string what)
         {
+            // view only (someone else's project): nothing changes, the geometry or any app's data
+            if (ViewOnly && History.Differs(Building))
+            {
+                History.Revert(Building);
+                DropMissingSelection();
+                Say(ViewOnlyMessage, true);
+                BuildingModel.Diagnostics.Log.Info("Edit", "Refused (view only): " + (what ?? ""));
+                EditRefused?.Invoke(this, EventArgs.Empty);
+                InvalidateVisual();
+                return false;
+            }
             // a host that only shows the building (the Shear Wall Calculator): its geometry is edited in the Building Model
             if (GeometryLocked && History.GeometryChanged(Building))
             {
@@ -168,6 +179,17 @@ namespace BuildingModel.Sketch
 
         /// <summary>Raised when an edit is put back because <see cref="GeometryLocked"/>.</summary>
         public event EventHandler GeometryEditRefused;
+
+        /// <summary>
+        /// Someone else's project, opened to look at only (<see cref="ProjectDialogs.TakeLock(Window, string, string, string, bool, out bool, out bool)"/>):
+        /// every edit is put back, the geometry and the apps' data alike, with <see cref="ViewOnlyMessage"/>; no grips.
+        /// </summary>
+        public bool ViewOnly { get; set; }
+
+        public string ViewOnlyMessage { get; set; } = "View only: someone else is working on this project, so nothing can be changed here.";
+
+        /// <summary>Raised when an edit is put back because <see cref="ViewOnly"/> (a host that changed its own copies puts them back too).</summary>
+        public event EventHandler EditRefused;
 
         /// <summary>Runs an edit on the building and commits it.</summary>
         public bool Edit(string what, Action<Building> edit)

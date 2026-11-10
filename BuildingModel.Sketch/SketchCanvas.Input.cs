@@ -637,7 +637,7 @@ namespace BuildingModel.Sketch
         /// </summary>
         private IEnumerable<Grip> Grips()
         {
-            if (selection.Count == 0 || Building == null || GeometryLocked) yield break; // locked: nothing to drag (it would only be put back)
+            if (selection.Count == 0 || Building == null || GeometryLocked || ViewOnly) yield break; // locked: nothing to drag (it would only be put back)
             int walls = 0;
             foreach (var id in selection)
             {

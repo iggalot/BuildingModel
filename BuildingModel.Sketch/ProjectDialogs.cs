@@ -88,6 +88,19 @@ namespace BuildingModel.Sketch
         public static ProjectLock TakeLock(Window owner, string modelPath, string appId, string appName, out bool refused) =>
             TakeLock(owner, modelPath, appId, appName, false, out refused, out _);
 
+        private static bool viewOnlyArgumentUsed;
+
+        /// <summary>
+        /// True once, for the first project held by someone else, when the app was started with
+        /// <see cref="ProjectLock.ViewOnlyArgument"/> (the hub's view only: already answered there). Every app reads it here.
+        /// </summary>
+        internal static bool StartedViewOnly(string[] args = null)
+        {
+            if (viewOnlyArgumentUsed) return false;
+            viewOnlyArgumentUsed = true;
+            return Array.Exists(args ?? Environment.GetCommandLineArgs(), a => string.Equals(a, ProjectLock.ViewOnlyArgument, StringComparison.OrdinalIgnoreCase));
+        }
+
         /// <summary>The question when someone else has the project and the app can open it to look at only.</summary>
         public static string ViewOnlyQuestion(string others) =>
             others + "\n\nOpen it view only? You can look at the plan, the results and the reports; nothing can be changed or saved, and no one's work is held up.";
@@ -106,7 +119,9 @@ namespace BuildingModel.Sketch
             {
                 if (offerViewOnly)
                 {
-                    viewOnly = MessageBox.Show(owner, ViewOnlyQuestion(others), appName, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+                    // the hub's view only opened this app (--view-only): already answered there
+                    viewOnly = StartedViewOnly() ||
+                               MessageBox.Show(owner, ViewOnlyQuestion(others), appName, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
                     refused = !viewOnly;
                     if (viewOnly) Log.Info("Lock", "Opened view only (someone else has it): " + modelPath);
                     return null;

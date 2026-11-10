@@ -127,6 +127,12 @@ namespace BuildingModel.Serialization
         /// <summary>The hub's lock id: the person whose hub has the project.</summary>
         public const string HubId = "hub";
 
+        /// <summary>
+        /// The argument the hub gives an app it opens from its own view only (someone else is working on the project): the
+        /// app opens it view only without asking (<c>ProjectDialogs.TakeLock</c>, offerViewOnly).
+        /// </summary>
+        public const string ViewOnlyArgument = "--view-only";
+
         /// <summary>"jim on DESK-2 has it open in the Shear Wall Calculator. One person works on a project at a time..."; null when free.</summary>
         public static string OthersMessage(string modelPath)
         {

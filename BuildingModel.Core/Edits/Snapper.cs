@@ -19,7 +19,12 @@ namespace BuildingModel.Edits
         Grid = 32,
         /// <summary>A single point: a column, a beam end, a hold-down (the host's points), ranked first.</summary>
         Point = 64,
-        Default = Point | Endpoint | Midpoint | Intersection | Perpendicular | Grid,
+        /// <summary>
+        /// Midway between a wall's two lines on a CAD plan (two parallel lines a stud wall apart, <see cref="Snapper.WallLinesMinIn"/>
+        /// to <see cref="Snapper.WallLinesMaxIn"/>): plans show a wall's faces, the model its centreline.
+        /// </summary>
+        WallCentre = 128,
+        Default = Point | WallCentre | Endpoint | Midpoint | Intersection | Perpendicular | Grid,
     }
 
     /// <summary>A point to snap to, with what it is ("C1", "Hold-down W3").</summary>
@@ -49,9 +54,18 @@ namespace BuildingModel.Edits
     public static class Snapper
     {
         private static readonly SnapModes[] Order =
-            { SnapModes.Point, SnapModes.Endpoint, SnapModes.Intersection, SnapModes.Midpoint, SnapModes.Perpendicular, SnapModes.Nearest, SnapModes.Grid };
+            { SnapModes.Point, SnapModes.WallCentre, SnapModes.Endpoint, SnapModes.Intersection, SnapModes.Midpoint, SnapModes.Perpendicular, SnapModes.Nearest, SnapModes.Grid };
 
-        public static SnapResult Find(Point2 cursor, double reach, IList<Segment2> segments, SnapModes modes, Point2? from = null, double grid = 0, IList<SnapPoint> points = null)
+        /// <summary>How far apart a CAD plan's two lines of one wall are (in): a 2x4's 3 1/2 to a 2x6 wall sheathed, 7 1/4.</summary>
+        public const double WallLinesMinIn = 3.5, WallLinesMaxIn = 7.25, WallLinesToleranceIn = 0.25;
+
+        /// <summary>
+        /// The snap nearest <paramref name="cursor"/> within <paramref name="reach"/> (ft). <paramref name="planLines"/> are a CAD
+        /// plan's own lines near the cursor: the wall centres are found among them only (<see cref="WallCentres"/>), never
+        /// among the model's lines.
+        /// </summary>
+        public static SnapResult Find(Point2 cursor, double reach, IList<Segment2> segments, SnapModes modes, Point2? from = null, double grid = 0, IList<SnapPoint> points = null,
+                                      IList<Segment2> planLines = null)
         {
             if (modes == SnapModes.None || !(reach > 0)) return new SnapResult { Point = cursor };
             segments = segments ?? new List<Segment2>();
@@ -63,6 +77,13 @@ namespace BuildingModel.Edits
                     if (points == null || points.Count == 0) continue;
                     var near = points.Select(p => (p, d: Dist(p.At, cursor))).Where(x => x.d <= reach).OrderBy(x => x.d).ToList();
                     if (near.Count > 0) return new SnapResult { Kind = kind, Point = near[0].p.At, Label = near[0].p.Label };
+                    continue;
+                }
+                if (kind == SnapModes.WallCentre)
+                {
+                    if (planLines == null || planLines.Count < 2) continue;
+                    var centre = WallCentreNear(cursor, reach, planLines);
+                    if (centre != null) return centre.Value;
                     continue;
                 }
                 Point2? best = null;
@@ -153,6 +174,74 @@ namespace BuildingModel.Edits
                     if (grid > 0) yield return new Point2(Math.Round(cursor.X / grid) * grid, Math.Round(cursor.Y / grid) * grid);
                     break;
             }
+        }
+
+        /// <summary>
+        /// The centrelines of the walls a CAD plan draws as two lines (<paramref name="lines"/>): each pair of parallel lines
+        /// <see cref="WallLinesMinIn"/> to <see cref="WallLinesMaxIn"/> apart (± <see cref="WallLinesToleranceIn"/>) gives the
+        /// line midway between them, along the stretch where both run.
+        /// </summary>
+        public static List<Segment2> WallCentres(IList<Segment2> lines)
+        {
+            var list = new List<Segment2>();
+            if (lines == null) return list;
+            double min = (WallLinesMinIn - WallLinesToleranceIn) / 12, max = (WallLinesMaxIn + WallLinesToleranceIn) / 12;
+            for (int i = 0; i < lines.Count; i++)
+                for (int j = i + 1; j < lines.Count; j++)
+                {
+                    var s = lines[i];
+                    var t = lines[j];
+                    double len = Dist(s.A, s.B);
+                    if (len < 1e-9 || Dist(t.A, t.B) < 1e-9) continue;
+                    double ux = (s.B.X - s.A.X) / len, uy = (s.B.Y - s.A.Y) / len, nx = -uy, ny = ux;
+                    double tx = t.B.X - t.A.X, ty = t.B.Y - t.A.Y, tl = Math.Sqrt(tx * tx + ty * ty);
+                    if (Math.Abs(ux * ty - uy * tx) / tl > 0.0175) continue; // not parallel (1°)
+                    double offA = (t.A.X - s.A.X) * nx + (t.A.Y - s.A.Y) * ny, offB = (t.B.X - s.A.X) * nx + (t.B.Y - s.A.Y) * ny;
+                    double off = (offA + offB) / 2;
+                    if (Math.Abs(off) < min || Math.Abs(off) > max) continue;
+                    double a = (t.A.X - s.A.X) * ux + (t.A.Y - s.A.Y) * uy, b = (t.B.X - s.A.X) * ux + (t.B.Y - s.A.Y) * uy;
+                    double lo = Math.Max(0, Math.Min(a, b)), hi = Math.Min(len, Math.Max(a, b));
+                    if (hi - lo < 0.1) continue; // they do not run side by side
+                    Point2 At(double along) => new Point2(s.A.X + ux * along + nx * off / 2, s.A.Y + uy * along + ny * off / 2);
+                    list.Add(new Segment2(At(lo), At(hi)));
+                }
+            return list;
+        }
+
+        /// <summary>
+        /// The wall-centre snap near <paramref name="cursor"/>: where two centrelines meet (a corner or a tee, the lines run on
+        /// to it: at a corner each wall's pair stops at the other's face), else a centreline's end, else the nearest point on one.
+        /// </summary>
+        private static SnapResult? WallCentreNear(Point2 cursor, double reach, IList<Segment2> planLines)
+        {
+            var centres = WallCentres(planLines);
+            if (centres.Count == 0) return null;
+            SnapResult? Best(IEnumerable<Point2> candidates, string label)
+            {
+                var near = candidates.Select(p => (p, d: Dist(p, cursor))).Where(x => x.d <= reach).OrderBy(x => x.d).ToList();
+                return near.Count == 0 ? (SnapResult?)null : new SnapResult { Kind = SnapModes.WallCentre, Point = near[0].p, Label = label };
+            }
+            double run = (WallLinesMaxIn + WallLinesToleranceIn) / 12; // how far a centreline runs on past its pair's end to meet another
+            var meets = new List<Point2>();
+            for (int i = 0; i < centres.Count; i++)
+                for (int j = i + 1; j < centres.Count; j++)
+                    if (LinesCross(centres[i], centres[j], out var x) && DistanceToSegment(x, centres[i]) <= run && DistanceToSegment(x, centres[j]) <= run)
+                        meets.Add(x);
+            return Best(meets, "Wall centres meet")
+                ?? Best(centres.SelectMany(c => new[] { c.A, c.B }), "Wall centre end")
+                ?? Best(centres.Select(c => ClosestOnSegment(cursor, c)), "Wall centre");
+        }
+
+        /// <summary>Where the lines through two segments cross (not parallel), wherever that is.</summary>
+        private static bool LinesCross(Segment2 s, Segment2 t, out Point2 p)
+        {
+            p = default(Point2);
+            double rx = s.B.X - s.A.X, ry = s.B.Y - s.A.Y, qx = t.B.X - t.A.X, qy = t.B.Y - t.A.Y;
+            double den = rx * qy - ry * qx;
+            if (Math.Abs(den) < 1e-9 * Math.Sqrt((rx * rx + ry * ry) * (qx * qx + qy * qy))) return false;
+            double u = ((t.A.X - s.A.X) * qy - (t.A.Y - s.A.Y) * qx) / den;
+            p = new Point2(s.A.X + u * rx, s.A.Y + u * ry);
+            return true;
         }
 
         public static double Dist(Point2 a, Point2 b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));

@@ -516,7 +516,9 @@ namespace BuildingModel.Sketch
                 var points = Snapper.PointsOf(Building, ActiveLevel, grip != null ? (ICollection<string>)(grip.Value.Middle ? selection.ToList() : new List<string> { grip.Value.Id }) : null);
                 var hostPoints = ExtraSnapPoints?.Invoke();
                 if (hostPoints != null) points.AddRange(hostPoints);
-                snap = Snapper.Find(rawCursor, PixelsToFeet(10), lines, modes, first ?? HostFrom?.Invoke(), GridSpacing, points);
+                // a CAD plan's walls drawn as two lines: their centres (both lines, however close the view is zoomed)
+                var pairs = (modes & SnapModes.WallCentre) != 0 ? PlanLinesNear(rawCursor, Math.Max(PixelsToFeet(10), 0.75)) : null;
+                snap = Snapper.Find(rawCursor, PixelsToFeet(10), lines, modes, first ?? HostFrom?.Invoke(), GridSpacing, points, pairs);
             }
             else snap = new SnapResult { Point = rawCursor };
             cursor = snap.Point;

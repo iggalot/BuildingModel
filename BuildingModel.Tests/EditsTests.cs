@@ -346,6 +346,50 @@ namespace BuildingModel.Tests
             Assert.AreEqual(new Point2(3, 0), perp.Point);
         }
 
+        /// <summary>
+        /// A CAD plan draws a wall as its two faces; the model wants its centreline. An exterior corner of 2x6 walls (6 in
+        /// apart): the outside faces from the corner, the inside ones from 6 in in. The snap goes to the centres, never to a
+        /// face, and only among the plan's own lines.
+        /// </summary>
+        [TestMethod]
+        public void Snaps_WallCentre_MidwayBetweenAPlansTwoLines()
+        {
+            double t = 0.5; // 6 in
+            var plan = new[]
+            {
+                new Segment2(new Point2(0, 0), new Point2(20, 0)), new Segment2(new Point2(t, t), new Point2(20, t)),   // the south wall's faces
+                new Segment2(new Point2(0, 0), new Point2(0, 20)), new Segment2(new Point2(t, t), new Point2(t, 20)),   // the west wall's
+                new Segment2(new Point2(30, 0), new Point2(40, 0)), new Segment2(new Point2(30, 1), new Point2(40, 1)), // 12 in apart: not a wall
+            };
+            var centres = Snapper.WallCentres(plan);
+            Assert.AreEqual(2, centres.Count, "two walls; the pair 12 in apart is not one");
+            Assert.IsTrue(centres.Any(c => System.Math.Abs(c.A.Y - 0.25) < 1e-9 && System.Math.Abs(c.B.Y - 0.25) < 1e-9), "the south wall's centre 3 in in");
+
+            // along the wall: midway, wherever the cursor is across it
+            var along = Snapper.Find(new Point2(10, 0.05), 0.6, new Segment2[0], SnapModes.Default, planLines: plan);
+            Assert.AreEqual(SnapModes.WallCentre, along.Kind);
+            Assert.AreEqual(10, along.Point.X, 1e-9);
+            Assert.AreEqual(0.25, along.Point.Y, 1e-9);
+            Assert.AreEqual("Wall centre", along.Label);
+
+            // at the corner: where the centres meet (3 in in both ways), not the inside face's corner (6 in) nor the outside's
+            var corner = Snapper.Find(new Point2(0.45, 0.4), 0.6, plan, SnapModes.Default, planLines: plan);
+            Assert.AreEqual(SnapModes.WallCentre, corner.Kind);
+            Assert.AreEqual(0.25, corner.Point.X, 1e-9);
+            Assert.AreEqual(0.25, corner.Point.Y, 1e-9);
+            Assert.AreEqual("Wall centres meet", corner.Label);
+
+            // a free end (an opening in the wall): the centre's end
+            var end = Snapper.Find(new Point2(19.8, 0.4), 0.6, new Segment2[0], SnapModes.Default, planLines: plan);
+            Assert.AreEqual(20, end.Point.X, 1e-9);
+            Assert.AreEqual(0.25, end.Point.Y, 1e-9);
+            Assert.AreEqual("Wall centre end", end.Label);
+
+            // off: the faces as before; no plan lines given: nothing to pair (the model's own lines are never paired)
+            Assert.AreEqual(SnapModes.Endpoint, Snapper.Find(new Point2(0.45, 0.4), 0.6, plan, SnapModes.Default & ~SnapModes.WallCentre, planLines: plan).Kind);
+            Assert.AreNotEqual(SnapModes.WallCentre, Snapper.Find(new Point2(10, 0.05), 0.6, plan, SnapModes.Default).Kind);
+        }
+
         [TestMethod]
         public void Pick_NoteThenWallThenOpeningThenDiaphragm()
         {

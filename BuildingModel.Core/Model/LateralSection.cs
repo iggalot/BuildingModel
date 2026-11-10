@@ -321,18 +321,31 @@ namespace BuildingModel.Model
         public static void Write(Building b, LateralSection s) => b?.SetData(Key, s == null || s.IsEmpty ? null : s.ToJson());
 
         /// <summary>
-        /// Why these forces may not match the model any more (null: they do): a wall they name is gone, or its end is not where the
-        /// force is.
+        /// Why these forces may not match the model any more (null: they do): a wall they name is gone, its shear part (as saved in
+        /// <see cref="Walls"/>) is no longer on it, or the force is not at an end of its shear part. The hold-downs are at the
+        /// shear part's ends, not the wall's: a wall declared over part of its length has its points inside it. A save with no
+        /// <see cref="Walls"/> (older) is measured from the wall's own ends.
         /// </summary>
         public string Stale(Building b)
         {
+            const double tol = 1.5; // ft: a hold-down sits a post or so in from the end
             foreach (var p in Points ?? new List<LateralPoint>())
             {
                 if (p.WallId == null) continue;
                 var w = b?.Walls.FirstOrDefault(x => x.Id == p.WallId);
                 if (w == null) return $"{p.From}: wall {p.WallId} is not in the model any more.";
-                double d = Math.Min(Dist(w.Start, p.Where), Dist(w.End, p.Where));
-                if (d > 1.5) return $"{p.From}: wall {p.WallId} has moved ({d:0.#} ft from its end).";
+                var part = Walls?.FirstOrDefault(x => x.WallId == p.WallId);
+                var a = w.Start;
+                var c = w.End;
+                if (part != null && Dist(new BuildingModel.Geometry.Point2(part.X0, part.Y0), new BuildingModel.Geometry.Point2(part.X1, part.Y1)) > 1e-6)
+                {
+                    a = new BuildingModel.Geometry.Point2(part.X0, part.Y0);
+                    c = new BuildingModel.Geometry.Point2(part.X1, part.Y1);
+                    double off = Math.Max(ToSegment(a, w.Start, w.End), ToSegment(c, w.Start, w.End));
+                    if (off > tol) return $"{p.From}: wall {p.WallId} has moved ({off:0.#} ft from its shear part as designed).";
+                }
+                double d = Math.Min(Dist(a, p.Where), Dist(c, p.Where));
+                if (d > tol) return $"{p.From}: wall {p.WallId} has moved ({d:0.#} ft from its shear part's end).";
             }
             foreach (var h in Holdowns ?? new List<StoryHoldown>())
             {
@@ -365,5 +378,14 @@ namespace BuildingModel.Model
         public string OutOfDate(Building b) => Stale(b) ?? ChangedSince(b);
 
         private static double Dist(BuildingModel.Geometry.Point2 a, BuildingModel.Geometry.Point2 b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+
+        /// <summary>The distance from p to the segment s–e (ft).</summary>
+        private static double ToSegment(BuildingModel.Geometry.Point2 p, BuildingModel.Geometry.Point2 s, BuildingModel.Geometry.Point2 e)
+        {
+            double dx = e.X - s.X, dy = e.Y - s.Y, l2 = dx * dx + dy * dy;
+            if (l2 < 1e-12) return Dist(p, s);
+            double t = Math.Max(0, Math.Min(1, ((p.X - s.X) * dx + (p.Y - s.Y) * dy) / l2));
+            return Dist(p, new BuildingModel.Geometry.Point2(s.X + t * dx, s.Y + t * dy));
+        }
     }
 }

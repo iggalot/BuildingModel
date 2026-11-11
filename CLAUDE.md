@@ -20,6 +20,8 @@
   - `IssuesButton` (BuildingModel.Sketch, owner 2026-11-11): the suite's issues button at the right of every app's top
     bar (green "✓ No issues", amber warnings, red errors; a click drops `IssueList` down, a row goes to the member on its
     level). Every app uses it; change its look here, not in an app. Titles are "<project> * (view only) - <App>".
+  - `HelpMenu` (BuildingModel.Sketch): the "Help" menu (Open the log folder, About) for an app's menu bar. `Level.Short`
+    is a level's button text ("G 2 R", owner 2026-11-11); the full name goes in the tooltip and the automation name.
   - `ProjectDialogs` (with `SaveChangesFirst` and `TakeLock`, the suite's "Save first?" and "already open"), `Ui`,
     `WindowFit`, `QuickBuildingPanel` ("New from size"), `ModelChecks`.
   - `EditHistory` (`BuildingModel.Core\Edits`): the suite's one undo and redo (text snapshots, step names, the saved

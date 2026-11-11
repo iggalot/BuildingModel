@@ -242,11 +242,13 @@ namespace BuildingModel.Sketch
             levelBar.Children.Clear();
             var b = Canvas.Building;
             if (b == null) return;
-            levelBar.Children.Add(new TextBlock { Text = "Level", Foreground = Ui.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+            levelBar.Children.Add(new TextBlock { Text = "LEVEL", Foreground = Ui.Muted, FontSize = 10.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
             foreach (var l in b.LevelsBottomUp)
             {
                 var lv = l;
-                var t = Ui.Toggle("", l.Name, $"{l.Name}, {l.Elevation:0.##} ft", (s, e) => Canvas.ShowLevel(lv.Id));
+                var t = Ui.Toggle("", l.Short, $"{l.Name}, {l.Elevation:0.##} ft", (s, e) => Canvas.ShowLevel(lv.Id)); // G 2 R, as in every app (owner 2026-11-11)
+                t.MinWidth = 28;
+                System.Windows.Automation.AutomationProperties.SetName(t, l.Name);
                 t.IsChecked = Canvas.ActiveLevel == l;
                 levelBar.Children.Add(t);
             }

@@ -47,6 +47,22 @@ namespace BuildingModel.Model
         [DataMember(Order = 2)] public double Elevation { get; set; }
 
         public override string ToString() => $"{Name} ({Elevation:0.##} ft)";
+
+        /// <summary>
+        /// Its short name on the level buttons of every app (owner 2026-11-11: G 2 R, compact): the number its name ends in
+        /// ("Level 2": 2), else its first letter ("Ground": G, "Roof": R). The full name goes in the tooltip.
+        /// </summary>
+        public string Short
+        {
+            get
+            {
+                string name = (Name ?? "").Trim();
+                var m = System.Text.RegularExpressions.Regex.Match(name, @"(\d+)\s*$");
+                if (m.Success) return m.Groups[1].Value;
+                char initial = name.FirstOrDefault(char.IsLetterOrDigit);
+                return initial != default(char) ? char.ToUpperInvariant(initial).ToString() : "?";
+            }
+        }
     }
 
     /// <summary>Which way a floor's joists (or a flat roof's rafters) span in plan. Auto: across the shorter side of the diaphragm.</summary>

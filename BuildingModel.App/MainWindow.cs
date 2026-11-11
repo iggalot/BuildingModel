@@ -216,6 +216,7 @@ namespace BuildingModel.App
             Item(viewMenu, "_3D", null, () => ShowPlan(false));
             viewMenu.Items.Add(new Separator());
             Item(viewMenu, "_Zoom to the drawing", "Z", () => Sketch.ZoomExtents());
+            menu.Items.Add(HelpMenu.For(this, "Building Model", "The building drawn once for every app of the suite: levels, walls, beams, columns, floors and their framing, the roof."));
             viewMenu.Items.Add(new Separator());
             viewMenu.Items.Add(Sketch.InternalForcesMenuItem());
 

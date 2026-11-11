@@ -28,10 +28,11 @@ namespace BuildingModel.Statics
 
     /// <summary>
     /// The joists of a level, laid out from its framing areas (<see cref="FramingArea"/>), and what holds each up: the one rule
-    /// for every app (owner 2026-11-10). Each area's joists run its way from edge to edge at the project's spacing (the floors'
-    /// <see cref="ModelDefaults.FloorJoistSpacing"/>, the roof's <see cref="ModelDefaults.RafterSpacing"/>), from its west or
-    /// south edge, the last on its far edge (an edge shared with an area running the same way has one joist, the first
-    /// area's); an opening through the level cuts them (the header there is a beam). A joist is held by every wall, column
+    /// for every app (owner 2026-11-10). Each area's joists run its way at the project's spacing (the floors'
+    /// <see cref="ModelDefaults.FloorJoistSpacing"/>, the roof's <see cref="ModelDefaults.RafterSpacing"/>), one on each of its
+    /// edges; they run on through the next area framed the same way (owner 2026-11-11: a hallway named apart for its loads is
+    /// not a break in the floor) and end where the framing turns, at the floor's edge, or at an opening, which cuts them (the
+    /// header there is a beam). A joist is held by every wall, column
     /// and beam under it anywhere along it, and needs two to stand, as a beam does; it never bears on another joist. A sloped
     /// roof's rafters run across the ridge: the roof's, not laid out here.
     /// </summary>
@@ -59,28 +60,47 @@ namespace BuildingModel.Statics
             var cols = BeamSupports.ColumnsUnder(b, lv);
             var beams = b.Beams.Where(m => m.LevelId == lv.Id && m.Length > 0.1).ToList();
             foreach (var d in b.Diaphragms.Where(d => d.LevelId == lv.Id))
-                foreach (var a in d.Framing ?? new List<FramingArea>())
+                // the areas running the same way together: a joist runs on through the next area framed the same way (a hallway
+                // named apart for its loads), ending only where the framing turns, at an opening or at the floor's edge (owner 2026-11-11)
+                foreach (var run in (d.Framing ?? new List<FramingArea>()).GroupBy(a => a.AlongX))
                 {
-                    bool x = a.AlongX;
-                    var r = a.Rect;
-                    double p0 = x ? r.Y0 : r.X0, p1 = x ? r.Y1 : r.X1, q0 = x ? r.X0 : r.Y0, q1 = x ? r.X1 : r.Y1;
-                    // the first edge's joist is the neighbour's when one running the same way ends there
-                    bool shared = d.Framing.Any(o => o != a && o.Span == a.Span && Math.Abs((x ? o.Rect.Y1 : o.Rect.X1) - p0) < E
-                                                     && Math.Min(q1, x ? o.Rect.X1 : o.Rect.Y1) - Math.Max(q0, x ? o.Rect.X0 : o.Rect.Y0) > E);
-                    var lines = new List<double>();
-                    for (int k = shared ? 1 : 0; p0 + k * s < p1 - s / 4; k++) lines.Add(p0 + k * s);
-                    lines.Add(p1);
-                    foreach (double p in lines)
-                        foreach (var (u0, u1) in Cut(q0, q1, p, x, holes))
-                        {
-                            var j = new Joist
+                    bool x = run.Key;
+                    var areas = run.Select(a => (a, p0: x ? a.Rect.Y0 : a.Rect.X0, p1: x ? a.Rect.Y1 : a.Rect.X1, q0: x ? a.Rect.X0 : a.Rect.Y0, q1: x ? a.Rect.X1 : a.Rect.Y1)).ToList();
+                    // a joist on every area's edges, and between at the spacing from the first edge (none nearer an edge than a quarter of it)
+                    var edges = areas.SelectMany(t => new[] { t.p0, t.p1 }).OrderBy(p => p).ToList();
+                    double first = edges[0], last = edges[edges.Count - 1];
+                    var lines = new List<double>(edges);
+                    for (int k = 1; first + k * s < last - E; k++)
+                    {
+                        double p = first + k * s;
+                        if (edges.All(e => Math.Abs(e - p) >= s / 4)) lines.Add(p);
+                    }
+                    var at = new List<double>();
+                    foreach (double p in lines.OrderBy(p => p)) if (at.Count == 0 || p - at[at.Count - 1] > E) at.Add(p);
+                    foreach (double p in at)
+                    {
+                        // the line's extent: through every area of the run it crosses, end to end
+                        var spans = areas.Where(t => t.p0 - E <= p && p <= t.p1 + E).Select(t => (t.q0, t.q1)).OrderBy(t => t.q0).ToList();
+                        var merged = new List<(double a, double b)>();
+                        foreach (var (u, v) in spans)
+                            if (merged.Count > 0 && u <= merged[merged.Count - 1].b + E) merged[merged.Count - 1] = (merged[merged.Count - 1].a, Math.Max(merged[merged.Count - 1].b, v));
+                            else merged.Add((u, v));
+                        foreach (var (m0, m1) in merged)
+                            foreach (var (u0, u1) in Cut(m0, m1, p, x, holes))
                             {
-                                AreaId = a.Id, DiaphragmId = d.Id, AlongX = x, Line = p,
-                                Start = x ? new Point2(u0, p) : new Point2(p, u0), End = x ? new Point2(u1, p) : new Point2(p, u1),
-                            };
-                            j.Supports = SupportsOf(j.Start, j.End, walls, cols, beams);
-                            list.Add(j);
-                        }
+                                // the area it is in at its middle (a joist running through several: the one it is named by)
+                                double mid = (u0 + u1) / 2;
+                                var own = areas.Where(t => t.p0 - E <= p && p <= t.p1 + E && t.q0 - E <= mid && mid <= t.q1 + E).Select(t => t.a).FirstOrDefault()
+                                          ?? areas.First(t => t.p0 - E <= p && p <= t.p1 + E).a;
+                                var j = new Joist
+                                {
+                                    AreaId = own.Id, DiaphragmId = d.Id, AlongX = x, Line = p,
+                                    Start = x ? new Point2(u0, p) : new Point2(p, u0), End = x ? new Point2(u1, p) : new Point2(p, u1),
+                                };
+                                j.Supports = SupportsOf(j.Start, j.End, walls, cols, beams);
+                                list.Add(j);
+                            }
+                    }
                 }
             return list;
         }

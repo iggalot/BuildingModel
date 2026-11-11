@@ -63,6 +63,8 @@
     once (several areas picked: one card, Name and Joists for all). The plan's rectangle tools (Diaphragm, Opening, Cut,
     Framing area) take two clicks or one drag (`RectangleTool`).
   - **Joists** (`BuildingModel.Statics.Joists`): laid out from the areas at the floors' or roof's spacing, edge to edge,
+    running on through the next area framed the same way (owner 2026-11-11: a hallway named apart is no break; they end
+    where the framing turns, at an opening or at the floor's edge),
     cut by openings; each held by every wall, column and beam under it anywhere along it (`SupportsOf`), never by a
     joist. Fewer than two is the model's error `JoistNotHeldUp` (one per run held the same way, naming the area and
     level): nothing is calculated, as for a beam. An opening needs its headers and trimmers drawn as beams. A sloped

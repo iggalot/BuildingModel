@@ -180,6 +180,29 @@ namespace BuildingModel.Tests
             Assert.IsNull(d.Framing.Single().Name);
         }
 
+        /// <summary>
+        /// A hallway named apart (for its loads) but framed the same way as the floor (owner 2026-11-11): the joists run through
+        /// it, 40 ft from end wall to end wall, and stand; it stays an area of its own.
+        /// </summary>
+        [TestMethod]
+        public void SameWayNeighbours_TheJoistsRunThrough()
+        {
+            var b = Floor(out var l2, out var d);
+            var mid = FramingAreas.Place(b, d, new Rect2(16, 0, 24, 20), SpanDirection.SouthNorth).Single();
+            Assert.IsTrue(FramingAreas.SetName(b, new[] { mid }, "Hallway"));
+            Assert.IsTrue(FramingAreas.SetSpan(b, mid, SpanDirection.WestEast));
+            FramingAreas.Join(b, d);
+            Assert.AreEqual(3, d.Framing.Count, "named apart: not joined");
+            var joists = Joists.Of(b, l2);
+            Assert.AreEqual(11, joists.Count, "one run, 20 ft at 24 in.: the same joists as one area");
+            Assert.IsTrue(joists.All(j => j.AlongX && Math.Abs(j.Length - 40) < 1e-9 && j.Stands));
+            Assert.AreEqual(0, Errors(b, "JoistNotHeldUp").Length);
+
+            // turned across again: the floor's joists end at it once more, with nothing under them there
+            Assert.IsTrue(FramingAreas.SetSpan(b, mid, SpanDirection.SouthNorth));
+            Assert.AreEqual(2, Errors(b, "JoistNotHeldUp").Length);
+        }
+
         [TestMethod]
         public void Reshape_GrownItTakes_ShrunkItGivesBack()
         {

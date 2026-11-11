@@ -721,7 +721,7 @@ namespace BuildingModel.Sketch
             }
             bool parts = (d.Framing?.Count ?? 0) > 1;
             foreach (var a in d.Framing ?? new List<FramingArea>())
-                SpanMarker(ctx, b, d.LevelId, a.Rect, a.Span, $"{(parts ? a.Id : d.Id)} · {(rafters ? "rafters" : "joists")} {(a.Span == SpanDirection.WestEast ? "W-E" : "S-N")}", label);
+                SpanMarker(ctx, b, d.LevelId, a.Rect, a.Span, $"{(parts ? a.Id : d.Id)}{(string.IsNullOrEmpty(a.Name) ? "" : " " + a.Name)} · {(rafters ? "rafters" : "joists")} {(a.Span == SpanDirection.WestEast ? "W-E" : "S-N")}{(AreaNote?.Invoke(a) is string note && note.Length > 0 ? " · " + note : "")}", label);
         }
 
         /// <summary>

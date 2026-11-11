@@ -88,6 +88,12 @@ namespace BuildingModel.Model
         /// <summary>W-E or S-N (never Auto).</summary>
         [DataMember(Order = 2)] public SpanDirection Span { get; set; }
 
+        /// <summary>
+        /// What the part is (a hall, a balcony, a bath), or null. The Load Manager takes an area's loads by it: an area use of
+        /// that name, else the level's (the loads are never here: owner 2026-11-10).
+        /// </summary>
+        [DataMember(Order = 3, EmitDefaultValue = false)] public string Name { get; set; }
+
         /// <summary>True when the joists run W-E (along x).</summary>
         public bool AlongX => Span != SpanDirection.SouthNorth;
     }

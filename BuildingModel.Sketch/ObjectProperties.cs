@@ -43,6 +43,8 @@ namespace BuildingModel.Sketch
             if (ids.Count > 1)
             {
                 Title($"{ids.Count} selected");
+                var areas = ids.Select(id => B.Find(id) as FramingArea).ToList();
+                if (areas.All(a => a != null)) AreasProps(areas);
                 return;
             }
             var o = ids.Count == 1 ? B.Find(ids[0]) : null;
@@ -221,6 +223,52 @@ namespace BuildingModel.Sketch
         }
 
         /// <summary>A framing area: its rectangle, which way its joists run (Turn), its joists and what holds them up.</summary>
+        /// <summary>
+        /// The name box for framing areas, one for all of them (one undo step): what the part is (Hall, Balcony, Bath). The Load
+        /// Manager gives an area the loads of the area use with its name, else the level's: name 90 balconies at once here and
+        /// set the balcony's loads once there.
+        /// </summary>
+        private void AreaName(List<FramingArea> areas)
+        {
+            var names = areas.Select(x => x.Name ?? "").Distinct().ToList();
+            var t = new TextBox { Text = names.Count == 1 ? names[0] : "", Padding = new Thickness(3, 1, 3, 1),
+                                  ToolTip = "What this part is: Hall, Balcony, Bath… The Load Manager gives it the loads of the area use with this name, else the level's. Blank: the level's." };
+            System.Windows.Automation.AutomationProperties.SetName(t, "Area name");
+            void Commit()
+            {
+                string v = string.IsNullOrWhiteSpace(t.Text) ? null : t.Text.Trim();
+                if (areas.All(x => x.Name == v)) return;
+                var ids = areas.Select(x => x.Id).ToList();
+                string what = ids.Count == 1 ? ids[0] : $"{ids.Count} framing areas";
+                sketch.Edit(v == null ? $"{what}: no name (the level's loads)." : $"{what} named {v}.", b => FramingAreas.SetName(b, ids, v));
+            }
+            t.LostFocus += (s, e) => Commit();
+            t.KeyDown += (s, e) => { if (e.Key == System.Windows.Input.Key.Enter) Commit(); };
+            Row("Name", t);
+            if (names.Count > 1) Hint("They have different names: a name typed here goes to all of them.");
+        }
+
+        /// <summary>Several framing areas picked: one name and one way for all of them (each one undo step).</summary>
+        private void AreasProps(List<FramingArea> areas)
+        {
+            var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1) };
+            var spans = areas.Select(x => x.Span).Distinct().ToList();
+            foreach (var (s, text) in new[] { (SpanDirection.WestEast, "W-E (bearing on N-S walls)"), (SpanDirection.SouthNorth, "S-N (bearing on W-E walls)") })
+                c.Items.Add(new ComboBoxItem { Content = text, Tag = s, IsSelected = spans.Count == 1 && spans[0] == s });
+            c.SelectionChanged += (o, e) =>
+            {
+                if (!(c.SelectedItem is ComboBoxItem i)) return;
+                var to = (SpanDirection)i.Tag;
+                if (areas.All(x => x.Span == to)) return;
+                var ids = areas.Select(x => x.Id).ToList();
+                sketch.Edit($"{ids.Count} framing areas: their joists run {Dir(to)}.", b => ids.Aggregate(false, (any, id) => FramingAreas.SetSpan(b, id, to) | any));
+            };
+            System.Windows.Automation.AutomationProperties.SetName(c, "Joists");
+            Row("Joists", c);
+            AreaName(areas);
+            Hint($"{areas.Count} framing areas, {areas.Sum(x => x.Rect.Area):0} sq ft.");
+        }
+
         private void AreaProps(FramingArea a)
         {
             var (d, _) = FramingAreas.Find(B, a.Id);
@@ -235,6 +283,7 @@ namespace BuildingModel.Sketch
             };
             System.Windows.Automation.AutomationProperties.SetName(c, "Joists");
             Row("Joists", c);
+            AreaName(new List<FramingArea> { a });
             var lv = B.Level(d?.LevelId);
             var joists = Statics.Joists.Of(B, lv).Where(j => j.AreaId == a.Id).ToList();
             int bad = joists.Count(j => !j.Stands);

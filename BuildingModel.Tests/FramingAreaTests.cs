@@ -149,6 +149,37 @@ namespace BuildingModel.Tests
             Assert.IsFalse(BuildingEdits.Delete(b, d.Framing.Single().Id), "a diaphragm is always framed");
         }
 
+        /// <summary>
+        /// An area's name (owner 2026-11-10: a hallway, a balcony; the Load Manager gives it the loads of the use so named): the
+        /// pieces an area is cut into keep it, a strip placed across it starts with none, and Join keeps areas of different
+        /// names apart.
+        /// </summary>
+        [TestMethod]
+        public void Name_KeptByThePieces_JoinKeepsDifferentNamesApart()
+        {
+            var b = Floor(out _, out var d);
+            Assert.IsTrue(FramingAreas.SetName(b, new[] { d.Framing.Single().Id }, "  Bedroom "));
+            Assert.AreEqual("Bedroom", d.Framing.Single().Name, "trimmed");
+            Assert.IsFalse(FramingAreas.SetName(b, new[] { d.Framing.Single().Id }, "Bedroom"), "no change");
+            var mid = FramingAreas.Place(b, d, new Rect2(16, 0, 24, 20), SpanDirection.SouthNorth).Single();
+            CoversExactly(d);
+            Assert.IsNull(FramingAreas.Find(b, mid).a.Name, "the strip has a name of its own (none yet)");
+            Assert.IsTrue(d.Framing.Where(a => a.Id != mid).All(a => a.Name == "Bedroom"), "both pieces keep it");
+            Assert.IsTrue(FramingAreas.SetName(b, new[] { mid }, "Hallway"));
+
+            // turned back the same way: Join keeps the hallway apart from the bedroom, until it is named as the bedroom is
+            Assert.IsTrue(FramingAreas.SetSpan(b, mid, SpanDirection.WestEast));
+            FramingAreas.Join(b, d);
+            Assert.AreEqual(3, d.Framing.Count, "Bedroom | Hallway | Bedroom");
+            Assert.AreEqual("Hallway", FramingAreas.Find(b, mid).a?.Name ?? d.Framing.Single(a => a.Rect.Equals(new Rect2(16, 0, 24, 20))).Name);
+            Assert.IsTrue(FramingAreas.SetName(b, d.Framing.Select(a => a.Id), "Bedroom"));
+            FramingAreas.Join(b, d);
+            Assert.AreEqual(new Rect2(0, 0, 40, 20), d.Framing.Single().Rect);
+            Assert.AreEqual("Bedroom", d.Framing.Single().Name);
+            Assert.IsTrue(FramingAreas.SetName(b, new[] { d.Framing.Single().Id }, " "), "blank: no name");
+            Assert.IsNull(d.Framing.Single().Name);
+        }
+
         [TestMethod]
         public void Reshape_GrownItTakes_ShrunkItGivesBack()
         {

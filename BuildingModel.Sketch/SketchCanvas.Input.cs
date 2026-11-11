@@ -22,6 +22,7 @@ namespace BuildingModel.Sketch
         private (Point2 a, Point2 b)? lastMeasure;
         private Point? panFrom, windowFrom;
         private Grip? grip;                    // a grip being dragged
+        private Point? rectDown;               // a rectangle tool: where its first corner was pressed (released elsewhere: a dragged rectangle)
         private string hovered;                // what the status says is under the cursor
         private List<Segment2> segments;       // snap lines of the level (cleared on every change)
 
@@ -119,10 +120,10 @@ namespace BuildingModel.Sketch
                 case SketchTool.Wall:
                     string by = WallDrawnBy == WallLine.Centre ? "" : $" Drawn along its {WallLineWords(WallDrawnBy)}: the wall lies to the {(WallDrawnBy == WallLine.LeftFace ? "right" : "left")} of the line, its centreline half its stud depth in.";
                     return (first == null ? $"Wall under {lvl}: click or type the start (x,y). Esc ends." : "Wall: click or type the end (@dx,dy or a length). Walls are square. Right-click ends the run.") + by;
-                case SketchTool.Diaphragm: return first == null ? $"Diaphragm on {lvl}: first corner." : "Diaphragm: opposite corner (or @width,depth).";
-                case SketchTool.Opening: return first == null ? $"Opening in {lvl}: first corner." : "Opening: opposite corner (or @width,depth).";
-                case SketchTool.Cut: return first == null ? $"Cut from the diaphragms of {lvl}: first corner of the area to take away." : "Cut: opposite corner (or @width,depth).";
-                case SketchTool.Framing: return first == null ? $"Framing area on {lvl}: first corner of the part to turn (its joists run across the area it lies most on)." : "Framing area: opposite corner (or @width,depth).";
+                case SketchTool.Diaphragm: return first == null ? $"Diaphragm on {lvl}: first corner, or drag the rectangle." : "Diaphragm: opposite corner (or @width,depth).";
+                case SketchTool.Opening: return first == null ? $"Opening in {lvl}: first corner, or drag the rectangle." : "Opening: opposite corner (or @width,depth).";
+                case SketchTool.Cut: return first == null ? $"Cut from the diaphragms of {lvl}: first corner of the area to take away, or drag it." : "Cut: opposite corner (or @width,depth).";
+                case SketchTool.Framing: return first == null ? $"Framing area on {lvl}: first corner of the part to turn, or drag it (its joists run across the area it lies most on)." : "Framing area: opposite corner (or @width,depth).";
                 case SketchTool.Note: return $"Note on {lvl}: click where it goes.";
                 case SketchTool.Beam: return first == null ? $"Beam in the framing of {lvl}: click or type its first end (over the wall or column it bears on)." : "Beam: click or type its other end. It carries what stands on it to its ends.";
                 case SketchTool.Column: return $"Column under {lvl}: click where it stands (from the level below up to {lvl}).";
@@ -406,7 +407,10 @@ namespace BuildingModel.Sketch
             if (InterceptClick != null && InterceptClick(cursor)) return; // a host command (the designer's plan-image tools)
             if (Tool != SketchTool.Select)
             {
+                bool corner = first == null && RectangleTool(Tool);
                 ApplyPoint(cursor, rawCursor);
+                rectDown = corner && first != null ? pos : (Point?)null; // released elsewhere: the opposite corner (a dragged rectangle)
+                if (rectDown != null) CaptureMouse();
                 return;
             }
             // select: a grip, an issue marker, an object, or a window
@@ -474,6 +478,15 @@ namespace BuildingModel.Sketch
             if (e.ChangedButton == MouseButton.Middle) { EndPan(); return; }
             if (e.ChangedButton != MouseButton.Left) return;
             var pos = e.GetPosition(this);
+            if (rectDown != null)
+            {
+                var down = rectDown.Value;
+                rectDown = null;
+                ReleaseMouseCapture();
+                // a drag of a few pixels or more: the rectangle from where it was pressed to here; a click waits for the second click
+                if ((pos - down).Length >= 6 && first != null && RectangleTool(Tool)) ApplyPoint(cursor, rawCursor);
+                return;
+            }
             if (grip != null)
             {
                 var g = grip.Value;
@@ -497,6 +510,9 @@ namespace BuildingModel.Sketch
                 Say($"{selection.Count} selected.");
             }
         }
+
+        /// <summary>The tools drawn as a rectangle: two corners clicked, or one drag.</summary>
+        private static bool RectangleTool(SketchTool t) => t == SketchTool.Diaphragm || t == SketchTool.Opening || t == SketchTool.Cut || t == SketchTool.Framing;
 
         private void EndPan()
         {

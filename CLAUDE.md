@@ -58,6 +58,10 @@
     beside it; `Reshape` is its grips; `Join` merges same-way neighbours. The plan's **Framing area** tool (F) draws one
     across the area it lies most on (`TurnedFrom`); a click inside a floor framed in parts picks the area, its outline
     the diaphragm. Rectangles only for now (polygons later: ROADMAP).
+    An area may have a `Name` (a hallway, a balcony: owner 2026-11-10); the Load Manager gives it the loads of the use
+    so named. The pieces of a cut area keep it, `Join` keeps areas of different names apart, `SetName` names several at
+    once (several areas picked: one card, Name and Joists for all). The plan's rectangle tools (Diaphragm, Opening, Cut,
+    Framing area) take two clicks or one drag (`RectangleTool`).
   - **Joists** (`BuildingModel.Statics.Joists`): laid out from the areas at the floors' or roof's spacing, edge to edge,
     cut by openings; each held by every wall, column and beam under it anywhere along it (`SupportsOf`), never by a
     joist. Fewer than two is the model's error `JoistNotHeldUp` (one per run held the same way, naming the area and

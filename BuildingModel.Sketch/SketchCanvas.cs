@@ -465,6 +465,9 @@ namespace BuildingModel.Sketch
         /// <summary>A span marker in every framing zone (each floor or roof diaphragm): the way its joists or rafters run, as on a framing plan.</summary>
         public bool ShowSpans { get; set; } = true;
 
+        /// <summary>The host's note after a framing area's span label (e.g. the Load Manager's: its use and loads); null: none.</summary>
+        public Func<FramingArea, string> AreaNote { get; set; }
+
         /// <summary>
         /// The size of the text on the plan (IDs, lengths, notes) against the base sizes; the apps' own overlays on the plan read it
         /// too, so one number sets them all. 1.2: the original was too small to read, 1.5 crowded the plan.

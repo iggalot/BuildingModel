@@ -77,7 +77,7 @@ namespace BuildingModel.Model
                 }
                 kept.Add(a);
                 foreach (var r in rects.Skip(1))
-                    kept.Add(new FramingArea { Id = NewId(), Rect = r, Span = a.Span });
+                    kept.Add(new FramingArea { Id = NewId(), Rect = r, Span = a.Span, Name = a.Name }); // a piece keeps its name (its use)
                 covered.AddRange(rects);
             }
             // a part with no framing: its own area, its shorter way
@@ -128,6 +128,21 @@ namespace BuildingModel.Model
         {
             var most = d?.Framing?.Select(a => (a, x: Region.Of(new[] { a.Rect }).AreaWithin(r))).Where(t => t.x > E).OrderByDescending(t => t.x).Select(t => t.a).FirstOrDefault();
             return most == null ? ShortWay(r) : most.Span == SpanDirection.SouthNorth ? SpanDirection.WestEast : SpanDirection.SouthNorth;
+        }
+
+        /// <summary>Names areas (a hall, a balcony; null or blank: none): the Load Manager takes their loads by it. True when any changed.</summary>
+        public static bool SetName(Building b, IEnumerable<string> areaIds, string name)
+        {
+            name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+            bool changed = false;
+            foreach (var id in areaIds ?? Enumerable.Empty<string>())
+            {
+                var (_, a) = Find(b, id);
+                if (a == null || a.Name == name) continue;
+                a.Name = name;
+                changed = true;
+            }
+            return changed;
         }
 
         /// <summary>Turns an area's joists. False when there is no such area or it already runs that way.</summary>
@@ -193,19 +208,19 @@ namespace BuildingModel.Model
             if (d?.Framing == null) return 0;
             int before = d.Framing.Count;
             var next = new List<FramingArea>();
-            foreach (var g in d.Framing.GroupBy(a => a.Span))
+            foreach (var g in d.Framing.GroupBy(a => (a.Span, Name: a.Name ?? "")))  // a named part (a hall, a balcony) stays its own
             {
                 var areas = g.ToList();
                 foreach (var part in Edits.BuildingEdits.Parts(Region.Of(areas.Select(a => a.Rect))))
                 {
-                    var rects = Slice(part, g.Key).OrderByDescending(r => r.Area).ToList();
+                    var rects = Slice(part, g.Key.Span).OrderByDescending(r => r.Area).ToList();
                     // the IDs kept: the areas each rectangle covers most of, largest first
                     var pool = areas.Where(a => part.Any(c => Overlap(c, a.Rect) > E)).OrderByDescending(a => a.Rect.Area).ToList();
                     foreach (var r in rects)
                     {
                         var keep = pool.OrderByDescending(a => Overlap(a.Rect, r)).FirstOrDefault();
                         if (keep != null) { pool.Remove(keep); keep.Rect = r; next.Add(keep); }
-                        else next.Add(new FramingArea { Id = null, Rect = r, Span = g.Key });
+                        else next.Add(new FramingArea { Id = null, Rect = r, Span = g.Key.Span, Name = g.Key.Name.Length == 0 ? null : g.Key.Name });
                     }
                 }
             }

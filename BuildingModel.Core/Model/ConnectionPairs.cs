@@ -82,8 +82,8 @@ namespace BuildingModel.Model
                 if (h.IsWall) { p.Upper = h.WallId; p.UpperKind = "wall"; }
                 else
                 {
-                    // "beam B2 start", "column C1 base"
-                    p.UpperKind = h.Kind == "beam end" ? "beam" : "column";
+                    // "beam B2 start", "column C1 base", "wall W2 post" (a post in a plain wall)
+                    p.UpperKind = h.Kind == "beam end" ? "beam" : h.Kind == "wall post" ? "wall" : "column";
                     p.Upper = Second(h.From);
                 }
                 if (h.Onto == "the foundation") p.OnFoundation = true;

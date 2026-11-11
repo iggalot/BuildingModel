@@ -65,7 +65,7 @@ namespace BuildingModel.Model
         [DataMember(Order = 8)] public double TensionAsd { get; set; }
         /// <summary>What it anchors to: "the foundation", "wall W3", "beam B2", "column C1"; null: nothing under it.</summary>
         [DataMember(Order = 9, EmitDefaultValue = false)] public string Onto { get; set; }
-        /// <summary>"wall", "beam end" or "column base".</summary>
+        /// <summary>"wall", "beam end", "column base" or "wall post" (a post or strap in a plain wall, or in a shear wall past its shear part, taking what lands on it down: "wall W2 post").</summary>
         [DataMember(Order = 10)] public string Kind { get; set; } = "wall";
         /// <summary>The end post's width along the wall (in) the hold-down needs (0: not a wall's).</summary>
         [DataMember(Order = 11, EmitDefaultValue = false)] public double PostAlongWall { get; set; }

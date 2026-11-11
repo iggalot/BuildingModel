@@ -17,6 +17,9 @@
   `SNAPSHOT_DIR` saves PNGs). Never create `MainWindow` in a test.
 - **Shared pieces the other apps use:**
   - `ProjectFolder` and `Log`: the project folder and its `logs\`.
+  - `IssuesButton` (BuildingModel.Sketch, owner 2026-11-11): the suite's issues button at the right of every app's top
+    bar (green "✓ No issues", amber warnings, red errors; a click drops `IssueList` down, a row goes to the member on its
+    level). Every app uses it; change its look here, not in an app. Titles are "<project> * (view only) - <App>".
   - `ProjectDialogs` (with `SaveChangesFirst` and `TakeLock`, the suite's "Save first?" and "already open"), `Ui`,
     `WindowFit`, `QuickBuildingPanel` ("New from size"), `ModelChecks`.
   - `EditHistory` (`BuildingModel.Core\Edits`): the suite's one undo and redo (text snapshots, step names, the saved

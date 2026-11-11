@@ -67,6 +67,8 @@ namespace BuildingModel.App
         private readonly Building3DView view3D = new Building3DView { Visibility = Visibility.Collapsed };
         private readonly ObjectProperties properties;
         private readonly IssueList issueList;
+        /// <summary>The suite's issues button, at the right of the top bar.</summary>
+        private readonly IssuesButton issuesButton = new IssuesButton();
 
         /// <summary>The wall window (WoodFraming.Wpf, the same as the shear wall app's), while it is open.</summary>
         private WoodFraming.Wpf.WallWindow wallWindow;
@@ -153,6 +155,8 @@ namespace BuildingModel.App
             Background = Brushes.White;
             properties = new ObjectProperties(Sketch);
             issueList = new IssueList(Sketch);
+            issuesButton.Sketch = Sketch;
+            issuesButton.Picking += (s, i) => ShowPlan(true); // from the 3D view: the plan first
             properties.OpenWall = ShowWall;
             // the wall window follows the pick (another wall) and the model (an edit, an undo, another app's save)
             Sketch.SelectionChanged += (s, e) => { if (wallWindow != null && Sketch.Selection.Count() == 1 && Sketch.Building.Find(Sketch.Selection.First()) is Wall w) ShowWall(w); };
@@ -171,7 +175,7 @@ namespace BuildingModel.App
             }
             var file = Item(menu, "_File", null, null);
             Item(file, "_New project…", "Ctrl+N", () => New(), "A new design project: pick or make its folder");
-            Item(file, "_Open…", "Ctrl+O", OpenDialog);
+            Item(file, "_Open project…", "Ctrl+O", OpenDialog);
             editingItems.Add(Item(file, "_Save", "Ctrl+S", () => Save(false)));
             editingItems.Add(Item(file, "Save _as…", null, () => Save(true), "Save as a new project folder"));
             file.Items.Add(new Separator());
@@ -224,6 +228,8 @@ namespace BuildingModel.App
             var tabs = new StackPanel { Orientation = Orientation.Horizontal };
             tabs.Children.Add(planTab);
             tabs.Children.Add(tab3D);
+            DockPanel.SetDock(issuesButton, Dock.Right);
+            bar.Children.Add(issuesButton);
             DockPanel.SetDock(tabs, Dock.Right);
             bar.Children.Add(tabs);
             view.ShowBuildingTools = false; // they are in the Building menu
@@ -287,13 +293,14 @@ namespace BuildingModel.App
             var issues = ModelChecks.Run(b);
             Sketch.Issues = issues;
             issueList.Show(issues);
+            issuesButton.Show(issues);
             var fp = b.Footprint();
             var above = b.LevelsBottomUp.Where(l => l.Elevation > 0).ToList();
             summary.Text = (string.IsNullOrWhiteSpace(b.Name) ? "" : b.Name + "\n") + (fp.IsEmpty ? "No diaphragm yet." : $"Footprint {fp.Bounds.Width:0.##} × {fp.Bounds.Height:0.##} ft ({fp.Area:0} sq ft).") +
                            $"\n{above.Count} level{(above.Count == 1 ? "" : "s")} above the ground" + (above.Count > 0 ? $", top at {above.Last().Elevation:0.##} ft" : "") +
                            $"\n{b.Walls.Count} walls, {b.Openings.Count} openings, {b.Notes.Count} notes." +
                            $"\nRevision {doc.Revision}{(dirty ? " (not saved)" : "")}";
-            Title = $"{(string.IsNullOrEmpty(path) ? "New building" : Path.GetFileName(path))}{(dirty ? " *" : "")}{(viewOnly ? " (view only)" : "")} — Building Model";
+            Title = $"{(string.IsNullOrEmpty(path) ? "New building" : Path.GetFileName(path).Replace(BuildingModel.Diagnostics.ProjectFolder.ModelExtension, ""))}{(dirty ? " *" : "")}{(viewOnly ? " (view only)" : "")} - Building Model";
             view3D.HighlightLevelId = Sketch.ActiveLevel?.Id;
             if (view3D.Visibility == Visibility.Visible) view3D.Show(b);
         }

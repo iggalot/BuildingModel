@@ -159,7 +159,7 @@ namespace BuildingModel.Sketch
 
             command.KeyDown += Command_KeyDown;
             Canvas.TypingStarted += (s, text) => { command.Text = text; command.Focus(); command.CaretIndex = command.Text.Length; };
-            Canvas.Status += (s, e) => { status.Text = e.Text; status.Foreground = e.IsWarning ? Ui.Warning : Ui.Ink; };
+            Canvas.Status += (s, e) => { status.Text = e.Text; status.Foreground = !e.IsWarning ? Ui.Ink : e.Text != null && e.Text.StartsWith("Error") ? Ui.Error : Ui.Warning; };
             Canvas.CursorMoved += (s, e) => coords.Text = $"x {Canvas.CursorPoint.X:0.00}   y {Canvas.CursorPoint.Y:0.00} ft";
             Canvas.ToolChanged += (s, e) => UpdateButtons();
             Canvas.ModelChanged += (s, e) => { UpdateButtons(); UpdateLevels(); };

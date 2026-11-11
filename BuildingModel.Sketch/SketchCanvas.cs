@@ -12,7 +12,7 @@ using BuildingModel.Model;
 namespace BuildingModel.Sketch
 {
     /// <summary>The drawing tools.</summary>
-    public enum SketchTool { Select, Wall, Diaphragm, Opening, Note, Move, Copy, Measure, Split, Mirror, Calibrate, Cut, PlanStraighten, PlanMove, Beam, Column }
+    public enum SketchTool { Select, Wall, Diaphragm, Opening, Note, Move, Copy, Measure, Split, Mirror, Calibrate, Cut, PlanStraighten, PlanMove, Beam, Column, Framing }
 
     /// <summary>What a host draws under or over the model, with the sketch's transform.</summary>
     public sealed class SketchDrawEventArgs : EventArgs
@@ -146,6 +146,8 @@ namespace BuildingModel.Sketch
                 InvalidateVisual();
                 return false;
             }
+            // every diaphragm framed all over, its areas cut back round a turned part and clipped to it (a stretch, a cut, a move)
+            FramingAreas.Tidy(Building);
             // columns follow what carries them (a beam drawn across one trims it; its support deleted runs it down again)
             var followed = BuildingEdits.FollowSupports(Building);
             if (followed.Count > 0) what = (string.IsNullOrEmpty(what) ? "" : what + " ") + string.Join(" ", followed) + " (Ctrl+Z undoes it.)";

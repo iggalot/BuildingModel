@@ -12,8 +12,8 @@ namespace BuildingModel.Serialization
     public sealed class ModelDocument
     {
         public const string FormatName = "BuildingModel";
-        /// <summary>1: levels, diaphragms, openings, walls. 2: adds the data bags and the notes. 3: adds the roof (an older file reads as is, with a flat roof). 4: adds beams and columns (none in an older file). 5: adds wall stud framing (per wall and story) and the stud defaults (an older file takes 2x6 / 2x4 at 16", DF-L No. 2, L/240). 6: adds the span direction of a diaphragm's joists or rafters (an older file: Auto, the shorter way). 7: adds the wall joints turned round from the usual rule (an older file: none, every joint by the rule).</summary>
-        public const int CurrentVersion = 7;
+        /// <summary>1: levels, diaphragms, openings, walls. 2: adds the data bags and the notes. 3: adds the roof (an older file reads as is, with a flat roof). 4: adds beams and columns (none in an older file). 5: adds wall stud framing (per wall and story) and the stud defaults (an older file takes 2x6 / 2x4 at 16", DF-L No. 2, L/240). 6: adds the span direction of a diaphragm's joists or rafters (an older file: Auto, the shorter way). 7: adds the wall joints turned round from the usual rule (an older file: none, every joint by the rule). 8: adds each diaphragm's framing areas, the way the joists run in each part of it (an older file: one area per diaphragm, its span, read when it is opened; <see cref="FramingAreas"/>).</summary>
+        public const int CurrentVersion = 8;
 
         [DataMember(Order = 0)] public string Format { get; set; } = FormatName;
         [DataMember(Order = 1)] public int Version { get; set; } = CurrentVersion;
@@ -55,6 +55,7 @@ namespace BuildingModel.Serialization
             if (doc.Version > ModelDocument.CurrentVersion)
                 throw new InvalidDataException($"This building model is format version {doc.Version}; this program reads up to version {ModelDocument.CurrentVersion}. Update the program.");
             doc.Building = doc.Building ?? Building.New();
+            FramingAreas.Tidy(doc.Building); // an older file's span becomes its framing areas; every diaphragm framed all over
             return doc;
         }
 

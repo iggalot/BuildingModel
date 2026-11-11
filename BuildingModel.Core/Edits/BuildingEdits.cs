@@ -28,6 +28,7 @@ namespace BuildingModel.Edits
             switch (b.Find(id))
             {
                 case Diaphragm d: return b.Diaphragms.Remove(d);
+                case FramingArea a: return FramingAreas.Delete(b, a.Id);
                 case Opening o: return b.Openings.Remove(o);
                 case Wall w: return b.Walls.Remove(w);
                 case Note n: return b.Notes.Remove(n);
@@ -42,7 +43,7 @@ namespace BuildingModel.Edits
         {
             switch (b.Find(id))
             {
-                case Diaphragm d: d.Pieces = d.Pieces.Select(r => Shift(r, dx, dy)).ToList(); return true;
+                case Diaphragm d: d.Pieces = d.Pieces.Select(r => Shift(r, dx, dy)).ToList(); foreach (var a in d.Framing) a.Rect = Shift(a.Rect, dx, dy); return true;
                 case Opening o: o.Pieces = o.Pieces.Select(r => Shift(r, dx, dy)).ToList(); return true;
                 case Wall w: w.Start = Shift(w.Start, dx, dy); w.End = Shift(w.End, dx, dy); return true;
                 case Note n: n.At = Shift(n.At, dx, dy); return true;
@@ -56,12 +57,12 @@ namespace BuildingModel.Edits
         public static string Copy(Building b, string id, double dx, double dy)
         {
             var o = b.Find(id);
-            if (o == null || o is Level || o is Building) return null;
+            if (o == null || o is Level || o is Building || o is FramingArea) return null;
             var copy = CloneObject(o);
             copy.Id = b.NewId(Prefix(o));
             switch (copy)
             {
-                case Diaphragm d: b.Diaphragms.Add(d); break;
+                case Diaphragm d: b.Diaphragms.Add(d); FramingAreas.Renumber(b, d); break;
                 case Opening op: b.Openings.Add(op); break;
                 case Wall w: b.Walls.Add(w); break;
                 case Note n: b.Notes.Add(n); break;
@@ -101,7 +102,7 @@ namespace BuildingModel.Edits
                 string target = keepOriginal ? Copy(b, id, 0, 0) : id;
                 switch (b.Find(target))
                 {
-                    case Diaphragm d: d.Pieces = d.Pieces.Select(R).ToList(); break;
+                    case Diaphragm d: d.Pieces = d.Pieces.Select(R).ToList(); foreach (var a in d.Framing) a.Rect = R(a.Rect); break;
                     case Opening o: o.Pieces = o.Pieces.Select(R).ToList(); break;
                     case Wall w: w.Start = M(w.Start); w.End = M(w.End); break;
                     case Note n: n.At = M(n.At); break;
@@ -184,13 +185,14 @@ namespace BuildingModel.Edits
         public static bool MoveCorner(Building b, string id, int piece, Point2 corner, Point2 to)
         {
             var o = b.Find(id);
-            var pieces = o is Diaphragm d ? d.Pieces : o is Opening op ? op.Pieces : null;
+            var pieces = o is Diaphragm d ? d.Pieces : o is Opening op ? op.Pieces : o is FramingArea fa ? new List<Rect2> { fa.Rect } : null;
             if (pieces == null || piece < 0 || piece >= pieces.Count) return false;
             var r = pieces[piece];
             double ox = Math.Abs(corner.X - r.X0) < Math.Abs(corner.X - r.X1) ? r.X1 : r.X0;
             double oy = Math.Abs(corner.Y - r.Y0) < Math.Abs(corner.Y - r.Y1) ? r.Y1 : r.Y0;
             var n = new Rect2(ox, oy, to.X, to.Y);
             if (n.IsEmpty) return false;
+            if (o is FramingArea area) return FramingAreas.Reshape(b, area.Id, n);
             pieces[piece] = n;
             return true;
         }
@@ -203,7 +205,7 @@ namespace BuildingModel.Edits
         public static bool MoveSide(Building b, string id, int piece, RectSide side, double to)
         {
             var o = b.Find(id);
-            var pieces = o is Diaphragm d ? d.Pieces : o is Opening op ? op.Pieces : null;
+            var pieces = o is Diaphragm d ? d.Pieces : o is Opening op ? op.Pieces : o is FramingArea fa ? new List<Rect2> { fa.Rect } : null;
             if (pieces == null || piece < 0 || piece >= pieces.Count || double.IsNaN(to) || double.IsInfinity(to)) return false;
             var r = pieces[piece];
             double x0 = r.X0, y0 = r.Y0, x1 = r.X1, y1 = r.Y1;
@@ -215,6 +217,7 @@ namespace BuildingModel.Edits
                 default: y1 = to; break;
             }
             if (Math.Abs(x1 - x0) < 1e-6 || Math.Abs(y1 - y0) < 1e-6) return false;
+            if (o is FramingArea area) return FramingAreas.Reshape(b, area.Id, new Rect2(x0, y0, x1, y1));
             pieces[piece] = new Rect2(x0, y0, x1, y1);
             return true;
         }
@@ -239,7 +242,7 @@ namespace BuildingModel.Edits
                 copy.Id = b.NewId(Prefix(o));
                 switch (copy)
                 {
-                    case Diaphragm d: d.LevelId = to.Id; b.Diaphragms.Add(d); break;
+                    case Diaphragm d: d.LevelId = to.Id; b.Diaphragms.Add(d); FramingAreas.Renumber(b, d); break;
                     case Note n: n.LevelId = to.Id; b.Notes.Add(n); break;
                     case Wall w: w.BaseLevelId = below.Id; w.TopLevelId = to.Id; b.Walls.Add(w); break;
                     case Opening op: op.BottomLevelId = below.Id; op.TopLevelId = to.Id; b.Openings.Add(op); break;
@@ -316,6 +319,7 @@ namespace BuildingModel.Edits
                 c.Id = b.NewId("D");
                 c.LevelId = to.Id;
                 b.Diaphragms.Add(c);
+                FramingAreas.Renumber(b, c);
                 n++;
             }
             if (toBelow != null)
@@ -507,11 +511,18 @@ namespace BuildingModel.Edits
             return true;
         }
 
-        /// <summary>Sets which way a diaphragm's joists or rafters span (Auto: its shorter way). False when nothing changed.</summary>
+        /// <summary>
+        /// Turns all of a diaphragm's framing one way (Auto: its shorter way), its areas joined into as few as that allows.
+        /// To turn a part of it, place a framing area (<see cref="FramingAreas.Place"/>). False when nothing changed.
+        /// </summary>
         public static bool SetDiaphragmSpan(Building b, string diaphragmId, SpanDirection span)
         {
-            if (!(b.Find(diaphragmId) is Diaphragm d) || d.Span == span) return false;
-            d.Span = span;
+            if (!(b.Find(diaphragmId) is Diaphragm d)) return false;
+            FramingAreas.Fill(b, d);
+            if (span == SpanDirection.Auto) span = FramingAreas.ShortWay(Region.Of(d.Pieces).Bounds);
+            if (d.Framing.All(a => a.Span == span) && d.Framing.Count <= FramingAreas.Slice(Region.Of(d.Pieces).Cells(), span).Count) return false;
+            foreach (var a in d.Framing) a.Span = span;
+            FramingAreas.Join(b, d);
             return true;
         }
 
@@ -645,6 +656,7 @@ namespace BuildingModel.Edits
                 }
                 var parts = Parts(after).OrderByDescending(p => p.Sum(r => r.Area)).ToList();
                 d.Pieces = Merge(parts[0]);
+                FramingAreas.Fill(b, d); // its framing cut back with it
                 result.Changed.Add(d.Id);
                 if (parts.Count == 1) continue;
                 var ids = new List<string>();
@@ -654,6 +666,8 @@ namespace BuildingModel.Edits
                     extra.Id = b.NewId("D");
                     extra.Pieces = Merge(p);
                     b.Diaphragms.Add(extra);
+                    FramingAreas.Renumber(b, extra);
+                    FramingAreas.Fill(b, extra);
                     ids.Add(extra.Id);
                 }
                 result.Split.Add((d.Id, ids));
@@ -729,9 +743,9 @@ namespace BuildingModel.Edits
 
         // ------------------------------------------------------------------ helpers
 
-        public static string Prefix(ModelObject o) => o is Level ? "L" : o is Diaphragm ? "D" : o is Opening ? "O" : o is Wall ? "W" : o is Note ? "N" : o is Beam ? "BM" : o is Column ? "C" : "X";
+        public static string Prefix(ModelObject o) => o is Level ? "L" : o is Diaphragm ? "D" : o is Opening ? "O" : o is Wall ? "W" : o is Note ? "N" : o is Beam ? "BM" : o is Column ? "C" : o is FramingArea ? "FA" : "X";
 
-        public static string KindName(ModelObject o) => o is Level ? "level" : o is Diaphragm ? "diaphragm" : o is Opening ? "opening" : o is Wall ? "wall" : o is Note ? "note" : o is Beam ? "beam" : o is Column ? "column" : "object";
+        public static string KindName(ModelObject o) => o is Level ? "level" : o is Diaphragm ? "diaphragm" : o is Opening ? "opening" : o is Wall ? "wall" : o is Note ? "note" : o is Beam ? "beam" : o is Column ? "column" : o is FramingArea ? "framing area" : "object";
 
         /// <summary>A deep copy of one object (data included), through the building's JSON.</summary>
         public static ModelObject CloneObject(ModelObject o)

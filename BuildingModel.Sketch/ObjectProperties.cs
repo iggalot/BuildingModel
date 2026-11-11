@@ -50,6 +50,7 @@ namespace BuildingModel.Sketch
             {
                 case Wall w: WallProps(w); break;
                 case Diaphragm d: RectProps(d, d.Pieces); Levels("Level", d.LevelId, id => d.LevelId = id); SpanProps(d); break;
+                case FramingArea fa: AreaProps(fa); break;
                 case Opening op:
                     RectProps(op, op.Pieces);
                     Levels("Open from", op.BottomLevelId, id => op.BottomLevelId = id);
@@ -64,6 +65,7 @@ namespace BuildingModel.Sketch
                     Number("End y", bm.End.Y, v => bm.End = new Point2(bm.End.X, v));
                     Levels("Level", bm.LevelId, id => bm.LevelId = id);
                     Hint($"Span {bm.Length:0.##} ft. It carries the hold-downs and posts of the story above that land on it to its ends; Shear Walls sizes the end reactions and the hold-downs under them.");
+                    FramingProps(bm);
                     break;
                 case Column col:
                     Title($"Column {col.Id}");
@@ -174,30 +176,91 @@ namespace BuildingModel.Sketch
             Hint($"{Region.Of(pieces).Area:0} sq ft" + (pieces.Count > 1 ? $" in {pieces.Count} rectangles" : ""));
         }
 
-        /// <summary>Which way the diaphragm's joists or rafters span (the gravity load path's tributary widths).</summary>
+        private static string Dir(SpanDirection s) => s == SpanDirection.WestEast ? "W-E" : "S-N";
+
+        /// <summary>
+        /// The diaphragm's framing: its areas (each a button to select it), and the whole of it turned one way. A part is
+        /// turned by drawing a framing area over it (the Framing area tool), never by a span for the diaphragm.
+        /// </summary>
         private void SpanProps(Diaphragm d)
         {
             var roof = B.RoofLevel();
             bool slopedRoof = roof != null && d.LevelId == roof.Id && B.Roof != null && B.Roof.IsSloped;
-            string Dir(SpanDirection s) => s == SpanDirection.WestEast ? "W-E" : "S-N";
+            var areas = d.Framing ?? new List<FramingArea>();
+            bool mixed = areas.Select(a => a.Span).Distinct().Count() > 1;
             var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1), IsEnabled = !slopedRoof };
-            var choices = new[]
-            {
-                (SpanDirection.Auto, $"Auto ({Dir(new Diaphragm { Pieces = d.Pieces }.EffectiveSpan)}, the shorter way)"),
-                (SpanDirection.WestEast, "W-E (bearing on N-S walls)"),
-                (SpanDirection.SouthNorth, "S-N (bearing on W-E walls)"),
-            };
-            foreach (var (s, text) in choices) c.Items.Add(new ComboBoxItem { Content = text, Tag = s, IsSelected = s == d.Span });
+            if (mixed) c.Items.Add(new ComboBoxItem { Content = $"Both ways ({areas.Count} areas)", Tag = SpanDirection.Auto, IsSelected = true, IsEnabled = false });
+            foreach (var (s, text) in new[] { (SpanDirection.WestEast, "All W-E (bearing on N-S walls)"), (SpanDirection.SouthNorth, "All S-N (bearing on W-E walls)") })
+                c.Items.Add(new ComboBoxItem { Content = text, Tag = s, IsSelected = !mixed && areas.Count > 0 && areas[0].Span == s });
             c.SelectionChanged += (o, e) =>
             {
-                if (c.SelectedItem is ComboBoxItem i && (SpanDirection)i.Tag != d.Span)
-                    sketch.Edit($"{d.Id} spans {((SpanDirection)i.Tag == SpanDirection.Auto ? "the shorter way" : Dir((SpanDirection)i.Tag))}.", b => BuildingEdits.SetDiaphragmSpan(b, d.Id, (SpanDirection)i.Tag));
+                if (c.SelectedItem is ComboBoxItem i && (SpanDirection)i.Tag != SpanDirection.Auto && (mixed || areas.Count == 0 || areas[0].Span != (SpanDirection)i.Tag))
+                    sketch.Edit($"{d.Id}: all its joists {Dir((SpanDirection)i.Tag)}.", b => BuildingEdits.SetDiaphragmSpan(b, d.Id, (SpanDirection)i.Tag));
             };
             System.Windows.Automation.AutomationProperties.SetName(c, "Span");
-            Row("Span", c);
-            Hint(slopedRoof
-                ? $"The sloped roof's rafters span across the ridge ({(B.EffectiveRidge() == RidgeAxis.WestEast ? "S-N" : "W-E")}); this setting is not used."
-                : "Which way the joists or rafters run: each bearing wall or beam takes half the span on each side.");
+            Row("Joists", c);
+            if (slopedRoof)
+            {
+                Hint($"The sloped roof's rafters span across the ridge ({(B.EffectiveRidge() == RidgeAxis.WestEast ? "S-N" : "W-E")}); its framing areas are not used.");
+                return;
+            }
+            if (areas.Count > 1)
+            {
+                var list = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+                foreach (var a in areas)
+                {
+                    var go = new Button { Content = $"{a.Id} {Dir(a.Span)}", Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(0, 0, 4, 4), ToolTip = $"Select {a.Id}: {a.Rect.Width:0.##} × {a.Rect.Height:0.##} ft" };
+                    string id = a.Id;
+                    go.Click += (s, e) => sketch.Select(new[] { id });
+                    list.Children.Add(go);
+                }
+                Row("Areas", list);
+            }
+            Hint("Which way the joists or rafters run. To turn part of the floor, draw a framing area over it (Framing area): the areas round it are cut back, " +
+                 "so a joist that ran through is two shorter ones ending at it, and that edge needs a wall, beam or girder under it.");
+        }
+
+        /// <summary>A framing area: its rectangle, which way its joists run (Turn), its joists and what holds them up.</summary>
+        private void AreaProps(FramingArea a)
+        {
+            var (d, _) = FramingAreas.Find(B, a.Id);
+            Title($"Framing area {a.Id}" + (d != null ? $" ({d.Id})" : ""));
+            var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1) };
+            foreach (var (s, text) in new[] { (SpanDirection.WestEast, "W-E (bearing on N-S walls)"), (SpanDirection.SouthNorth, "S-N (bearing on W-E walls)") })
+                c.Items.Add(new ComboBoxItem { Content = text, Tag = s, IsSelected = a.Span == s });
+            c.SelectionChanged += (o, e) =>
+            {
+                if (c.SelectedItem is ComboBoxItem i && (SpanDirection)i.Tag != a.Span)
+                    sketch.Edit($"{a.Id}: its joists run {Dir((SpanDirection)i.Tag)}.", b => FramingAreas.SetSpan(b, a.Id, (SpanDirection)i.Tag));
+            };
+            System.Windows.Automation.AutomationProperties.SetName(c, "Joists");
+            Row("Joists", c);
+            var lv = B.Level(d?.LevelId);
+            var joists = Statics.Joists.Of(B, lv).Where(j => j.AreaId == a.Id).ToList();
+            int bad = joists.Count(j => !j.Stands);
+            Hint($"{a.Rect.Width:0.##} × {a.Rect.Height:0.##} ft, from ({a.Rect.X0:0.##}, {a.Rect.Y0:0.##}). {joists.Count} {(Statics.Joists.IsRoof(B, lv) ? "rafters" : "joists")} at {Statics.Joists.SpacingOf(B, lv) * 12:0.#} in., " +
+                 (joists.Count == 0 ? "" : $"{joists.Min(j => j.Length):0.##} to {joists.Max(j => j.Length):0.##} ft long") +
+                 (bad > 0 ? $"; {bad} with fewer than two supports (red)." : "; every one on two supports or more."));
+            if (d != null && d.Framing.Count > 1)
+            {
+                var join = new Button { Content = "Join the areas running the same way", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(0, 6, 0, 0),
+                                        ToolTip = $"Joins {d.Id}'s areas that touch and run the same way: their joists run on through." };
+                var dia = d;
+                join.Click += (s, e) => sketch.Edit($"{dia.Id}: the areas running the same way joined.", b => FramingAreas.Join(b, dia));
+                Children.Add(join);
+                Hint("Delete takes this area away: its place goes to the area beside it, whose joists run on into it.");
+            }
+        }
+
+        /// <summary>A beam's place in the framing: beam or girder, what it carries and what holds it up (found from the drawing).</summary>
+        private void FramingProps(Beam bm)
+        {
+            var lv = B.Level(bm.LevelId);
+            if (lv == null) return;
+            var roles = Statics.FramingRoles.Of(B, lv);
+            if (!roles.TryGetValue(bm.Id, out var m)) return;
+            string held = m.Supports.Count == 0 ? "nothing" : string.Join(", ", m.Supports.Select(s => $"{s.On} at its {s.Name}"));
+            Hint($"In the framing: a {m.Describe()}. Held up by {held}.");
         }
 
         private void LevelProps(Level l)

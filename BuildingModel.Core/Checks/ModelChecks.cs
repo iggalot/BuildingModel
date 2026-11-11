@@ -139,6 +139,7 @@ namespace BuildingModel.Checks
 
             BeamColumnChecks(b, issues);
             BeamStabilityChecks(b, issues);
+            FramingChecks(b, issues);
             RoofChecks(b, Add);
             OverlapChecks(b, Add);
             foreach (var i in issues) Locate(b, i);
@@ -349,6 +350,62 @@ namespace BuildingModel.Checks
             }
         }
 
+        /// <summary>
+        /// Each diaphragm's framing areas cover it exactly (the editor keeps them so; a file written by hand may not), and
+        /// every joist stands: two supports, as a beam (owner 2026-11-10). The joists of an area that do not are one error
+        /// per run of them side by side held the same way, naming the area and its level (shown there when clicked).
+        /// </summary>
+        private static void FramingChecks(Building b, List<ModelIssue> issues)
+        {
+            foreach (var d in b.Diaphragms)
+            {
+                var whole = Region.Of(d.Pieces);
+                var areas = d.Framing ?? new List<FramingArea>();
+                double sum = areas.Sum(a => a.Rect.Area), union = Region.Of(areas.Select(a => a.Rect)).Area, on = areas.Sum(a => whole.AreaWithin(a.Rect));
+                if (whole.IsEmpty) continue;
+                if (areas.Count == 0 || Math.Abs(sum - union) > 1e-6 || Math.Abs(on - sum) > 1e-6 || Math.Abs(union - whole.Area) > 1e-6)
+                    issues.Add(new ModelIssue
+                    {
+                        Severity = Severity.Error, Code = "FramingAreas", Ids = new List<string> { d.Id }.Concat(areas.Select(a => a.Id)).ToList(),
+                        Message = $"The framing areas of {d.Id} do not cover it exactly ({(areas.Count == 0 ? "it has none" : Math.Abs(sum - union) > 1e-6 ? "two overlap" : Math.Abs(on - sum) > 1e-6 ? "one runs off it" : "a part has none")}): " +
+                                  "every part of a floor needs its joists, one way. Open it in the Building Model, which puts them right.",
+                    });
+            }
+            foreach (var lv in b.Levels.Where(l => l.Elevation > 0))
+            {
+                var bad = Joists.Of(b, lv).Where(j => !j.Stands).ToList();
+                foreach (var g in bad.GroupBy(j => j.AreaId))
+                {
+                    var runs = new List<List<Joist>>();
+                    string Key(Joist j) => string.Join(",", j.Supports.Select(s => s.On)) + "|" + j.Supports.Count;
+                    double s = Joists.SpacingOf(b, lv);
+                    // held the same way, then side by side (the two halves of joists cut by an opening are two runs, not one each)
+                    foreach (var same in g.GroupBy(Key))
+                        foreach (var j in same.OrderBy(j => j.Line))
+                        {
+                            var last = runs.LastOrDefault(r => Key(r[0]) == same.Key);
+                            if (last != null && j.Line - last[last.Count - 1].Line <= s + 1e-6) last.Add(j);
+                            else runs.Add(new List<Joist> { j });
+                        }
+                    foreach (var run in runs)
+                    {
+                        var first = run[0];
+                        string axis = first.AlongX ? "y" : "x";
+                        string where = run.Count == 1 ? $"the joist at {axis} = {first.Line:0.##} ft" : $"{run.Count} joists from {axis} = {first.Line:0.##} to {run[run.Count - 1].Line:0.##} ft";
+                        string held = first.Supports.Count == 0 ? "no support" : $"one support ({first.Supports[0].On} at its {first.Supports[0].Name})";
+                        var mid = run[run.Count / 2];
+                        issues.Add(new ModelIssue
+                        {
+                            Severity = Severity.Error, Code = "JoistNotHeldUp", Ids = new List<string> { g.Key }, LevelId = lv.Id,
+                            At = new Point2((mid.Start.X + mid.End.X) / 2, (mid.Start.Y + mid.End.Y) / 2),
+                            Message = $"{(Joists.IsRoof(b, lv) ? "Rafters" : "Joists")} of {g.Key} on {lv.Name}, {(first.AlongX ? "W-E" : "S-N")}: {where} {(run.Count == 1 ? "has" : "have")} {held}. " +
+                                      "A joist needs two to stand (an end may run past one as a cantilever): draw the wall, beam or girder under it, or turn the area. Nothing is calculated until they stand.",
+                        });
+                    }
+                }
+            }
+        }
+
         public static void Locate(Building b, ModelIssue issue)
         {
             var level = issue.Ids.Select(b.Level).FirstOrDefault(l => l != null);
@@ -381,6 +438,10 @@ namespace BuildingModel.Checks
                     case Column c:
                         issue.At = issue.At ?? c.At;
                         level = level ?? b.Level(c.TopLevelId);
+                        break;
+                    case FramingArea a:
+                        issue.At = issue.At ?? new Point2((a.Rect.X0 + a.Rect.X1) / 2, (a.Rect.Y0 + a.Rect.Y1) / 2);
+                        level = level ?? b.Level(FramingAreas.Find(b, a.Id).d?.LevelId);
                         break;
                 }
             }

@@ -306,8 +306,15 @@ namespace BuildingModel.Edits
             var opening = b.OpeningsCutting(level).Where(o => o.Pieces.Any(r => r.Contains(p.X, p.Y)))
                            .OrderBy(o => o.Pieces.Sum(r => r.Area)).Select(o => o.Id).FirstOrDefault();
             if (opening != null) return opening;
-            return b.DiaphragmsOn(level).Where(d => d.Pieces.Any(r => r.Contains(p.X, p.Y)))
-                    .OrderBy(d => d.Pieces.Sum(r => r.Area)).Select(d => d.Id).FirstOrDefault();
+            var dia = b.DiaphragmsOn(level).Where(d => d.Pieces.Any(r => r.Contains(p.X, p.Y)))
+                       .OrderBy(d => d.Pieces.Sum(r => r.Area)).FirstOrDefault();
+            // a floor framed in parts: inside, the framing area there; on its outline, the diaphragm
+            if (dia != null && (dia.Framing?.Count ?? 0) > 1 && !Region.Of(dia.Pieces).Outline().Any(s => DistanceToSegment(p, s) <= reach))
+            {
+                var area = dia.Framing.FirstOrDefault(a => a.Rect.Contains(p.X, p.Y));
+                if (area != null) return area.Id;
+            }
+            return dia?.Id;
         }
 
         /// <summary>The objects of a level wholly inside a window (a selection box).</summary>

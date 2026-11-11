@@ -82,7 +82,7 @@ namespace BuildingModel.Model
 
         /// <summary>The rectangles of an object on the plan (a diaphragm's or an opening's pieces); none for others.</summary>
         public static IEnumerable<Rect2> PiecesOf(ModelObject o) =>
-            o is Diaphragm d ? d.Pieces : o is Opening op ? op.Pieces : Enumerable.Empty<Rect2>();
+            o is Diaphragm d ? d.Pieces : o is Opening op ? op.Pieces : o is FramingArea a ? new[] { a.Rect } : Enumerable.Empty<Rect2>();
 
         /// <summary>The story height under a level (ft): its elevation less the one below; 0 for the ground.</summary>
         public static double StoryHeight(this Building b, Level level)
@@ -95,7 +95,7 @@ namespace BuildingModel.Model
         public static HashSet<string> VisibleIds(this Building b, Level level)
         {
             var ids = new HashSet<string>();
-            foreach (var d in b.DiaphragmsOn(level)) ids.Add(d.Id);
+            foreach (var d in b.DiaphragmsOn(level)) { ids.Add(d.Id); foreach (var a in d.Framing ?? new List<FramingArea>()) ids.Add(a.Id); }
             foreach (var o in b.OpeningsCutting(level)) ids.Add(o.Id);
             foreach (var w in b.WallsShown(level)) ids.Add(w.Id);
             foreach (var n in b.NotesOn(level)) ids.Add(n.Id);

@@ -122,6 +122,7 @@ namespace BuildingModel.Sketch
                 case SketchTool.Diaphragm: return first == null ? $"Diaphragm on {lvl}: first corner." : "Diaphragm: opposite corner (or @width,depth).";
                 case SketchTool.Opening: return first == null ? $"Opening in {lvl}: first corner." : "Opening: opposite corner (or @width,depth).";
                 case SketchTool.Cut: return first == null ? $"Cut from the diaphragms of {lvl}: first corner of the area to take away." : "Cut: opposite corner (or @width,depth).";
+                case SketchTool.Framing: return first == null ? $"Framing area on {lvl}: first corner of the part to turn (its joists run across the area it lies most on)." : "Framing area: opposite corner (or @width,depth).";
                 case SketchTool.Note: return $"Note on {lvl}: click where it goes.";
                 case SketchTool.Beam: return first == null ? $"Beam in the framing of {lvl}: click or type its first end (over the wall or column it bears on)." : "Beam: click or type its other end. It carries what stands on it to its ends.";
                 case SketchTool.Column: return $"Column under {lvl}: click where it stands (from the level below up to {lvl}).";
@@ -213,6 +214,22 @@ namespace BuildingModel.Sketch
                         var d = b.AddDiaphragm(level, r);
                         Commit($"Diaphragm {d.Id} added, {r.Width:0.##} × {r.Height:0.##} ft.");
                     }
+                    break;
+
+                case SketchTool.Framing:
+                    if (level.Elevation == 0) { Say("The ground has no diaphragm: show a level above it.", true); return; }
+                    if (first == null) { first = p; break; }
+                    var fr = new Rect2(first.Value.X, first.Value.Y, p.X, p.Y);
+                    if (fr.IsEmpty) { Say("The rectangle has no area: pick the opposite corner.", true); return; }
+                    first = null;
+                    var fd = FramingAreas.DiaphragmUnder(b, level, fr);
+                    if (fd == null) { Say($"Nothing to frame there: the rectangle is off the diaphragms of {level.Name}.", true); return; }
+                    var fspan = FramingAreas.TurnedFrom(fd, fr);
+                    var placed = FramingAreas.Place(b, fd, fr, fspan);
+                    if (placed.Count == 0) { Say("Nothing to frame there.", true); return; }
+                    Commit($"Framing area {string.Join(", ", placed)} on {fd.Id}: its joists run {(fspan == SpanDirection.WestEast ? "W-E" : "S-N")}; the areas round it are cut back to it " +
+                           "(turn it or delete it in its properties; Ctrl+Z undoes it).");
+                    Select(placed);
                     break;
 
                 case SketchTool.Cut:
@@ -804,6 +821,7 @@ namespace BuildingModel.Sketch
                 case Key.D: SetTool(SketchTool.Diaphragm); return true;
                 case Key.O: SetTool(SketchTool.Opening); return true;
                 case Key.K: SetTool(SketchTool.Cut); return true;
+                case Key.F: SetTool(SketchTool.Framing); return true;
                 case Key.N: SetTool(SketchTool.Note); return true;
                 case Key.B: SetTool(SketchTool.Beam); return true;
                 case Key.P: SetTool(SketchTool.Column); return true;

@@ -190,6 +190,7 @@ namespace BuildingModel.Sketch
             public const string Select = "M4,1.5 L4,13.5 L7,10.6 L9.2,15 L11,14.1 L8.8,9.8 L12.8,9.8 Z";
             public const string Wall = "M1.5,6.5 L14.5,6.5 L14.5,9.5 L1.5,9.5 Z";
             public const string Diaphragm = "M2.5,3.5 L13.5,3.5 L13.5,12.5 L2.5,12.5 Z";
+            public const string Framing = "M2.5,2.5 L13.5,2.5 L13.5,13.5 L2.5,13.5 Z M5.5,2.5 L5.5,13.5 M8,2.5 L8,13.5 M10.5,2.5 L10.5,13.5";
             public const string Cut = "M2.5,2.5 L13.5,2.5 L13.5,8 L8,8 L8,13.5 L2.5,13.5 Z M9.5,9.5 L13.5,13.5 M13.5,9.5 L9.5,13.5";
             public const string Opening = "M2.5,2.5 L13.5,2.5 L13.5,13.5 L2.5,13.5 Z M2.5,2.5 L13.5,13.5 M13.5,2.5 L2.5,13.5";
             public const string Beam = "M1.5,6.5 L14.5,6.5 M1.5,9.5 L14.5,9.5 M1.5,6.5 L1.5,9.5 M14.5,6.5 L14.5,9.5 M5,6.5 L5,9.5 M11,6.5 L11,9.5";

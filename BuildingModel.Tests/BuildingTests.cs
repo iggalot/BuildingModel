@@ -36,6 +36,11 @@ namespace BuildingModel.Tests
                 b.AddWall(levels[i - 1], levels[i], 60, 0, 60, 40);
             }
             lobby = b.AddOpening(ground, l3, new Rect2(5, 5, 25, 25));
+            // the lobby framed in Level 2: trimmers S-N beside it on the outside walls, headers W-E across its ends on them (the joists S-N cut by it bear on the headers)
+            b.AddBeam(l2, 5, 0, 5, 40);
+            b.AddBeam(l2, 25, 0, 25, 40);
+            b.AddBeam(l2, 5, 5, 25, 5);
+            b.AddBeam(l2, 5, 25, 25, 25);
             return b;
         }
 
@@ -47,7 +52,7 @@ namespace BuildingModel.Tests
             var l = b.AddLevel("Roof", 10);
             var d = b.AddDiaphragm(l, new Rect2(0, 0, 10, 10));
             var w = b.AddWall(b.Ground, l, 0, 0, 10, 0);
-            Assert.AreEqual(4, b.AllIds().Distinct().Count());
+            Assert.AreEqual(5, b.AllIds().Distinct().Count()); // the ground, the level, the diaphragm, its framing area, the wall
             Assert.AreEqual("W1", w.Id);
             Assert.AreEqual("D1", d.Id);
         }

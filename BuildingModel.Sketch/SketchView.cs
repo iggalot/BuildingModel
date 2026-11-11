@@ -87,6 +87,7 @@ namespace BuildingModel.Sketch
             toolStrip.Children.Add(Ui.HSeparator());
             Tool(SketchTool.Wall, Ui.Icons16.Wall, "Wall", "W", "A wall of the story under this level; walls are square. Right-click or Enter ends a run.", fill: true);
             Tool(SketchTool.Diaphragm, Ui.Icons16.Diaphragm, "Diaphragm", "D", "A rectangle of floor or roof on this level; touching rectangles merge. Select it to drag its corners or sides.", fill: true);
+            Tool(SketchTool.Framing, Ui.Icons16.Framing, "Framing area", "F", "Turn the joists in part of this level's floor: a rectangle whose joists run across the area it lies most on. The areas round it are cut back, so a joist that ran through ends at it (that edge needs a wall, beam or girder under it). Turn it, or delete it, in its properties.");
             Tool(SketchTool.Cut, Ui.Icons16.Cut, "Cut out", "K", "Take a rectangle out of this level's diaphragms: a notch, an L, a courtyard. A part left separate becomes its own diaphragm.");
             Tool(SketchTool.Opening, Ui.Icons16.Opening, "Opening", "O", "A hole through this level (stairs, a lobby); set taller ones in the properties.");
             Tool(SketchTool.Beam, Ui.Icons16.Beam, "Beam", "B", "A beam in this level's framing: it carries what stands on it from the story above (a hold-down or post with no wall under it) to its ends, which bear on the walls or columns below.");

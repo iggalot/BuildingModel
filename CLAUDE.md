@@ -49,6 +49,22 @@
     gives the designed ones. `Drawn` says which half a plan shows (the hold-downs' WISE rule); a picked diaphragm is in
     the body as `DiaphragmKey(levelId)`, and the plan draws its free body in one case (`SketchCanvas.FreeBodyCase`,
     `DiaphragmCase`).
+  - **Framing areas** (format version 8, owner 2026-11-10): a diaphragm has no span of its own. Its `Framing` is
+    rectangles (`FramingArea`: `Rect`, `Span` W-E or S-N) that cover it exactly; a part turned the other way is its own
+    area and the ones round it are cut back (`FramingAreas.Place`), so a joist that ran through is two ending at it.
+    `FramingAreas.Fill`/`Tidy` keep them so after every edit (`SketchCanvas.Commit`, `ModelFile.FromJson`: an older
+    file's `Diaphragm.Span` becomes one area, then is cleared); cuts run with the joists (`Slice`). Move, mirror, copy
+    and cut carry a diaphragm's areas (a copy gets new IDs, `Renumber`); `Delete` gives an area's place to the one
+    beside it; `Reshape` is its grips; `Join` merges same-way neighbours. The plan's **Framing area** tool (F) draws one
+    across the area it lies most on (`TurnedFrom`); a click inside a floor framed in parts picks the area, its outline
+    the diaphragm. Rectangles only for now (polygons later: ROADMAP).
+  - **Joists** (`BuildingModel.Statics.Joists`): laid out from the areas at the floors' or roof's spacing, edge to edge,
+    cut by openings; each held by every wall, column and beam under it anywhere along it (`SupportsOf`), never by a
+    joist. Fewer than two is the model's error `JoistNotHeldUp` (one per run held the same way, naming the area and
+    level): nothing is calculated, as for a beam. An opening needs its headers and trimmers drawn as beams. A sloped
+    roof's rafters are the roof's (across the ridge), not laid out. **Girders** are found, never declared
+    (`FramingRoles`): a beam carrying a beam. The plan draws the joists (red when not held up), the areas' edges, a
+    marker per area, and "BM1 · girder".
   - **Connection details are not in this model (owner 2026-11-07: no god class).** Nailing, sill bolts, diaphragm lines and
     their defaults are `..\WoodFraming\WoodFraming.Connections` (its own "Connections" and "ConnectionDefaults" sections,
     keyed by this model's ids; it references BuildingModel.Core, never the other way). The forces stay here: the

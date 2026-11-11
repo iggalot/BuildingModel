@@ -168,11 +168,15 @@ namespace BuildingModel.Sketch
             if (ShowJoints) DrawJoints(ctx, b, walls);
             if (ShowShearParts) DrawShearParts(ctx, b, walls);
 
+            // the joists of each framing area (thin, as on a framing plan; red where one has fewer than two supports), the areas' edges
+            Dictionary<string, Statics.FramingMember> roles = null;
+            if (ShowSpans && !foundation) roles = DrawFraming(ctx, b, level);
+
             // beams in this level's framing (brown, dash-dot as on framing plans) and the columns under it (filled squares)
             foreach (var bm in b.BeamsOn(level))
             {
                 Line(ctx, BeamPen, bm.Start, bm.End);
-                BeamLabel(ctx, bm);
+                BeamLabel(ctx, bm, roles != null && roles.TryGetValue(bm.Id, out var role) && role.Role == Statics.FramingRole.Girder ? " · girder" : "");
             }
             foreach (var c in b.ColumnsUnder(level))
             {
@@ -200,7 +204,7 @@ namespace BuildingModel.Sketch
                 if (!ShowSpans) foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
                 foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true); }
             }
-            if (ShowSpans) foreach (var d in b.DiaphragmsOn(level)) SpanMarker(ctx, b, d, ShowLabels);
+            if (ShowSpans) foreach (var d in b.DiaphragmsOn(level)) SpanMarkers(ctx, b, d, ShowLabels);
             // the hold-downs after the members' labels, so theirs keep off them (the shared rule, as in every app)
             if (ShowConnections) { DrawShearPairs(ctx, b, level); DrawConnections(ctx, b, level, foundation); }
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
@@ -659,40 +663,83 @@ namespace BuildingModel.Sketch
 
         private double Dpi => VisualTreeHelper.GetDpi(this).PixelsPerDip;
 
-        /// <summary>" · spans W-E" after a diaphragm's ID (a sloped roof's rafters: across the ridge).</summary>
-        private static string SpanTag(Building b, Diaphragm d) => SpanOf(b, d) == SpanDirection.WestEast ? " · spans W-E" : " · spans S-N";
-
-        /// <summary>The way a diaphragm's framing runs: a sloped roof's rafters across the ridge, else its own span (Auto: the shorter way).</summary>
-        private static SpanDirection SpanOf(Building b, Diaphragm d)
+        /// <summary>A sloped roof's diaphragm: its rafters run across the ridge, not by framing areas.</summary>
+        private static bool AcrossRidge(Building b, Diaphragm d)
         {
             var roof = b.RoofLevel();
-            return roof != null && d.LevelId == roof.Id && b.Roof != null && b.Roof.IsSloped
-                ? (b.EffectiveRidge() == RidgeAxis.WestEast ? SpanDirection.SouthNorth : SpanDirection.WestEast)
-                : d.EffectiveSpan;
+            return roof != null && d.LevelId == roof.Id && b.Roof != null && b.Roof.IsSloped;
+        }
+
+        /// <summary>" · spans W-E" after a diaphragm's ID; " · 3 framing areas" when it is turned in parts; the rafters of a sloped roof across the ridge.</summary>
+        private static string SpanTag(Building b, Diaphragm d)
+        {
+            if (AcrossRidge(b, d)) return b.EffectiveRidge() == RidgeAxis.WestEast ? " · rafters S-N" : " · rafters W-E";
+            var f = d.Framing ?? new List<FramingArea>();
+            if (f.Count == 0) return "";
+            if (f.Count == 1) return f[0].Span == SpanDirection.WestEast ? " · spans W-E" : " · spans S-N";
+            return $" · {f.Count} framing areas";
         }
 
         private static readonly Pen SpanPen = P(Palette.DiaphragmEdge, 1.6);
         private static readonly Brush SpanInk = B(Palette.DiaphragmEdge);
+        private static readonly Pen JoistPen = Frozen(new Pen(new SolidColorBrush(Color.FromArgb(0x70, 0x8A, 0x6A, 0x3A)), 0.8));
+        private static readonly Pen JoistBadPen = Frozen(new Pen(new SolidColorBrush(Color.FromArgb(0xD0, 0xC0, 0x35, 0x2B)), 1.4));
+        private static readonly Pen AreaEdgePen = Frozen(new Pen(SpanInk, 1.0) { DashStyle = new DashStyle(new double[] { 6, 3 }, 0) });
+
+        private static Pen Frozen(Pen p) { p.Freeze(); return p; }
 
         /// <summary>
-        /// A framing zone's span marker, as on a framing plan: in the middle of its largest piece, a line the way its joists or
-        /// rafters run with an arrowhead and a bearing bar at each end, and its ID with the span ("D2 · joists S-N", "auto" where
-        /// the shorter way was taken, "rafters" across a sloped roof's ridge).
+        /// The framing of a level: each area's edge (dashed) where a diaphragm is framed in parts, and its joists (as laid out
+        /// by <see cref="Statics.Joists"/>: thin lines, red where one has fewer than two supports; left out when too close
+        /// together to see at this zoom, the red ones always). Returns the beams' roles (beam or girder) for their labels.
         /// </summary>
-        private void SpanMarker(DrawingContext ctx, Building b, Diaphragm d, bool label)
+        private Dictionary<string, Statics.FramingMember> DrawFraming(DrawingContext ctx, Building b, Level level)
+        {
+            var joists = Statics.Joists.Of(b, level);
+            bool dense = Statics.Joists.SpacingOf(b, level) * Zoom < 4;
+            foreach (var j in joists)
+                if (!j.Stands) Line(ctx, JoistBadPen, j.Start, j.End);
+                else if (!dense) Line(ctx, JoistPen, j.Start, j.End);
+            foreach (var d in b.DiaphragmsOn(level).Where(d => (d.Framing?.Count ?? 0) > 1 && !AcrossRidge(b, d)))
+                foreach (var a in d.Framing) ctx.DrawRectangle(null, AreaEdgePen, ScreenRect(a.Rect));
+            return Statics.FramingRoles.Of(b, level, joists);
+        }
+
+        /// <summary>A diaphragm's span markers: one per framing area (a sloped roof's one, across the ridge).</summary>
+        private void SpanMarkers(DrawingContext ctx, Building b, Diaphragm d, bool label)
         {
             if (d.Pieces == null || d.Pieces.Count == 0) return;
-            var r = d.Pieces.OrderByDescending(p => p.Width * p.Height).First();
+            var roof = b.RoofLevel();
+            bool rafters = roof != null && d.LevelId == roof.Id;
+            if (AcrossRidge(b, d))
+            {
+                var big = d.Pieces.OrderByDescending(p => p.Width * p.Height).First();
+                bool weRidge = b.EffectiveRidge() == RidgeAxis.WestEast;
+                SpanMarker(ctx, b, d.LevelId, big, weRidge ? SpanDirection.SouthNorth : SpanDirection.WestEast,
+                           $"{d.Id} · rafters {(weRidge ? "S-N" : "W-E")} (across the ridge)", label);
+                return;
+            }
+            bool parts = (d.Framing?.Count ?? 0) > 1;
+            foreach (var a in d.Framing ?? new List<FramingArea>())
+                SpanMarker(ctx, b, d.LevelId, a.Rect, a.Span, $"{(parts ? a.Id : d.Id)} · {(rafters ? "rafters" : "joists")} {(a.Span == SpanDirection.WestEast ? "W-E" : "S-N")}", label);
+        }
+
+        /// <summary>
+        /// A framing area's span marker, as on a framing plan: in the middle of its rectangle, a line the way its joists or
+        /// rafters run with an arrowhead and a bearing bar at each end, and its label ("FA2 · joists S-N"; the diaphragm's ID
+        /// where it is framed one way all over, "rafters" across a sloped roof's ridge).
+        /// </summary>
+        private void SpanMarker(DrawingContext ctx, Building b, string levelId, Rect2 r, SpanDirection span, string text, bool label)
+        {
             if (r.IsEmpty) return;
-            var span = SpanOf(b, d);
             bool we = span == SpanDirection.WestEast;
             var sr = ScreenRect(r);
             double room = we ? sr.Width : sr.Height;
             double half = Math.Min(70, Math.Max(14, 0.3 * room));
             // in the middle, or slid across the span to the first place clear of the walls and beams (an interior wall down the middle)
             double hp = half / Math.Max(1e-9, Zoom);
-            var lines = b.WallsUnder(b.Level(d.LevelId)).Select(w => new Segment2(w.Start, w.End))
-                         .Concat(b.BeamsOn(b.Level(d.LevelId)).Select(m => new Segment2(m.Start, m.End))).ToList();
+            var lines = b.WallsUnder(b.Level(levelId)).Select(w => new Segment2(w.Start, w.End))
+                         .Concat(b.BeamsOn(b.Level(levelId)).Select(m => new Segment2(m.Start, m.End))).ToList();
             double clear = Math.Max(1.5, 14 / Math.Max(1e-9, Zoom));
             Point2 mid = new Point2((r.X0 + r.X1) / 2, (r.Y0 + r.Y1) / 2);
             foreach (double f in new[] { 0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8 })
@@ -726,10 +773,6 @@ namespace BuildingModel.Sketch
                 ctx.DrawLine(SpanPen, tip + n * bar, tip - n * bar);     // the bearing: the wall or beam it lands on
             }
             if (!label) return;
-            var roof = b.RoofLevel();
-            bool rafters = roof != null && d.LevelId == roof.Id;
-            bool across = rafters && b.Roof != null && b.Roof.IsSloped;
-            string text = $"{d.Id} · {(rafters ? "rafters" : "joists")} {(we ? "W-E" : "S-N")}" + (across ? " (across the ridge)" : d.Span == SpanDirection.Auto ? " (auto)" : "");
             // beside the marker where it is clear of the walls, beams and wall labels: right, left, under, over
             var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10 * LabelScale, SpanInk, Dpi);
             double tw = ft.Width + 4, th = ft.Height + 2;
@@ -757,7 +800,7 @@ namespace BuildingModel.Sketch
             AlongLabel(ctx, $"{w.Id}  {w.Length:0.##}'", ToScreen(w.Start), ToScreen(w.End), MutedBrush);
 
         /// <summary>A beam's name along the beam, beside its middle.</summary>
-        private void BeamLabel(DrawingContext ctx, Beam bm) => AlongLabel(ctx, bm.Id, ToScreen(bm.Start), ToScreen(bm.End), BeamBrush);
+        private void BeamLabel(DrawingContext ctx, Beam bm, string role = "") => AlongLabel(ctx, bm.Id + role, ToScreen(bm.Start), ToScreen(bm.End), BeamBrush);
 
         /// <summary>
         /// A label turned to run along the line a–b (screen), beside its middle: read left to right, or bottom to top on a
@@ -1014,6 +1057,12 @@ namespace BuildingModel.Sketch
                             Line(ctx, PreviewPen, c.A, c.B);
                         }
                         Label(ctx, $"{Snapper.Dist(a, e):0.##} ft" + (WallDrawnBy == WallLine.Centre ? "" : $", along its {WallLineWords(WallDrawnBy)}"), ToScreen(e) + new Vector(10, -18), B(Palette.Preview));
+                        break;
+                    case SketchTool.Framing:
+                        var fr = new Rect2(a.X, a.Y, cursor.X, cursor.Y);
+                        ctx.DrawRectangle(null, AreaEdgePen, ScreenRect(fr));
+                        var fd = FramingAreas.DiaphragmUnder(Building, ActiveLevel, fr);
+                        Label(ctx, $"framing {fr.Width:0.##} × {fr.Height:0.##} ft" + (fd == null ? " (off the floor)" : FramingAreas.TurnedFrom(fd, fr) == SpanDirection.WestEast ? ", joists W-E" : ", joists S-N"), ToScreen(cursor) + new Vector(10, -18), B(Palette.Preview));
                         break;
                     case SketchTool.Cut:
                         var cr = new Rect2(a.X, a.Y, cursor.X, cursor.Y);

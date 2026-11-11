@@ -49,7 +49,7 @@ namespace BuildingModel.Sketch
             root.Children.Add(DialogUi.Heading(Path.GetFileName(path)));
             string skipped = drawing.Skipped.Count == 0 ? "" :
                 " Not imported: " + string.Join(", ", drawing.Skipped.OrderByDescending(kv => kv.Value).Take(5).Select(kv => $"{kv.Value} {kv.Key.ToLowerInvariant()}")) +
-                (drawing.Skipped.Count > 5 ? ", ..." : "") + " (text, dimensions and hatches are left out).";
+                (drawing.Skipped.Count > 5 ? ", ..." : "") + " (dimensions and hatches are left out).";
             root.Children.Add(DialogUi.Note($"{drawing.Paths.Count} lines, polylines and arcs on {drawing.Layers().Count} layers.{skipped}"));
 
             var unitsRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };

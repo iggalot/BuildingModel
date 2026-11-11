@@ -236,7 +236,17 @@ namespace BuildingModel.Sketch
         [IgnoreDataMember] private List<double[]> paths;   // CAD: x, y pairs in image units (the last value of each array is 1 when closed)
         [IgnoreDataMember] private List<string> pathLayers; // CAD: each path's layer, in the order of paths
         [IgnoreDataMember] private System.Windows.Media.Geometry linework;
+        [IgnoreDataMember] private List<PlanText> texts;    // CAD: the text on the chosen layers, in image units
         [IgnoreDataMember] private BitmapSource bitmap;
+
+        /// <summary>A CAD text in image units (y down), its glyphs made once.</summary>
+        private sealed class PlanText
+        {
+            public double X, Y, Height, Angle;
+            public int Across, Up;
+            public string Text;
+            public FormattedText Glyphs;
+        }
         [IgnoreDataMember] private bool loaded;
 
         /// <summary>Why the file could not be shown (null when it was).</summary>
@@ -261,6 +271,11 @@ namespace BuildingModel.Sketch
                 }
                 xy[xy.Length - 1] = p.Closed ? 1 : 0;
                 return xy;
+            }).ToList();
+            texts = drawing.Texts.Where(t => layers == null || layers.Contains(t.Layer)).Select(t => new PlanText
+            {
+                X = (t.At.X - box.Left) * k, Y = (box.Bottom - t.At.Y) * k, Height = t.Height * k, Angle = t.Angle,
+                Across = t.Across, Up = t.Up, Text = t.Text,
             }).ToList();
             PixelWidth = Math.Max(1, (int)Math.Ceiling(box.Width * k));
             PixelHeight = Math.Max(1, (int)Math.Ceiling(box.Height * k));
@@ -305,6 +320,7 @@ namespace BuildingModel.Sketch
             if (IsDxf && (previous.DxfFeetPerUnit != DxfFeetPerUnit || !(previous.DxfLayers ?? new List<string>()).SequenceEqual(DxfLayers ?? new List<string>()))) return;
             bitmap = previous.bitmap;
             linework = previous.linework;
+            texts = previous.texts;
             paths = previous.paths;
             pathLayers = previous.pathLayers;
             loaded = true;
@@ -365,6 +381,36 @@ namespace BuildingModel.Sketch
             return p;
         }
 
+        private static readonly Typeface TextFace = new Typeface("Segoe UI");
+
+        /// <summary>
+        /// The CAD text (room names, labels; 2026-11-11: they were not drawn), in the linework's ink, turned and scaled with the
+        /// plan. A text under 4 pixels high at this zoom is left out (unreadable, and a crowded plan stays quick).
+        /// </summary>
+        private void DrawTexts(DrawingContext ctx, Matrix m, double opacity)
+        {
+            if (texts == null || texts.Count == 0) return;
+            double scale = Math.Sqrt(m.M11 * m.M11 + m.M12 * m.M12); // screen pixels per image unit
+            ctx.PushOpacity(opacity);
+            ctx.PushTransform(new MatrixTransform(m));
+            foreach (var t in texts)
+            {
+                if (t.Height * scale < 4) continue;
+                // the DXF height is the capitals': about 0.7 of the em
+                if (t.Glyphs == null)
+                    t.Glyphs = new FormattedText(t.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, TextFace, t.Height / 0.7, LinePen.Brush, 1.0);
+                var f = t.Glyphs;
+                double ox = t.Across == 1 ? -f.Width / 2 : t.Across == 2 ? -f.Width : 0;
+                double oy = t.Up == 3 ? 0 : t.Up == 2 ? -f.Height / 2 : t.Up == 1 ? -f.Height : -f.Baseline;
+                bool turned = Math.Abs(t.Angle) > 1e-6;
+                if (turned) ctx.PushTransform(new RotateTransform(-t.Angle, t.X, t.Y)); // counter-clockwise on the plan, y down here
+                ctx.DrawText(f, new Point(t.X + ox, t.Y + oy));
+                if (turned) ctx.Pop();
+            }
+            ctx.Pop();
+            ctx.Pop();
+        }
+
         /// <summary>Draws the plan with the sketch's transform (image units → world → screen).</summary>
         public void Draw(DrawingContext ctx, SketchCanvas s)
         {
@@ -381,6 +427,7 @@ namespace BuildingModel.Sketch
                 ctx.PushOpacity(opacity);
                 ctx.DrawGeometry(null, LinePen, g);
                 ctx.Pop();
+                DrawTexts(ctx, m, opacity);
             }
             else if (bitmap != null)
             {

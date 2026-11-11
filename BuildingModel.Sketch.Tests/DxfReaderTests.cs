@@ -112,13 +112,36 @@ namespace BuildingModel.Sketch.Tests
         }
 
         [TestMethod]
-        public void PaperSpace_TextAndDimensions_Skipped()
+        public void PaperSpace_DimensionsAndHatches_Skipped_TextRead()
         {
-            var d = Read(1, "", "0|LINE|8|A|67|1|10|0|20|0|11|1|21|0|0|TEXT|8|A|10|0|20|0|1|HELLO|0|DIMENSION|8|A|0|HATCH|8|A|0|LINE|8|A|10|0|20|0|11|2|21|0");
+            var d = Read(1, "", "0|LINE|8|A|67|1|10|0|20|0|11|1|21|0|0|TEXT|8|A|10|0|20|0|40|6|1|HELLO|0|DIMENSION|8|A|0|HATCH|8|A|0|LINE|8|A|10|0|20|0|11|2|21|0");
             Assert.AreEqual(1, d.Paths.Count);
-            Assert.AreEqual(1, d.Skipped["TEXT"]);
+            Assert.IsFalse(d.Skipped.ContainsKey("TEXT"));
             Assert.AreEqual(1, d.Skipped["DIMENSION"]);
             Assert.AreEqual(1, d.Skipped["HATCH"]);
+            Assert.AreEqual("HELLO", d.Texts.Single().Text);
+        }
+
+        [TestMethod]
+        public void Text_AlignedAndMText_PlacedTurnedAndPlain()
+        {
+            var d = Read(1, "",
+                "0|TEXT|8|ROOMS|10|0|20|0|11|50|21|20|40|6|50|90|72|1|73|2|1|KITCHEN|" +
+                "0|MTEXT|8|ROOMS|10|100|20|200|40|9|71|5|1|{\\fArial;BED}\\PROOM 2|");
+            Assert.AreEqual(2, d.Texts.Count);
+            var t = d.Texts[0];
+            Near(new Point(50, 20), t.At);          // by its alignment point (72/73 not zero)
+            Assert.AreEqual(90, t.Angle, Tol);
+            Assert.AreEqual(6, t.Height, Tol);
+            Assert.AreEqual(1, t.Across);
+            Assert.AreEqual(2, t.Up);
+            var m = d.Texts[1];
+            Near(new Point(100, 200), m.At);
+            Assert.AreEqual(9, m.Height, Tol);
+            Assert.AreEqual("BED\nROOM 2", m.Text);
+            Assert.AreEqual(1, m.Across);           // attach 5: middle center
+            Assert.AreEqual(2, m.Up);
+            Assert.AreEqual("1/2\" ⌀ 45°", DxfReader.PlainMText("\\S1/2;\" %%c 45%%d"));
         }
 
         [TestMethod]

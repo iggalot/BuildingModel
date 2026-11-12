@@ -357,6 +357,7 @@ namespace BuildingModel.Checks
         /// </summary>
         private static void FramingChecks(Building b, List<ModelIssue> issues)
         {
+            BearingWallChecks(b, issues);
             foreach (var d in b.Diaphragms)
             {
                 var whole = Region.Of(d.Pieces);
@@ -403,6 +404,69 @@ namespace BuildingModel.Checks
                         });
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// A bearing wall standing on a floor or roof along its joists or rafters needs a beam under it where no wall is (owner
+        /// 2026-11-12; IRC R502.4, IBC 2308 "joists under bearing partitions": the joists there re-spaced so the beam fits). A
+        /// wall across them stands on the joists it crosses. One error per wall, naming the stretch (ft from its start).
+        /// </summary>
+        private static void BearingWallChecks(Building b, List<ModelIssue> issues)
+        {
+            const double near = 0.25;
+            foreach (var w in b.Walls.Where(x => x.Direction != WallDirection.NotOrthogonal))
+            {
+                var lv = b.Level(w.BaseLevelId);
+                if (lv == null || lv.Elevation <= 0) continue;
+                bool wx = Math.Abs(w.End.Y - w.Start.Y) < 1e-6;
+                double at = wx ? w.Start.Y : w.Start.X;
+                double a0 = wx ? w.Start.X : w.Start.Y, a1 = wx ? w.End.X : w.End.Y;
+                bool flip = a1 < a0;
+                double lo = Math.Min(a0, a1), hi = Math.Max(a0, a1);
+                // the stretches along the framing: the areas framed its way that it stands in (an area's edge too)
+                var along = new List<(double a, double c)>();
+                foreach (var d in b.Diaphragms.Where(d => d.LevelId == lv.Id))
+                    foreach (var fa in (d.Framing ?? new List<FramingArea>()).Where(fa => fa.AlongX == wx))
+                    {
+                        double p0 = wx ? fa.Rect.Y0 : fa.Rect.X0, p1 = wx ? fa.Rect.Y1 : fa.Rect.X1;
+                        double q0 = wx ? fa.Rect.X0 : fa.Rect.Y0, q1 = wx ? fa.Rect.X1 : fa.Rect.Y1;
+                        if (at < p0 - near || at > p1 + near) continue;
+                        double a = Math.Max(lo, q0), c = Math.Min(hi, q1);
+                        if (c - a > near) along.Add((a, c));
+                    }
+                if (along.Count == 0) continue;
+                // what is under it on its line: the walls of the story below and the level's beams
+                var under = new List<(double a, double c)>();
+                void Try(Point2 s, Point2 e)
+                {
+                    bool ux = Math.Abs(e.Y - s.Y) < 1e-6, uy = Math.Abs(e.X - s.X) < 1e-6;
+                    if (wx ? !ux : !uy) return;
+                    if (Math.Abs((wx ? s.Y : s.X) - at) > near) return;
+                    under.Add((Math.Min(wx ? s.X : s.Y, wx ? e.X : e.Y), Math.Max(wx ? s.X : s.Y, wx ? e.X : e.Y)));
+                }
+                foreach (var x in BeamSupports.WallsUnder(b, lv).Where(x => x.Id != w.Id)) Try(x.Start, x.End);
+                foreach (var m in b.Beams.Where(m => m.LevelId == lv.Id)) Try(m.Start, m.End);
+                var bare = new List<(double a, double c)>();
+                foreach (var (a, c) in along.OrderBy(t => t.a))
+                {
+                    double from = a;
+                    foreach (var (ua, uc) in under.Where(u => u.c > a && u.a < c).OrderBy(u => u.a))
+                    {
+                        if (ua - from > near) bare.Add((from, ua));
+                        from = Math.Max(from, uc);
+                    }
+                    if (c - from > near) bare.Add((from, c));
+                }
+                if (bare.Count == 0) continue;
+                string where = string.Join(", ", bare.Select(t => { double f = flip ? hi - t.c : t.a - lo, e = flip ? hi - t.a : t.c - lo; return $"{f:0.##} to {e:0.##} ft"; }));
+                issues.Add(new ModelIssue
+                {
+                    Severity = Severity.Error, Code = "WallNeedsBeam", Ids = new List<string> { w.Id }, LevelId = lv.Id,
+                    At = wx ? new Point2((bare[0].a + bare[0].c) / 2, at) : new Point2(at, (bare[0].a + bare[0].c) / 2),
+                    Message = $"{w.Id} stands on {lv.Name} along its {(Joists.IsRoof(b, lv) ? "rafters" : "joists")} with no wall or beam under it ({where} from its start). " +
+                              "A bearing wall along the framing needs a beam under it there (a doubled joist; the joists re-spaced so it fits: IRC R502.4). Draw the beam. Nothing is calculated until it is.",
+                });
             }
         }
 

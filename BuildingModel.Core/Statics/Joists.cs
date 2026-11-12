@@ -69,12 +69,24 @@ namespace BuildingModel.Statics
                     // a joist on every area's edges, and between at the spacing from the first edge (none nearer an edge than a quarter of it)
                     var edges = areas.SelectMany(t => new[] { t.p0, t.p1 }).OrderBy(p => p).ToList();
                     double first = edges[0], last = edges[edges.Count - 1];
+                    // a beam running the framing's way inside it takes a joist's place, and the joists are spaced again from it
+                    // so the spacing holds each side (owner 2026-11-12: re-spaced so the beam fits, still 16" or 24" o.c.)
+                    var along = BeamsAlong(beams, x, first, last, areas.Select(t => (t.q0, t.q1)).ToList());
+                    var starts = new[] { first }.Concat(along.Select(t => t.p).Where(p => p > first + E && p < last - E)).Distinct().OrderBy(p => p).ToList();
+                    var fixedLines = edges.Concat(starts).ToList();
                     var lines = new List<double>(edges);
-                    for (int k = 1; first + k * s < last - E; k++)
+                    for (int i = 0; i < starts.Count; i++)
                     {
-                        double p = first + k * s;
-                        if (edges.All(e => Math.Abs(e - p) >= s / 4)) lines.Add(p);
+                        double from = starts[i], to = i + 1 < starts.Count ? starts[i + 1] : last;
+                        if (i > 0) lines.Add(from);
+                        for (int k = 1; from + k * s < to - E; k++)
+                        {
+                            double p = from + k * s;
+                            if (fixedLines.All(e => Math.Abs(e - p) >= s / 4)) lines.Add(p);
+                        }
                     }
+                    // the beams themselves are cut out of their own lines (the beam is the member there)
+                    var beamHoles = along.Select(t => x ? new Rect2(t.q0, t.p - 0.01, t.q1, t.p + 0.01) : new Rect2(t.p - 0.01, t.q0, t.p + 0.01, t.q1)).ToList();
                     var at = new List<double>();
                     foreach (double p in lines.OrderBy(p => p)) if (at.Count == 0 || p - at[at.Count - 1] > E) at.Add(p);
                     foreach (double p in at)
@@ -86,7 +98,7 @@ namespace BuildingModel.Statics
                             if (merged.Count > 0 && u <= merged[merged.Count - 1].b + E) merged[merged.Count - 1] = (merged[merged.Count - 1].a, Math.Max(merged[merged.Count - 1].b, v));
                             else merged.Add((u, v));
                         foreach (var (m0, m1) in merged)
-                            foreach (var (u0, u1) in Cut(m0, m1, p, x, holes))
+                            foreach (var (u0, u1) in Cut(m0, m1, p, x, holes.Concat(beamHoles.Where(h => (x ? h.Y0 < p && p < h.Y1 : h.X0 < p && p < h.X1))).ToList()))
                             {
                                 // the area it is in at its middle (a joist running through several: the one it is named by)
                                 double mid = (u0 + u1) / 2;
@@ -102,6 +114,27 @@ namespace BuildingModel.Statics
                             }
                     }
                 }
+            return list;
+        }
+
+        /// <summary>
+        /// The beams running the framing's way (<paramref name="alongX"/>) inside a run of areas: each one's line across the
+        /// framing (p) and its extent along it (q0 to q1), where it overlaps the areas.
+        /// </summary>
+        private static List<(double p, double q0, double q1)> BeamsAlong(IList<Beam> beams, bool alongX, double first, double last, List<(double q0, double q1)> extents)
+        {
+            var list = new List<(double, double, double)>();
+            foreach (var m in beams)
+            {
+                double dx = m.End.X - m.Start.X, dy = m.End.Y - m.Start.Y;
+                bool runsX = Math.Abs(dy) < 1e-6 && Math.Abs(dx) > 1e-6, runsY = Math.Abs(dx) < 1e-6 && Math.Abs(dy) > 1e-6;
+                if (alongX ? !runsX : !runsY) continue;
+                double p = alongX ? m.Start.Y : m.Start.X;
+                if (p <= first + E || p >= last - E) continue;
+                double a = alongX ? Math.Min(m.Start.X, m.End.X) : Math.Min(m.Start.Y, m.End.Y), c = alongX ? Math.Max(m.Start.X, m.End.X) : Math.Max(m.Start.Y, m.End.Y);
+                if (!extents.Any(t => Math.Min(c, t.q1) - Math.Max(a, t.q0) > E)) continue;
+                list.Add((p, a, c));
+            }
             return list;
         }
 

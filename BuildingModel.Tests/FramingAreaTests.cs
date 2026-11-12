@@ -83,6 +83,35 @@ namespace BuildingModel.Tests
             Assert.IsTrue(Joists.Of(b, l2).All(j => j.Stands));
         }
 
+        /// <summary>
+        /// Owner 2026-11-12: a bearing wall along the joists needs a beam under it. The W-E floor (16" joists: a roof above it),
+        /// a wall standing on it at y = 10 along the joists: the model's error, naming 0 to 40 ft. A wall across them (x = 20)
+        /// stands on the joists it crosses: no error. The beam drawn under the first (the end walls hold it): no error, and the
+        /// joists are spaced again from it, 16" each side; none lies under the beam itself.
+        /// </summary>
+        [TestMethod]
+        public void BearingWallAlongTheJoists_NeedsABeam_TheJoistsSpacedFromIt()
+        {
+            var b = Floor(out var l2, out var d);
+            var rf = b.AddLevel("Roof", 20);
+            b.AddDiaphragm(rf, new Rect2(0, 0, 40, 20));
+            b.AddWall(l2, rf, 0, 10, 40, 10);
+            b.AddWall(l2, rf, 20, 0, 20, 10);
+            var e = Errors(b, "WallNeedsBeam");
+            Assert.AreEqual(1, e.Length, string.Join(" | ", e.Select(x => x.Message)));
+            Assert.AreEqual(Severity.Error, e[0].Severity);
+            StringAssert.Contains(e[0].Message, "0 to 40 ft");
+
+            b.AddBeam(l2, 0, 10, 40, 10);
+            Assert.AreEqual(0, Errors(b, "WallNeedsBeam").Length);
+            double s = 16.0 / 12;
+            var lines = Joists.Of(b, l2).Where(j => j.AlongX).Select(j => j.Line).Distinct().OrderBy(y => y).ToList();
+            Assert.IsFalse(lines.Any(y => Math.Abs(y - 10) < 1e-6), "the beam is the member on its line");
+            Assert.IsTrue(lines.Any(y => Math.Abs(y - (10 + s)) < 1e-6), "spaced again from the beam");
+            var all = lines.Concat(new[] { 10.0 }).OrderBy(y => y).ToList();
+            Assert.IsTrue(all.Zip(all.Skip(1), (p, q) => q - p).All(g => g <= s + 1e-6), "never more than 16\" apart, the beam counted");
+        }
+
         [TestMethod]
         public void TurnedFrom_ADrawnAreaRunsAcrossTheOneItLiesOn() =>
             Assert.AreEqual(SpanDirection.SouthNorth, FramingAreas.TurnedFrom(Floor(out _, out var d).Diaphragms[0], new Rect2(16, 0, 24, 20)));

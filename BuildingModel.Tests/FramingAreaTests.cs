@@ -4,6 +4,7 @@ using BuildingModel.Checks;
 using BuildingModel.Edits;
 using BuildingModel.Geometry;
 using BuildingModel.Model;
+using BuildingModel.Serialization;
 using BuildingModel.Statics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -207,6 +208,75 @@ namespace BuildingModel.Tests
             Assert.AreEqual("Bedroom", d.Framing.Single().Name);
             Assert.IsTrue(FramingAreas.SetName(b, new[] { d.Framing.Single().Id }, " "), "blank: no name");
             Assert.IsNull(d.Framing.Single().Name);
+        }
+
+        /// <summary>
+        /// A ceiling under an area's joists (owner 2026-11-12: CL = 1.0 where it holds the bottom edge, else calculated): the
+        /// pieces an area is cut into keep it, Join keeps areas with and without one apart, and it is saved (written only when
+        /// there is one). The bridging default is saved too.
+        /// </summary>
+        [TestMethod]
+        public void Ceiling_KeptByThePieces_JoinKeepsItApart_Saved()
+        {
+            var b = Floor(out _, out var d);
+            Assert.IsFalse(d.Framing.Single().Ceiling, "none unless said");
+            Assert.IsTrue(FramingAreas.SetCeiling(b, new[] { d.Framing.Single().Id }, true));
+            Assert.IsFalse(FramingAreas.SetCeiling(b, new[] { d.Framing.Single().Id }, true), "no change");
+            var mid = FramingAreas.Place(b, d, new Rect2(16, 0, 24, 20), SpanDirection.SouthNorth).Single();
+            Assert.IsFalse(FramingAreas.Find(b, mid).a.Ceiling, "the strip placed across has none of its own");
+            Assert.IsTrue(d.Framing.Where(a => a.Id != mid).All(a => a.Ceiling), "both pieces keep it");
+            Assert.IsTrue(FramingAreas.SetSpan(b, mid, SpanDirection.WestEast));
+            FramingAreas.Join(b, d);
+            Assert.AreEqual(3, d.Framing.Count, "with | without | with");
+            b.Defaults.JoistBridging = 8;
+            var read = ModelFile.FromJson(ModelFile.ToJson(new ModelDocument { Building = b })).Building;
+            var rd = read.Diaphragms.Single(x => x.Id == d.Id);
+            Assert.AreEqual(2, rd.Framing.Count(a => a.Ceiling));
+            Assert.AreEqual(8, read.Defaults.JoistBridging, 1e-9);
+            StringAssert.Matches(ModelFile.ToJson(new ModelDocument { Building = b }), new System.Text.RegularExpressions.Regex(@"""Ceiling"":\s*true"));
+            Assert.IsTrue(FramingAreas.SetCeiling(b, d.Framing.Select(a => a.Id), true));
+            FramingAreas.Join(b, d);
+            Assert.AreEqual(1, d.Framing.Count);
+        }
+
+        /// <summary>
+        /// A gable roof's rafters laid out (owner 2026-11-12): a 30 × 20 ft house, the ridge W-E at y = 10, rafters S-N at 24":
+        /// 16 lines (x = 0, 2, … 30), each a south rafter from the south wall up to the ridge and a north one from the ridge down
+        /// to the north wall, 10 ft on plan, 4:12. Each stands on its wall and the ridge; an interior wall under the ridge takes
+        /// the ridge's place. A hip roof's are not laid out: said so.
+        /// </summary>
+        [TestMethod]
+        public void GableRoof_RaftersFromEachWallUpToTheRidge()
+        {
+            var b = Building.New("Gable");
+            var roof = b.AddLevel("Roof", 10);
+            b.AddDiaphragm(roof, new Rect2(0, 0, 30, 20));
+            var south = b.AddWall(b.Ground, roof, 0, 0, 30, 0);
+            var north = b.AddWall(b.Ground, roof, 0, 20, 30, 20);
+            b.AddWall(b.Ground, roof, 0, 0, 0, 20);
+            b.AddWall(b.Ground, roof, 30, 0, 30, 20);
+            b.Defaults.RafterSpacing = 24;
+            b.Roof = new Roof { Shape = RoofShape.Gable, Pitch = Math.Atan(4.0 / 12) * 180 / Math.PI, Ridge = RidgeAxis.WestEast };
+            var rafters = Joists.Of(b, roof);
+            Assert.AreEqual(32, rafters.Count);
+            Assert.IsTrue(rafters.All(j => !j.AlongX && Math.Abs(j.Length - 10) < 1e-9 && j.SlopeDeg > 18 && j.Stands));
+            var s = rafters.Single(j => j.AreaId == "south slope" && Math.Abs(j.Line - 14) < 1e-9);
+            Assert.AreEqual(south.Id, s.Supports[0].On);
+            Assert.AreEqual(BeamSupportKind.Ridge, s.Supports[1].Kind);
+            Assert.AreEqual(10, s.Supports[1].At, 1e-9);
+            var n = rafters.Single(j => j.AreaId == "north slope" && Math.Abs(j.Line - 14) < 1e-9);
+            Assert.AreEqual(BeamSupportKind.Ridge, n.Supports[0].Kind);
+            Assert.AreEqual(north.Id, n.Supports[1].On);
+            Assert.IsNull(Joists.NotLaidOut(b, roof));
+
+            var mid = b.AddWall(b.Ground, roof, 0, 10, 30, 10);
+            var held = Joists.Of(b, roof).Single(j => j.AreaId == "south slope" && Math.Abs(j.Line - 14) < 1e-9);
+            Assert.AreEqual(mid.Id, held.Supports[1].On, "the wall under the ridge holds it there");
+            Assert.AreEqual(2, held.Supports.Count);
+
+            b.Roof.Shape = RoofShape.Hip;
+            Assert.AreEqual(0, Joists.Of(b, roof).Count);
+            StringAssert.Contains(Joists.NotLaidOut(b, roof), "NOT DESIGNED");
         }
 
         /// <summary>

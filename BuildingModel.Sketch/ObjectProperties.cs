@@ -246,6 +246,31 @@ namespace BuildingModel.Sketch
             t.KeyDown += (s, e) => { if (e.Key == System.Windows.Input.Key.Enter) Commit(); };
             Row("Name", t);
             if (names.Count > 1) Hint("They have different names: a name typed here goes to all of them.");
+            AreaCeiling(areas);
+        }
+
+        /// <summary>
+        /// A ceiling fastened under the areas' joists or rafters (one undo step for all): it holds their bottom edge where it is
+        /// in compression, CL = 1.0 there (NDS 3.3.3.3); without it CL is calculated (owner 2026-11-12).
+        /// </summary>
+        private void AreaCeiling(List<FramingArea> areas)
+        {
+            int with = areas.Count(x => x.Ceiling);
+            var c = new CheckBox
+            {
+                Content = "A ceiling fastened under them", IsChecked = with == areas.Count ? true : with == 0 ? (bool?)false : null,
+                ToolTip = "Gypsum board or the like fastened to the joists' or rafters' bottom edge their whole length: it holds that edge in line where it is in compression (over an inner support, an eave, the wind lifting it), so CL = 1.0 there (NDS 3.3.3.3). Without one, CL is calculated from the lengths between the bearings and the bridging (3.3.3.4).",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            System.Windows.Automation.AutomationProperties.SetName(c, "Ceiling under them");
+            c.Click += (s, e) =>
+            {
+                bool to = c.IsChecked == true;
+                var ids = areas.Select(x => x.Id).ToList();
+                string what = ids.Count == 1 ? ids[0] : $"{ids.Count} framing areas";
+                sketch.Edit(to ? $"{what}: a ceiling fastened under the joists." : $"{what}: no ceiling under the joists.", b => FramingAreas.SetCeiling(b, ids, to));
+            };
+            Row("Ceiling", c);
         }
 
         /// <summary>Several framing areas picked: one name and one way for all of them (each one undo step).</summary>

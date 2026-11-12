@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <Reference Include="System.Runtime.Serialization" />
+    <!-- the suite's one beam solver (owner 2026-11-12) -->
+    <ProjectReference Include="..\..\Statics\Statics\Statics.csproj" />
   </ItemGroup>
 
 </Project>

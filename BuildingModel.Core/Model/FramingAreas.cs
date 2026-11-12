@@ -77,7 +77,7 @@ namespace BuildingModel.Model
                 }
                 kept.Add(a);
                 foreach (var r in rects.Skip(1))
-                    kept.Add(new FramingArea { Id = NewId(), Rect = r, Span = a.Span, Name = a.Name }); // a piece keeps its name (its use)
+                    kept.Add(new FramingArea { Id = NewId(), Rect = r, Span = a.Span, Name = a.Name, Ceiling = a.Ceiling }); // a piece keeps its name (its use) and its ceiling
                 covered.AddRange(rects);
             }
             // a part with no framing: its own area, its shorter way
@@ -140,6 +140,23 @@ namespace BuildingModel.Model
                 var (_, a) = Find(b, id);
                 if (a == null || a.Name == name) continue;
                 a.Name = name;
+                changed = true;
+            }
+            return changed;
+        }
+
+        /// <summary>
+        /// Says whether a ceiling is fastened under the areas' joists or rafters (<see cref="FramingArea.Ceiling"/>). False when
+        /// nothing changes.
+        /// </summary>
+        public static bool SetCeiling(Building b, IEnumerable<string> areaIds, bool ceiling)
+        {
+            bool changed = false;
+            foreach (var id in areaIds ?? Enumerable.Empty<string>())
+            {
+                var (_, a) = Find(b, id);
+                if (a == null || a.Ceiling == ceiling) continue;
+                a.Ceiling = ceiling;
                 changed = true;
             }
             return changed;
@@ -208,7 +225,7 @@ namespace BuildingModel.Model
             if (d?.Framing == null) return 0;
             int before = d.Framing.Count;
             var next = new List<FramingArea>();
-            foreach (var g in d.Framing.GroupBy(a => (a.Span, Name: a.Name ?? "")))  // a named part (a hall, a balcony) stays its own
+            foreach (var g in d.Framing.GroupBy(a => (a.Span, Name: a.Name ?? "", a.Ceiling)))  // a named part (a hall, a balcony) stays its own, and one with a ceiling
             {
                 var areas = g.ToList();
                 foreach (var part in Edits.BuildingEdits.Parts(Region.Of(areas.Select(a => a.Rect))))
@@ -220,7 +237,7 @@ namespace BuildingModel.Model
                     {
                         var keep = pool.OrderByDescending(a => Overlap(a.Rect, r)).FirstOrDefault();
                         if (keep != null) { pool.Remove(keep); keep.Rect = r; next.Add(keep); }
-                        else next.Add(new FramingArea { Id = null, Rect = r, Span = g.Key.Span, Name = g.Key.Name.Length == 0 ? null : g.Key.Name });
+                        else next.Add(new FramingArea { Id = null, Rect = r, Span = g.Key.Span, Name = g.Key.Name.Length == 0 ? null : g.Key.Name, Ceiling = g.Key.Ceiling });
                     }
                 }
             }

@@ -7,7 +7,7 @@ using BuildingModel.Model;
 
 namespace BuildingModel.Statics
 {
-    public enum BeamSupportKind { Wall, Column, Beam }
+    public enum BeamSupportKind { Wall, Column, Beam, Ridge }
 
     /// <summary>One thing holding a beam up, where along it.</summary>
     public sealed class BeamBearing

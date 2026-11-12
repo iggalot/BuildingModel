@@ -22,6 +22,8 @@ namespace BuildingModel.Statics
         public List<BeamBearing> Supports { get; set; } = new List<BeamBearing>();
         /// <summary>Two supports or more: it stands (an end past one is a cantilever).</summary>
         public bool Stands => Supports.Count >= 2;
+        /// <summary>A sloped roof's rafter: its slope (degrees; 0 level). Its length and places are on plan (the horizontal projection).</summary>
+        public double SlopeDeg { get; set; }
 
         public override string ToString() => $"{AreaId} joist {(AlongX ? "y" : "x")} = {Line:0.##} ft, {Length:0.##} ft, {Supports.Count} support(s)";
     }
@@ -33,8 +35,11 @@ namespace BuildingModel.Statics
     /// edges; they run on through the next area framed the same way (owner 2026-11-11: a hallway named apart for its loads is
     /// not a break in the floor) and end where the framing turns, at the floor's edge, or at an opening, which cuts them (the
     /// header there is a beam). A joist is held by every wall, column
-    /// and beam under it anywhere along it, and needs two to stand, as a beam does; it never bears on another joist. A sloped
-    /// roof's rafters run across the ridge: the roof's, not laid out here.
+    /// and beam under it anywhere along it, and needs two to stand, as a beam does; it never bears on another joist. A gable
+    /// roof's rafters run across the ridge at the roof's spacing over the roof's plan, each from its side's edge up to the
+    /// ridge, which holds its upper end (<see cref="BeamSupportKind.Ridge"/>: the rafter opposite, its thrust taken by the
+    /// ceiling joists or a ridge beam), and every wall, column and beam under it holds it too (owner 2026-11-12). A hip
+    /// roof's rafters (its commons, jacks and hips) are not laid out yet: <see cref="NotLaidOut"/>.
     /// </summary>
     public static class Joists
     {
@@ -48,12 +53,20 @@ namespace BuildingModel.Statics
         public static double SpacingOf(Building b, Level lv) =>
             Math.Max(1.0, IsRoof(b, lv) ? b.Defaults?.RafterSpacing ?? 24 : b.Defaults?.FloorJoistSpacing ?? 16) / 12;
 
-        /// <summary>Every joist of a level, with what holds it up (none on the ground, nor under a sloped roof).</summary>
+        /// <summary>
+        /// Why a level's framing is not laid out though it has some (null: it is, or there is none): a hip roof's rafters, not
+        /// yet (owner 2026-11-12: complex roofs after the flat and gable roofs are right).
+        /// </summary>
+        public static string NotLaidOut(Building b, Level lv) =>
+            IsRoof(b, lv) && b.Roof != null && b.Roof.Shape == RoofShape.Hip
+                ? "a hip roof's rafters (its commons, jack rafters and hip rafters) are not laid out yet: NOT DESIGNED" : null;
+
+        /// <summary>Every joist of a level, with what holds it up (none on the ground; a gable roof's rafters; none for a hip roof yet).</summary>
         public static List<Joist> Of(Building b, Level lv)
         {
             var list = new List<Joist>();
             if (b == null || lv == null || lv.Elevation <= 0) return list;
-            if (IsRoof(b, lv) && b.Roof != null && b.Roof.IsSloped) return list;
+            if (IsRoof(b, lv) && b.Roof != null && b.Roof.IsSloped) return b.Roof.Shape == RoofShape.Gable ? Gable(b, lv) : list;
             double s = SpacingOf(b, lv);
             var holes = b.OpeningsCutting(lv).SelectMany(o => o.Pieces).ToList();
             var walls = BeamSupports.WallsUnder(b, lv);
@@ -113,6 +126,47 @@ namespace BuildingModel.Statics
                                 list.Add(j);
                             }
                     }
+                }
+            return list;
+        }
+
+        /// <summary>
+        /// A gable roof's rafters: across the ridge at the rafter spacing over the roof's plan (one on each gable end, none nearer
+        /// an end than a quarter spacing), each side's from its edge up to the ridge; the ridge holds each one's upper end, and
+        /// every wall, column and beam under it holds it too. Named by their side ("south slope").
+        /// </summary>
+        private static List<Joist> Gable(Building b, Level lv)
+        {
+            var list = new List<Joist>();
+            var plan = b.RoofPlan();
+            if (plan.IsEmpty || !(b.Roof.Pitch > 0 && b.Roof.Pitch < 90)) return list;
+            double s = SpacingOf(b, lv);
+            bool ridgeX = b.EffectiveRidge() == RidgeAxis.WestEast;
+            // the rafters run across the ridge: S-N under a W-E ridge
+            bool x = !ridgeX;
+            double p0 = ridgeX ? plan.X0 : plan.Y0, p1 = ridgeX ? plan.X1 : plan.Y1;   // along the ridge
+            double q0 = ridgeX ? plan.Y0 : plan.X0, q1 = ridgeX ? plan.Y1 : plan.X1;   // across it
+            double ridge = (q0 + q1) / 2;
+            var walls = BeamSupports.WallsUnder(b, lv);
+            var cols = BeamSupports.ColumnsUnder(b, lv);
+            var beams = b.Beams.Where(m => m.LevelId == lv.Id && m.Length > 0.1).ToList();
+            var lines = new List<double> { p0 };
+            for (int k = 1; p0 + k * s < p1 - E; k++) if (p1 - (p0 + k * s) >= s / 4) lines.Add(p0 + k * s);
+            lines.Add(p1);
+            string low = ridgeX ? "south slope" : "west slope", high = ridgeX ? "north slope" : "east slope";
+            Point2 P(double along, double across) => x ? new Point2(across, along) : new Point2(along, across);
+            foreach (double p in lines)
+                foreach (var (a, c, side, ridgeAtEnd) in new[] { (q0, ridge, low, true), (ridge, q1, high, false) })
+                {
+                    var j = new Joist { AreaId = side, AlongX = x, Line = p, Start = P(p, a), End = P(p, c), SlopeDeg = b.Roof.Pitch };
+                    j.Supports = SupportsOf(j.Start, j.End, walls, cols, beams);
+                    double at = ridgeAtEnd ? c - a : 0;
+                    if (!j.Supports.Any(y => Math.Abs(y.At - at) <= Bearing))
+                    {
+                        j.Supports.Add(new BeamBearing { At = at, Name = "the ridge", Where = ridgeAtEnd ? j.End : j.Start, Kind = BeamSupportKind.Ridge });
+                        j.Supports = j.Supports.OrderBy(y => y.At).ToList();
+                    }
+                    list.Add(j);
                 }
             return list;
         }

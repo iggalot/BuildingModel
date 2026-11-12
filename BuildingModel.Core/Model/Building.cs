@@ -110,6 +110,13 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 3, EmitDefaultValue = false)] public string Name { get; set; }
 
+        /// <summary>
+        /// A ceiling fastened to the joists' or rafters' bottom edge their whole length (owner 2026-11-12; default none): it holds
+        /// that edge in line where it is in compression (over an inner support, an eave, the wind lifting it), so CL = 1.0
+        /// there (NDS 3.3.3.3). Without one CL is calculated from the lengths between the bearings and the bridging (3.3.3.4).
+        /// </summary>
+        [DataMember(Order = 4, EmitDefaultValue = false)] public bool Ceiling { get; set; }
+
         /// <summary>True when the joists run W-E (along x).</summary>
         public bool AlongX => Span != SpanDirection.SouthNorth;
     }
@@ -309,6 +316,13 @@ namespace BuildingModel.Model
 
         /// <summary>A flat roof's rafters (nominal sawn size): sized by their loads (WoodFraming's joist check), as the floors' joists.</summary>
         [DataMember(Order = 18)] public string RafterSize { get; set; }
+
+        /// <summary>
+        /// The bridging or full-depth blocking between the joists and rafters (ft, the most between rows; 0: none but at their
+        /// bearings). Each row holds the bottom edge against buckling sideways: the unsupported length ℓu of NDS 3.3.3.4 where
+        /// it is in compression (owner 2026-11-12). Each span gets the fewest evenly spaced rows that keep within it.
+        /// </summary>
+        [DataMember(Order = 19, EmitDefaultValue = false)] public double JoistBridging { get; set; }
 
         public ModelDefaults() => Start();
 

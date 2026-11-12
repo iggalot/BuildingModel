@@ -4,11 +4,31 @@ using System.Linq;
 
 namespace BuildingModel.Statics
 {
-    /// <summary>One set of loads on a beam (+ down): point loads at their places, uniform loads over their parts (ft from its start).</summary>
+    /// <summary>
+    /// One set of loads on a beam (+ down): point loads at their places, uniform loads over their parts, and loads varying in a
+    /// straight line from WA at A to WB at B (a triangle, a trapezoid; ft from its start, plf).
+    /// </summary>
     public sealed class BeamLoads
     {
         public List<(double At, double P)> Points { get; } = new List<(double, double)>();
         public List<(double A, double B, double W)> Spread { get; } = new List<(double, double, double)>();
+        public List<(double A, double B, double WA, double WB)> Linear { get; } = new List<(double, double, double, double)>();
+
+        /// <summary>
+        /// Every distributed load as a straight line (a uniform one with WA = WB), A before B: the one form the analyses
+        /// integrate.
+        /// </summary>
+        public IEnumerable<(double A, double B, double WA, double WB)> Lines()
+        {
+            foreach (var s in Spread)
+                if (s.B >= s.A) yield return (s.A, s.B, s.W, s.W); else yield return (s.B, s.A, s.W, s.W);
+            foreach (var l in Linear)
+                if (l.B >= l.A) yield return l; else yield return (l.B, l.A, l.WB, l.WA);
+        }
+
+        /// <summary>The intensity (plf) of a straight-line load at x (0 outside it).</summary>
+        public static double At((double A, double B, double WA, double WB) l, double x) =>
+            x < l.A || x > l.B ? 0 : l.B - l.A <= 0 ? l.WA : l.WA + (l.WB - l.WA) * (x - l.A) / (l.B - l.A);
     }
 
     /// <summary>
@@ -35,7 +55,7 @@ namespace BuildingModel.Statics
             foreach (var s in sets)
             {
                 at.AddRange(s.Points.Select(p => Clamp(p.At)));
-                foreach (var w in s.Spread) { at.Add(Clamp(w.A)); at.Add(Clamp(w.B)); }
+                foreach (var w in s.Lines()) { at.Add(Clamp(w.A)); at.Add(Clamp(w.B)); }
             }
             at.Sort();
             var x = new List<double>();
@@ -76,17 +96,19 @@ namespace BuildingModel.Statics
                 F[s] = new double[n];
                 Fall[s] = new double[2 * nodes];
                 foreach (var p in sets[s].Points) Fall[s][2 * Node(p.At)] += p.P;
-                foreach (var w in sets[s].Spread)
+                foreach (var w in sets[s].Lines())
                 {
-                    double a = Clamp(Math.Min(w.A, w.B)), b = Clamp(Math.Max(w.A, w.B));
+                    double a = Clamp(w.A), b = Clamp(w.B);
                     for (int e = 0; e + 1 < nodes; e++)
                     {
                         double x0 = x[e], x1 = x[e + 1], h = x1 - x0;
                         if (x0 < a - Merge || x1 > b + Merge) continue; // the nodes are at its ends: a whole element or none
-                        Fall[s][2 * e] += w.W * h / 2;
-                        Fall[s][2 * e + 1] += w.W * h * h / 12;
-                        Fall[s][2 * e + 2] += w.W * h / 2;
-                        Fall[s][2 * e + 3] -= w.W * h * h / 12;
+                        // the fixed-end forces of a load varying from w1 to w2 over the element (exact; w1 = w2: wh/2, wh²/12)
+                        double w1 = BeamLoads.At(w, x0), w2 = BeamLoads.At(w, x1);
+                        Fall[s][2 * e] += h * (7 * w1 + 3 * w2) / 20;
+                        Fall[s][2 * e + 1] += h * h * (3 * w1 + 2 * w2) / 60;
+                        Fall[s][2 * e + 2] += h * (3 * w1 + 7 * w2) / 20;
+                        Fall[s][2 * e + 3] -= h * h * (2 * w1 + 3 * w2) / 60;
                     }
                 }
                 for (int i = 0; i < nodes; i++)

@@ -307,6 +307,9 @@ namespace BuildingModel.Model
         /// <summary>The floors' joists: their spacing (in), for the floor a beam running along them carries (half a spacing each side).</summary>
         [DataMember(Order = 17)] public double FloorJoistSpacing { get; set; }
 
+        /// <summary>A flat roof's rafters (nominal sawn size): sized by their loads (WoodFraming's joist check), as the floors' joists.</summary>
+        [DataMember(Order = 18)] public string RafterSize { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -329,6 +332,7 @@ namespace BuildingModel.Model
             FloorJoistSize = "2x10";
             RoofBlockingSize = "2x6";
             FloorJoistSpacing = 16;
+            RafterSize = "2x10";
         }
 
         [OnDeserializing]

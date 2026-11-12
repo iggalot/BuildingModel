@@ -30,7 +30,7 @@ namespace BuildingModel.Sketch
                                  newLength = new TextBox(), newWidth = new TextBox(), newStories = new TextBox();
         private readonly ComboBox studFirst = new ComboBox(), studAbove = new ComboBox(), studSpacing = new ComboBox(), species = new ComboBox(),
                                   grade = new ComboBox(), deflection = new ComboBox(), rafterSpacing = new ComboBox(), floorJoist = new ComboBox(), joistSpacing = new ComboBox(),
-                                  roofBlocking = new ComboBox();
+                                  roofBlocking = new ComboBox(), rafterSize = new ComboBox();
         private ModelDefaults shown;
         /// <summary>What was wrong with the values typed when OK was pressed (null: nothing).</summary>
         public string Problem { get; private set; }
@@ -89,6 +89,7 @@ namespace BuildingModel.Sketch
             Add("Floor joist spacing", joistSpacing, "The floor a beam along the joists carries (a trimmer: half a spacing each side).");
             Add("Floor joists (the rim)", floorJoist, "Their depth is the rim's: a collector or chord where no wall is under a line or an edge.");
             Add("Roof blocking", roofBlocking, "The roof's continuous blocking between its rafters: its collector or chord where no wall is under it.");
+            Add("Roof rafters (flat roof)", rafterSize, "A flat roof's rafters: checked for their loads as the floors' joists are.");
 
             var note = new TextBlock
             {
@@ -162,6 +163,7 @@ namespace BuildingModel.Sketch
             Fill(joistSpacing, RafterSpacings, d.FloorJoistSpacing, v => $"{Num(v)}\" o.c.", Near);
             Fill(floorJoist, MemberSizes, d.FloorJoistSize, s => s, Same);
             Fill(roofBlocking, MemberSizes, d.RoofBlockingSize, s => s, Same);
+            Fill(rafterSize, MemberSizes, d.RafterSize, s => s, Same);
         }
 
         /// <summary>The program's starting values (<see cref="ModelDefaults"/>), shown to keep or cancel.</summary>
@@ -195,6 +197,7 @@ namespace BuildingModel.Sketch
             d.FloorJoistSpacing = Picked(joistSpacing, d.FloorJoistSpacing);
             d.FloorJoistSize = Picked(floorJoist, d.FloorJoistSize);
             d.RoofBlockingSize = Picked(roofBlocking, d.RoofBlockingSize);
+            d.RafterSize = Picked(rafterSize, d.RafterSize);
             Problem = bad.Count == 0 ? null : string.Join("\n", bad);
             return d;
         }

@@ -318,6 +318,24 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 8, EmitDefaultValue = false)] public List<RoofSection> Sections { get; set; }
 
+        /// <summary>
+        /// A sectioned roof's hip rafters (owner 2026-11-12): their sawn size, one 2x or plies of it (<see cref="BeamSizes"/>);
+        /// null: not sized, NOT DESIGNED (the lightest that works is named). Each carries its jacks, on its foot and its top.
+        /// </summary>
+        [DataMember(Order = 9, EmitDefaultValue = false)] public string HipSize { get; set; }
+
+        /// <summary>The valley rafters' sawn size (as <see cref="HipSize"/>): each carries its jacks, its top on the roof above.</summary>
+        [DataMember(Order = 10, EmitDefaultValue = false)] public string ValleySize { get; set; }
+
+        /// <summary>A dormer's headers' sawn size (as <see cref="HipSize"/>): each carries the rafters cut at the dormer's front, trimmer to trimmer.</summary>
+        [DataMember(Order = 11, EmitDefaultValue = false)] public string HeaderSize { get; set; }
+
+        /// <summary>
+        /// The ridge boards' sawn size (as <see cref="HipSize"/>) where they carry something (a hip's top, a rafter with no pair
+        /// across the ridge), held by the rafter pairs crossing them.
+        /// </summary>
+        [DataMember(Order = 12, EmitDefaultValue = false)] public string RidgeBoardSize { get; set; }
+
         public Roof Clone()
         {
             var r = (Roof)MemberwiseClone();

@@ -276,7 +276,8 @@ namespace BuildingModel.Tests
 
             b.Roof.Shape = RoofShape.Hip;
             Assert.AreEqual(0, Joists.Of(b, roof).Count);
-            StringAssert.Contains(Joists.NotLaidOut(b, roof), "NOT DESIGNED");
+            Assert.IsNull(Joists.NotLaidOut(b, roof), "a hip: laid out by RoofFrame, carried by RoofStatics");
+            Assert.IsNull(RoofFrame.Of(b).NotLaidOut);
         }
 
         /// <summary>

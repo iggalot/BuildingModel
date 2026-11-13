@@ -38,8 +38,9 @@ namespace BuildingModel.Statics
     /// and beam under it anywhere along it, and needs two to stand, as a beam does; it never bears on another joist. A gable
     /// roof's rafters run across the ridge at the roof's spacing over the roof's plan, each from its side's edge up to the
     /// ridge, which holds its upper end (<see cref="BeamSupportKind.Ridge"/>: the rafter opposite, its thrust taken by the
-    /// ceiling joists or a ridge beam), and every wall, column and beam under it holds it too (owner 2026-11-12). A hip
-    /// roof's rafters (its commons, jacks and hips) are not laid out yet: <see cref="NotLaidOut"/>.
+    /// ceiling joists or a ridge beam), and every wall, column and beam under it holds it too (owner 2026-11-12). A sectioned
+    /// roof's (a hip, wings, dormers) are laid out by <see cref="RoofFrame"/> and carried by <see cref="RoofStatics"/>, not
+    /// here (none from <see cref="Of"/>); <see cref="NotLaidOut"/> says when its sections cannot be.
     /// </summary>
     public static class Joists
     {
@@ -54,12 +55,15 @@ namespace BuildingModel.Statics
             Math.Max(1.0, IsRoof(b, lv) ? b.Defaults?.RafterSpacing ?? 24 : b.Defaults?.FloorJoistSpacing ?? 16) / 12;
 
         /// <summary>
-        /// Why a level's framing is not laid out though it has some (null: it is, or there is none): a hip roof's rafters, not
-        /// yet (owner 2026-11-12: complex roofs after the flat and gable roofs are right).
+        /// Why a level's framing is not laid out though it has some (null: it is, or there is none): a sectioned roof whose
+        /// sections cannot be framed (<see cref="RoofFrame.NotLaidOut"/>).
         /// </summary>
-        public static string NotLaidOut(Building b, Level lv) =>
-            IsRoof(b, lv) && b.Roof != null && b.Roof.Shape == RoofShape.Hip
-                ? "a hip roof's rafters (its commons, jack rafters and hip rafters) are not laid out yet: NOT DESIGNED" : null;
+        public static string NotLaidOut(Building b, Level lv)
+        {
+            if (!IsRoof(b, lv) || !RoofFrame.IsSectioned(b)) return null;
+            string why = RoofFrame.Of(b).NotLaidOut;
+            return why == null ? null : $"the roof's rafters are not laid out ({why}): NOT DESIGNED";
+        }
 
         /// <summary>Every joist of a level, with what holds it up (none on the ground; a gable roof's rafters; none for a hip roof yet).</summary>
         public static List<Joist> Of(Building b, Level lv)

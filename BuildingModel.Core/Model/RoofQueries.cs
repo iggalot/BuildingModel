@@ -51,7 +51,7 @@ namespace BuildingModel.Model
             double m = x ? (plan.Y0 + plan.Y1) / 2 : (plan.X0 + plan.X1) / 2;
             return new Beam
             {
-                Id = RidgeBeamId, LevelId = top.Id, Size = b.Roof.RidgeBeamSize,
+                Id = RidgeBeamId, LevelId = top.Id, Size = b.Roof.RidgeBeamSize ?? b.Roof.ForcedRidgeBeamSize,
                 Start = x ? new Point2(plan.X0, m) : new Point2(m, plan.Y0), End = x ? new Point2(plan.X1, m) : new Point2(m, plan.Y1),
             };
         }

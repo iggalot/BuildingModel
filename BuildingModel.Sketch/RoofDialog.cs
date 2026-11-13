@@ -22,8 +22,8 @@ namespace BuildingModel.Sketch
         private readonly TextBox pitch, parapet, overhang;
         private readonly ComboBox ridge;
         private readonly TextBlock rise, summary, issuesText;
-        private readonly FrameworkElement pitchRow, ridgeRow, parapetRow, ceilingRow, ridgeBeamRow;
-        private readonly CheckBox ceiling;
+        private readonly FrameworkElement pitchRow, ridgeRow, parapetRow, ceilingRow, ridgeBeamRow, heelsRow;
+        private readonly CheckBox ceiling, plateHeels;
         private readonly ComboBox ridgeBeam;
         private readonly Button framingButton;
         private readonly FrameworkElement framingRow;
@@ -85,6 +85,12 @@ namespace BuildingModel.Sketch
             foreach (var z in BeamSizes.All) ridgeBeam.Items.Add(z);
             ridgeBeam.SelectionChanged += (s, e) => Update();
             Children.Add(ridgeBeamRow = Row("Ridge beam", ridgeBeam, out _));
+            // owner 2026-11-13: where a gable's heels' nails do not fit, the design forces a ridge beam; the engineer may remove it
+            plateHeels = new CheckBox { Content = "No forced ridge beam: plate the heels", VerticalAlignment = VerticalAlignment.Center,
+                                        ToolTip = "Where the nails a heel needs do not fit in the ceiling joist's lap on the rafter, the design puts a ridge beam under the rafters (no thrust), sized unless you size it above. Checked: no ridge beam; those heels get steel plates and bolts instead." };
+            plateHeels.Checked += (s, e) => Update();
+            plateHeels.Unchecked += (s, e) => Update();
+            Children.Add(heelsRow = Row("Heels", plateHeels, out _));
             // the roof's framing (owner 2026-11-12): sections (wings, dormers), purlins, the hips' and valleys' sizes
             framingButton = new Button { Padding = new Thickness(8, 2, 8, 2), HorizontalAlignment = HorizontalAlignment.Left,
                                          ToolTip = "Sections (wings, cross gables, hips that stick out, dormers), purlins, and the hips', valleys', headers' and purlins' sizes, with a plan of the framing." };
@@ -129,6 +135,7 @@ namespace BuildingModel.Sketch
             overhang.Text = Num(r.Overhang);
             ceiling.IsChecked = !r.NoCeilingJoists;
             ridgeBeam.SelectedIndex = Math.Max(0, Array.IndexOf(BeamSizes.All, r.RidgeBeamSize) + 1);
+            plateHeels.IsChecked = r.NoForcedRidgeBeam;
             loading = false;
             Update();
         }
@@ -145,7 +152,9 @@ namespace BuildingModel.Sketch
             r.Overhang = Parse(overhang.Text);
             r.NoCeilingJoists = ceiling.IsChecked != true;
             r.RidgeBeamSize = ridgeBeam.SelectedIndex > 0 ? BeamSizes.All[ridgeBeam.SelectedIndex - 1] : null;
+            r.NoForcedRidgeBeam = plateHeels.IsChecked == true;
             if (!r.IsSloped) r.NoCeilingJoists = false;   // a flat roof's ceiling is in its own diaphragm
+            if (r.Shape != RoofShape.Gable || r.NoCeilingJoists) r.NoForcedRidgeBeam = false;
             // a box left empty or unreadable is an error, not a silent 0
             bool unreadable = r.IsSloped && double.IsNaN(r.Pitch) || double.IsNaN(r.Parapet) || double.IsNaN(r.Overhang);
             if (!r.IsSloped && double.IsNaN(r.Pitch)) r.Pitch = (building.Roof ?? new Roof()).Pitch;
@@ -155,7 +164,10 @@ namespace BuildingModel.Sketch
             ridgeRow.Visibility = r.Shape == RoofShape.Gable ? Visibility.Visible : Visibility.Collapsed;
             parapetRow.Visibility = r.IsSloped ? Visibility.Collapsed : Visibility.Visible;
             ceilingRow.Visibility = r.IsSloped ? Visibility.Visible : Visibility.Collapsed;
-            ridgeBeamRow.Visibility = r.HasRidgeBeam ? Visibility.Visible : Visibility.Collapsed;
+            // a gable's ridge beam: a vault's, or the one forced where the heels' nails do not fit (sized here, else by the design)
+            bool gableTied = r.Shape == RoofShape.Gable && !r.NoCeilingJoists;
+            ridgeBeamRow.Visibility = r.HasRidgeBeam || (gableTied && !r.NoForcedRidgeBeam) ? Visibility.Visible : Visibility.Collapsed;
+            heelsRow.Visibility = gableTied ? Visibility.Visible : Visibility.Collapsed;
             framingRow.Visibility = r.IsSloped ? Visibility.Visible : Visibility.Collapsed;
             int ns = r.Sections?.Count ?? 0, np = r.Purlins?.Count ?? 0;
             framingButton.Content = (ns == 0 ? "One section" : $"{ns} section{(ns == 1 ? "" : "s")}") + (np == 0 ? "" : $", {np} purlin{(np == 1 ? "" : "s")}") + "…";

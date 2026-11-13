@@ -337,8 +337,28 @@ namespace BuildingModel.Model
 
         public bool IsSloped => Shape != RoofShape.Flat;
 
-        /// <summary>A gable with no ceiling joists: its rafters bear on a ridge beam (<see cref="RoofQueries.RidgeBeam"/>).</summary>
-        public bool HasRidgeBeam => Shape == RoofShape.Gable && NoCeilingJoists;
+        /// <summary>
+        /// A gable with no ceiling joists, or one whose heels' nails do not fit (forced, <see cref="RidgeBeamForced"/>, unless the
+        /// engineer removed it): its rafters bear on a ridge beam (<see cref="RoofQueries.RidgeBeam"/>).
+        /// </summary>
+        public bool HasRidgeBeam => Shape == RoofShape.Gable && (NoCeilingJoists || (RidgeBeamForced && !NoForcedRidgeBeam));
+
+        /// <summary>
+        /// The engineer removed the ridge beam the design forces where the heels' nails do not fit (owner 2026-11-13: "note it
+        /// and then force a ridge, with an option to remove it for the engineer"): the heels are then plated
+        /// (WoodFraming's HeelJoint). Edited in the roof's dialog.
+        /// </summary>
+        [DataMember(Order = 16, EmitDefaultValue = false)] public bool NoForcedRidgeBeam { get; set; }
+
+        /// <summary>
+        /// Not saved, set by the design (WoodFraming's RidgeForcing.Apply, run before the load path by the hub and the Load
+        /// Manager): the gable's heels' nails do not fit, so a ridge beam takes the rafters (owner 2026-11-13).
+        /// </summary>
+        public bool RidgeBeamForced { get; set; }
+        /// <summary>Not saved: the forced ridge beam's size picked by the design when <see cref="RidgeBeamSize"/> is not given.</summary>
+        public string ForcedRidgeBeamSize { get; set; }
+        /// <summary>Not saved: why the ridge beam was forced (the heel, its nails, the nails that fit).</summary>
+        public string RidgeBeamForcedWhy { get; set; }
 
         /// <summary>A gable's or hip's own ceiling joists under the rafters (the roof level's diaphragm framing), not turned off.</summary>
         public bool HasCeilingJoists => IsSloped && !NoCeilingJoists;

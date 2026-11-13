@@ -165,9 +165,22 @@ namespace BuildingModel.Checks
             if (r.IsSloped && r.Parapet > 0)
                 add(Severity.Warning, "ParapetOnSlopedRoof", $"A parapet ({r.Parapet:0.##} ft) is counted on a flat roof only; the {r.Shape.ToString().ToLowerInvariant()} roof ignores it.", at);
             if (!r.IsSloped || top == null) return;
+            // a roof of sections, a hip's or one with purlins (owner 2026-11-12): framed by RoofFrame; one that cannot be is no model
+            if (RoofFrame.IsSectioned(b) && r.Pitch > 0 && r.Pitch < 90)
+            {
+                var frame = RoofFrame.Of(b);
+                if (frame.NotLaidOut != null)
+                    add(Severity.Error, "RoofFraming", $"The roof cannot be framed: {frame.NotLaidOut}. Fix its sections (Building > Roof, Framing).", at);
+                else
+                {
+                    var st = RoofStatics.Of(b, top, frame);
+                    foreach (var n in st.Notes.Where(n => n.StartsWith("purlin", StringComparison.Ordinal)))
+                        add(Severity.Warning, "RoofPurlin", char.ToUpperInvariant(n[0]) + n.Substring(1), at);
+                }
+            }
             var floor = b.GrossDiaphragm(top);
             if (floor.Area <= 0) return; // NoDiaphragm says so
-            if (floor.Area < floor.Bounds.Area - 1e-6)
+            if (floor.Area < floor.Bounds.Area - 1e-6 && (r.Sections == null || r.Sections.Count == 0))
                 add(Severity.Warning, "RoofNotRectangular",
                     $"{top.Name} is not a rectangle ({floor.Area:0} of {floor.Bounds.Area:0} sq ft): the {r.Shape.ToString().ToLowerInvariant()} roof is taken over the " +
                     $"{floor.Bounds.Width:0.##} × {floor.Bounds.Height:0.##} ft rectangle around it.", at);

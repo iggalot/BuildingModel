@@ -697,12 +697,51 @@ namespace BuildingModel.Sketch
         {
             var joists = Statics.Joists.Of(b, level);
             bool dense = Statics.Joists.SpacingOf(b, level) * Zoom < 4;
+            // a sectioned roof (owner 2026-11-12: hips, valleys, wings, dormers, purlins): its rafters, ridges, hips, valleys,
+            // headers and purlins as laid out by RoofFrame
+            if (Statics.Joists.IsRoof(b, level) && Statics.RoofFrame.IsSectioned(b))
+            {
+                var frame = FrameOf(b);
+                if (frame != null && frame.NotLaidOut == null)
+                {
+                    if (!dense) foreach (var r in frame.Rafters) Line(ctx, JoistPen, r.Start, r.End);
+                    foreach (var c in frame.Creases)
+                        Line(ctx, c.Kind == Statics.CreaseKind.Ridge ? RidgePen : c.Kind == Statics.CreaseKind.Hip ? HipPen : c.Kind == Statics.CreaseKind.Valley ? ValleyPen : HeaderPen, c.A, c.B);
+                    foreach (var l in frame.Lines.Where(l => l.Kind == Statics.CreaseKind.Header)) Line(ctx, HeaderPen, l.A, l.B);
+                }
+                foreach (var p in b.Roof.Purlins ?? new List<RoofPurlin>()) Line(ctx, PurlinPen, p.Start, p.End);
+            }
             foreach (var j in joists)
                 if (!j.Stands) Line(ctx, JoistBadPen, j.Start, j.End);
                 else if (!dense) Line(ctx, JoistPen, j.Start, j.End);
             foreach (var d in b.DiaphragmsOn(level).Where(d => (d.Framing?.Count ?? 0) > 1 && !AcrossRidge(b, d)))
                 foreach (var a in d.Framing) ctx.DrawRectangle(null, AreaEdgePen, ScreenRect(a.Rect));
             return Statics.FramingRoles.Of(b, level, joists);
+        }
+
+        private static readonly Pen RidgePen = FrozenPen(Color.FromRgb(0xB2, 0x22, 0x22), 1.6);
+        private static readonly Pen HipPen = FrozenPen(Color.FromRgb(0xE0, 0x7B, 0x00), 1.6);
+        private static readonly Pen ValleyPen = FrozenPen(Color.FromRgb(0x41, 0x69, 0xE1), 1.6);
+        private static readonly Pen HeaderPen = FrozenPen(Color.FromRgb(0x80, 0x00, 0x80), 2.0);
+        private static readonly Pen PurlinPen = FrozenPen(Color.FromRgb(0x22, 0x8B, 0x22), 2.4);
+
+        private static Pen FrozenPen(Color c, double w)
+        {
+            var p = new Pen(new SolidColorBrush(c), w);
+            p.Freeze();
+            return p;
+        }
+
+        /// <summary>The roof's framing, laid out once per change of the roof (not on every repaint).</summary>
+        private string frameKey;
+        private Statics.RoofFrame frameCache;
+        private Statics.RoofFrame FrameOf(Building b)
+        {
+            var r = b.Roof;
+            string key = $"{r.Shape}|{r.Pitch}|{r.Ridge}|{r.Overhang}|{b.RoofPlan()}|{Statics.Joists.SpacingOf(b, b.RoofLevel())}|" +
+                         string.Join(";", (r.Sections ?? new List<RoofSection>()).Select(s => $"{s}|{s.Low}|{s.Pitch}|{s.Ridge}|{s.Overhang}"));
+            if (key != frameKey) { frameKey = key; frameCache = Statics.RoofFrame.Of(b); }
+            return frameCache;
         }
 
         /// <summary>A diaphragm's span markers: one per framing area (a sloped roof's one, across the ridge).</summary>

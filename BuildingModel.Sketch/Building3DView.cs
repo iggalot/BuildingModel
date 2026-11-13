@@ -419,6 +419,25 @@ namespace BuildingModel.Sketch
                 group.Children.Add(Box(plan.X1 - t, plan.Y0, eave, plan.X1, plan.Y1, z1, roofMat));
                 return;
             }
+            // a sectioned roof (owner 2026-11-12: hips, wings, dormers): each face as framed, at its own height over the wall tops
+            if (BuildingModel.Statics.RoofFrame.IsSectioned(b))
+            {
+                var frame = BuildingModel.Statics.RoofFrame.Of(b);
+                if (frame.NotLaidOut == null && frame.Faces.Count > 0)
+                {
+                    var faces = new MeshGeometry3D();
+                    foreach (var f in frame.Faces)
+                        foreach (var pc in f.Pieces)
+                        {
+                            int i0 = faces.Positions.Count;
+                            foreach (var q in pc.P) faces.Positions.Add(new Point3D(q.X, eave + f.Plane.Z(q), -q.Y));
+                            for (int k = 1; k + 1 < pc.P.Count; k++) { faces.TriangleIndices.Add(i0); faces.TriangleIndices.Add(i0 + k); faces.TriangleIndices.Add(i0 + k + 1); }
+                        }
+                    faces.Freeze();
+                    group.Children.Add(new GeometryModel3D(faces, roofMat) { BackMaterial = roofMat });
+                    return;
+                }
+            }
             double rise = b.RoofRise();
             if (rise <= 0) return;
             double o = Math.Max(0, roof.Overhang), slope = Math.Tan(roof.Pitch * Math.PI / 180);

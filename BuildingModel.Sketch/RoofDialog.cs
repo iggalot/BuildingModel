@@ -25,6 +25,10 @@ namespace BuildingModel.Sketch
         private readonly FrameworkElement pitchRow, ridgeRow, parapetRow, ceilingRow, ridgeBeamRow;
         private readonly CheckBox ceiling;
         private readonly ComboBox ridgeBeam;
+        private readonly Button framingButton;
+        private readonly FrameworkElement framingRow;
+        /// <summary>The roof's framing as last set in the framing window (its sections, purlins and sizes); null: the building's.</summary>
+        private Roof framed;
         private bool loading;
 
         /// <summary>Raised when the inputs change (the roof is <see cref="Roof"/>; <see cref="HasErrors"/> says whether it can be used).</summary>
@@ -81,6 +85,17 @@ namespace BuildingModel.Sketch
             foreach (var z in BeamSizes.All) ridgeBeam.Items.Add(z);
             ridgeBeam.SelectionChanged += (s, e) => Update();
             Children.Add(ridgeBeamRow = Row("Ridge beam", ridgeBeam, out _));
+            // the roof's framing (owner 2026-11-12): sections (wings, dormers), purlins, the hips' and valleys' sizes
+            framingButton = new Button { Padding = new Thickness(8, 2, 8, 2), HorizontalAlignment = HorizontalAlignment.Left,
+                                         ToolTip = "Sections (wings, cross gables, hips that stick out, dormers), purlins, and the hips', valleys', headers' and purlins' sizes, with a plan of the framing." };
+            framingButton.Click += (s, e) =>
+            {
+                var r = RoofFramingDialog.Ask(building, Roof, Window.GetWindow(this));
+                if (r == null) return;
+                framed = r;
+                Update();
+            };
+            Children.Add(framingRow = Row("Framing", framingButton, out _));
 
             summary = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0), Foreground = Ui.Ink };
             Children.Add(summary);
@@ -122,7 +137,7 @@ namespace BuildingModel.Sketch
         {
             if (loading) return;
             // from the roof as it is, so what this panel does not show is kept
-            var r = (building.Roof ?? new Roof()).Clone();
+            var r = (framed ?? building.Roof ?? new Roof()).Clone();
             r.Shape = hip.IsChecked == true ? RoofShape.Hip : gable.IsChecked == true ? RoofShape.Gable : RoofShape.Flat;
             r.Pitch = SlopeDegrees();
             r.Ridge = (RidgeAxis)Math.Max(0, ridge.SelectedIndex);
@@ -141,6 +156,9 @@ namespace BuildingModel.Sketch
             parapetRow.Visibility = r.IsSloped ? Visibility.Collapsed : Visibility.Visible;
             ceilingRow.Visibility = r.IsSloped ? Visibility.Visible : Visibility.Collapsed;
             ridgeBeamRow.Visibility = r.HasRidgeBeam ? Visibility.Visible : Visibility.Collapsed;
+            framingRow.Visibility = r.IsSloped ? Visibility.Visible : Visibility.Collapsed;
+            int ns = r.Sections?.Count ?? 0, np = r.Purlins?.Count ?? 0;
+            framingButton.Content = (ns == 0 ? "One section" : $"{ns} section{(ns == 1 ? "" : "s")}") + (np == 0 ? "" : $", {np} purlin{(np == 1 ? "" : "s")}") + "…";
             rise.Text = r.IsSloped && r.Pitch > 0 && r.Pitch < 90 ? $"= {r.Pitch:0.##}°" : "";
 
             // the model's own roof checks, on a copy with this roof

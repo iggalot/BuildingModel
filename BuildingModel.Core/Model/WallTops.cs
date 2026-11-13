@@ -87,6 +87,23 @@ namespace BuildingModel.Model
             return list;
         }
 
+        /// <summary>Whether the level has diaphragms at more than one height (each then its own diaphragm in the lateral design).</summary>
+        public static bool HasHeights(this Building b, Level level) =>
+            b != null && level != null && b.Diaphragms.Where(d => d.LevelId == level.Id).Select(d => Math.Round(d.Offset, 4)).Distinct().Count() > 1;
+
+        /// <summary>
+        /// The diaphragms of <paramref name="level"/> a line on plan (a wall's) meets: the highest of those over some length of
+        /// it (the one a wall holds up or stands on, as <see cref="DiaphragmOffsetAlong"/>), all of them at that height.
+        /// </summary>
+        public static List<Diaphragm> DiaphragmsAlong(this Building b, Level level, Point2 a, Point2 c)
+        {
+            if (b == null || level == null) return new List<Diaphragm>();
+            var over = b.Diaphragms.Where(d => d.LevelId == level.Id && d.Pieces.Any(r => Overlap(r, a, c) > 1e-3)).ToList();
+            if (over.Count == 0) return over;
+            double top = over.Max(d => d.Offset);
+            return over.Where(d => Math.Abs(d.Offset - top) < E).ToList();
+        }
+
         private static bool Inside(Rect2 r, Point2 p) => p.X > r.X0 - E && p.X < r.X1 + E && p.Y > r.Y0 - E && p.Y < r.Y1 + E;
 
         /// <summary>The length of segment a–c inside (or on the edge of) a rectangle.</summary>

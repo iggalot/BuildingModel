@@ -220,6 +220,15 @@ namespace BuildingModel.Model
         public double FxOf(string c) => c != null && Fx != null && Fx.TryGetValue(c, out var v) ? v : 0;
         public double FyOf(string c) => c != null && Fy != null && Fy.TryGetValue(c, out var v) ? v : 0;
         public double? MzOf(string c) => c != null && Mz != null && Mz.TryGetValue(c, out var v) ? v : (double?)null;
+
+        /// <summary>
+        /// A level with diaphragms at different heights (owner 2026-11-13: each its own diaphragm): the model diaphragms of
+        /// this one (those at one height), its own wind and free body. Null: the level's whole diaphragm.
+        /// </summary>
+        [DataMember(Order = 7, EmitDefaultValue = false)] public List<string> Diaphragms { get; set; }
+
+        /// <summary>"Level 2" or "Level 2 D2".</summary>
+        public string Name(Building b) => (b?.Level(LevelId)?.Name ?? LevelId) + (Diaphragms == null || Diaphragms.Count == 0 ? "" : " " + string.Join(", ", Diaphragms));
     }
 
     /// <summary>

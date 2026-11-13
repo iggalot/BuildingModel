@@ -108,12 +108,16 @@ namespace BuildingModel.Model
                     WallId = w.Id, LevelId = top.Id, StoryLevelId = top.Id, AtTop = true, Start = a, End = e, Dir = dir, From = $"{name} top",
                     Connector = $"the {top.Name} diaphragm's boundary nailing into the top plates",
                     OnWall = d.ShearOnTop.ToDictionary(kv => kv.Key, kv => kv.Value),
+                    // a level of diaphragms at different heights: the one it holds up (owner 2026-11-13: each its own)
+                    Diaphragms = b.HasHeights(top) ? b.DiaphragmsAlong(top, a, e).Select(x => x.Id).ToList() : null,
                 });
                 list.Add(new ShearPair
                 {
                     WallId = w.Id, LevelId = bas.Id, StoryLevelId = top.Id, OnFoundation = onFoundation, Start = a, End = e, Dir = dir, From = $"{name} sill",
                     Connector = onFoundation ? "the sill's anchor bolts" : $"the sill nailing into the {bas.Name} floor",
                     OnWall = d.ShearOnTop.ToDictionary(kv => kv.Key, kv => -kv.Value),
+                    // the one it stands on
+                    Diaphragms = !onFoundation && b.HasHeights(bas) ? b.DiaphragmsAlong(bas, a, e).Select(x => x.Id).ToList() : null,
                 });
             }
             if (describe != null)
@@ -166,7 +170,7 @@ namespace BuildingModel.Model
             double fx = wind.FxOf(windCase), fy = wind.FyOf(windCase);
             double? m = wind.MzOf(windCase);
             double mz = m ?? 0, scale = Math.Abs(fx) + Math.Abs(fy), mScale = Math.Abs(mz);
-            foreach (var p in (pairs ?? Enumerable.Empty<ShearPair>()).Where(p => p.LevelId == wind.LevelId && !p.OnFoundation))
+            foreach (var p in (pairs ?? Enumerable.Empty<ShearPair>()).Where(p => On(wind, p)))
             {
                 double f = p.OnOtherIn(windCase);
                 double px = f * p.Dir.X, py = f * p.Dir.Y;
@@ -179,6 +183,14 @@ namespace BuildingModel.Model
             }
             return (fx, fy, m.HasValue ? mz : (double?)null, scale, mScale);
         }
+
+        /// <summary>
+        /// Whether a pair acts on this diaphragm: on its level (not the foundation), and on a level of diaphragms at different
+        /// heights one of its own (<see cref="DiaphragmWind.Diaphragms"/>, <see cref="ShearPair.Diaphragms"/>).
+        /// </summary>
+        public static bool On(DiaphragmWind wind, ShearPair p) =>
+            wind != null && p != null && p.LevelId == wind.LevelId && !p.OnFoundation &&
+            (wind.Diaphragms == null || wind.Diaphragms.Count == 0 || p.Diaphragms == null || p.Diaphragms.Intersect(wind.Diaphragms).Any());
 
         /// <summary>The cases of the diaphragms' winds.</summary>
         public static List<string> Cases(LateralSection lateral) =>

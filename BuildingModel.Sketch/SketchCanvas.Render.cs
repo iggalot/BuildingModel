@@ -447,9 +447,10 @@ namespace BuildingModel.Sketch
             pen.Freeze();
             var body = BodyIds(b);
             // a picked diaphragm: its free body in one case
-            var wind = body != null && body.Contains(ShearPairs.DiaphragmKey(level.Id)) ? lat.Diaphragms?.FirstOrDefault(d => d.LevelId == level.Id) : null;
-            string one = wind == null ? null : DiaphragmCase(lat, level.Id, FreeBodyCase);
-            if (wind != null && one != null) DrawDiaphragmWind(ctx, wind, one, ink);
+            // (a level of diaphragms at different heights: each one's own wind at its own center of mass)
+            var winds = body != null && body.Contains(ShearPairs.DiaphragmKey(level.Id)) ? (lat.Diaphragms ?? new List<DiaphragmWind>()).Where(d => d.LevelId == level.Id).ToList() : new List<DiaphragmWind>();
+            string one = winds.Count == 0 ? null : DiaphragmCase(lat, level.Id, FreeBodyCase);
+            if (one != null) foreach (var wind in winds) DrawDiaphragmWind(ctx, wind, one, ink);
             foreach (var p in ShearPairs.Of(b, lat).Where(x => x.LevelId == level.Id))
                 foreach (bool onWall in new[] { true, false })
                 {

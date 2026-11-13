@@ -170,10 +170,30 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 15, EmitDefaultValue = false)] public bool NotDesigned { get; set; }
 
+        /// <summary>
+        /// A wall under diaphragms at different heights (the bearing wall where a lower wing meets the main block; owner
+        /// 2026-11-13: each its own diaphragm): its shear from each, at that diaphragm's own plate. They add up to
+        /// <see cref="ShearOnTop"/>; its overturning is Σ V h. Null when it is under one diaphragm (all of
+        /// <see cref="ShearOnTop"/> at <see cref="HeightFt"/>).
+        /// </summary>
+        [DataMember(Order = 16, EmitDefaultValue = false)] public List<ShearPart> ShearParts { get; set; }
+
         /// <summary>The words every app shows on a shear wall that is not designed (<see cref="NotDesigned"/>).</summary>
         public const string NotDesignedWarning =
             "NOT DESIGNED: no shear check, nailing or hold-downs yet. The sheathing shown is only what its card asks for, not a design. " +
             "The Shear Wall Calculator designs it once the wind is set up; do not build from it until then.";
+    }
+
+    /// <summary>One diaphragm's part of a wall's shear (<see cref="ShearWallDesign.ShearParts"/>).</summary>
+    [DataContract]
+    public sealed class ShearPart
+    {
+        /// <summary>The model's diaphragms at this height over the wall ("D2").</summary>
+        [DataMember(Order = 1)] public List<string> Diaphragms { get; set; } = new List<string>();
+        /// <summary>Where it acts: its plate, ft above the wall's base.</summary>
+        [DataMember(Order = 2)] public double HeightFt { get; set; }
+        /// <summary>Wind case → lb (W at strength level, + toward the wall's high end, as <see cref="ShearWallDesign.ShearOnTop"/>).</summary>
+        [DataMember(Order = 3)] public Dictionary<string, double> ByCase { get; set; } = new Dictionary<string, double>();
     }
 
     /// <summary>

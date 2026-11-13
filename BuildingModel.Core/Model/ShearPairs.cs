@@ -36,6 +36,14 @@ namespace BuildingModel.Model
         /// floor"). The connections are details, not the model's (owner 2026-11-07).
         /// </summary>
         public string Connector { get; set; }
+        /// <summary>
+        /// A wall under diaphragms at different heights (<see cref="ShearWallDesign.ShearParts"/>): the diaphragms of this top
+        /// pair and its height above the wall's base (ft); null and 0 for a wall under one diaphragm (its story's top).
+        /// </summary>
+        public List<string> Diaphragms { get; set; }
+        public double HeightFt { get; set; }
+        /// <summary>A lower diaphragm's pair on a wall that goes on up past it (to a higher one): it frames into the wall's side.</summary>
+        public bool PartWay { get; set; }
         /// <summary>Wind case → the force on the wall (lb, W at strength level, + along <see cref="Dir"/>).</summary>
         public Dictionary<string, double> OnWall { get; set; } = new Dictionary<string, double>();
 
@@ -76,6 +84,25 @@ namespace BuildingModel.Model
                 bool ew = Math.Abs(e.X - a.X) >= Math.Abs(e.Y - a.Y);
                 var dir = ew ? new Point2(1, 0) : new Point2(0, 1);
                 string name = w.Id;
+                if (d.ShearParts != null && d.ShearParts.Count > 1)
+                {
+                    // under diaphragms at different heights: one pair each, at its own plate (the highest the wall's top)
+                    double highest = d.ShearParts.Max(p => p.HeightFt);
+                    foreach (var part in d.ShearParts.OrderByDescending(p => p.HeightFt))
+                    {
+                        bool partWay = part.HeightFt < highest - 1e-6;
+                        string ids = string.Join(", ", part.Diaphragms ?? new List<string>());
+                        list.Add(new ShearPair
+                        {
+                            WallId = w.Id, LevelId = top.Id, StoryLevelId = top.Id, AtTop = true, Start = a, End = e, Dir = dir,
+                            From = partWay ? $"{name} at {ids}" : $"{name} top", Diaphragms = part.Diaphragms?.ToList(), HeightFt = part.HeightFt, PartWay = partWay,
+                            Connector = partWay ? $"the {top.Name} diaphragm {ids}'s boundary nailing into the wall's side at {part.HeightFt:0.##} ft (its rim or blocking on the wall)"
+                                                : $"the {top.Name} diaphragm {ids}'s boundary nailing into the top plates",
+                            OnWall = (part.ByCase ?? new Dictionary<string, double>()).ToDictionary(kv => kv.Key, kv => kv.Value),
+                        });
+                    }
+                }
+                else
                 list.Add(new ShearPair
                 {
                     WallId = w.Id, LevelId = top.Id, StoryLevelId = top.Id, AtTop = true, Start = a, End = e, Dir = dir, From = $"{name} top",

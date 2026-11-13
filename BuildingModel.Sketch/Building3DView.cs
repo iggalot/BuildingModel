@@ -213,8 +213,10 @@ namespace BuildingModel.Sketch
                     {
                         bool hi = l.Id == HighlightLevelId;
                         var mat = Material(hi ? Color.FromArgb(0xE8, 0xC9, 0xA8, 0x62) : Color.FromArgb(0xB0, 0xE2, 0xD2, 0xAE));
+                        // under a roof of sections, each section's ceiling at its own plate (WallTops)
                         foreach (var c in b.NetDiaphragm(l).Cells())
-                            group.Children.Add(Box(c.X0, c.Y0, l.Elevation - SlabThickness, c.X1, c.Y1, l.Elevation, mat));
+                            foreach (var (pc, rise) in b.CeilingPieces(l, c))
+                                group.Children.Add(Box(pc.X0, pc.Y0, l.Elevation + rise - SlabThickness, pc.X1, pc.Y1, l.Elevation + rise, mat));
                     }
                 var other = Material(Color.FromArgb(0xD0, 0xB8, 0xBD, 0xC6));
                 foreach (var w in b.Walls.Where(w => Drawn(w.Id)))
@@ -226,7 +228,7 @@ namespace BuildingModel.Sketch
                     var r = w.Direction == WallDirection.SouthNorth
                         ? new Rect2(w.Start.X - t, w.Start.Y, w.End.X + t, w.End.Y)
                         : new Rect2(w.Start.X, w.Start.Y - t, w.End.X, w.End.Y + t);
-                    Add(group, Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, top.Elevation - SlabThickness, Mark(w.Id, other)), w.Id);
+                    Add(group, Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, WallTop(b, w), Mark(w.Id, other)), w.Id);
                 }
                 // beams: a box under the floor they frame; columns: a square post from base to top (rectangles for now)
                 var timber = Material(Color.FromArgb(0xF0, 0x8B, 0x4A, 0x14));
@@ -324,8 +326,8 @@ namespace BuildingModel.Sketch
             return hi == null ? 0 : hi.Elevation - SlabThickness - BeamDepthUnder(b, hi, c.At);
         }
 
-        /// <summary>The top of a wall as drawn (ft): under the slab of the level it reaches.</summary>
-        public static double WallTop(Building b, Wall w) => (b?.Level(w.TopLevelId)?.Elevation ?? 0) - SlabThickness;
+        /// <summary>The top of a wall as drawn (ft): under the slab of the level it reaches (at its roof section's plate: WallTops).</summary>
+        public static double WallTop(Building b, Wall w) => (b == null ? 0 : b.WallTopElevation(w)) - SlabThickness;
 
         /// <summary>The top of a beam as drawn (ft): under its level's slab (it is <see cref="BeamDepth"/> deep).</summary>
         public static double BeamTop(Building b, Beam bm) => (b?.Level(bm.LevelId)?.Elevation ?? 0) - SlabThickness;

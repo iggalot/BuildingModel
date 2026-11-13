@@ -242,6 +242,48 @@ namespace BuildingModel.Tests
         }
 
         /// <summary>
+        /// Each section its own wall top (owner 2026-11-13): the L with the wing's plate 1 ft lower. The wing's walls (and the wall
+        /// inside it) stop at 9 − 1 = 8 ft; the main block's walls at 9, the bearing wall where the two meet too (the higher of the
+        /// two plates); the wing's ceiling at 8 ft, the main block's at 9. A level below the roof, or the plain roof: the level's.
+        /// </summary>
+        [TestMethod]
+        public void LShapedHouse_TheWingsWallTop_ItsOwnPlate()
+        {
+            var b = Building.New();
+            var g = b.Ground;
+            var top = b.AddLevel("Level 2", 9);
+            b.AddDiaphragm(top, new Rect2(0, 0, 56, 28));
+            b.AddDiaphragm(top, new Rect2(32, 28, 56, 52));
+            var north = b.AddWall(g, top, 0, 28, 56, 28);
+            var south = b.AddWall(g, top, 0, 0, 56, 0);
+            var wingWest = b.AddWall(g, top, 32, 28, 32, 52);
+            var wingNorth = b.AddWall(g, top, 32, 52, 56, 52);
+            var inside = b.AddWall(g, top, 44, 28, 44, 40);
+            b.Roof = new Roof
+            {
+                Shape = RoofShape.Hip, Pitch = Pitch612, Ridge = RidgeAxis.WestEast, Overhang = 1.5,
+                Sections = new List<RoofSection>
+                {
+                    new RoofSection { Name = "main", Walls = new Rect2(0, 0, 56, 28), Shape = RoofShape.Hip, Ridge = RidgeAxis.WestEast },
+                    new RoofSection { Name = "wing", Walls = new Rect2(32, 28, 56, 52), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = -1 },
+                    new RoofSection { Name = "dormer", Walls = new Rect2(12, 1, 20, 8), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 3 },
+                },
+            };
+            Assert.AreEqual(8, b.WallTopElevation(wingWest), 1e-9);
+            Assert.AreEqual(8, b.WallTopElevation(wingNorth), 1e-9);
+            Assert.AreEqual(8, b.WallTopElevation(inside), 1e-9, "a wall inside the wing: its ceiling's");
+            Assert.AreEqual(9, b.WallTopElevation(south), 1e-9);
+            Assert.AreEqual(9, b.WallTopElevation(north), 1e-9, "the bearing wall between them: the higher plate");
+            Assert.AreEqual(9, b.WallTopAt(wingWest, g) + 9, 1e-9, "at another level: that level's elevation");
+            var pieces = b.CeilingPieces(top, new Rect2(30, 20, 56, 52));
+            Assert.AreEqual(26 * 8, pieces.Where(p => Math.Abs(p.rise) < 1e-9 && p.r.Y1 <= 28 + 1e-9).Sum(p => p.r.Width * p.r.Height), 1e-9, "the main block's part at 9 ft");
+            Assert.AreEqual(2 * 24, pieces.Where(p => Math.Abs(p.rise) < 1e-9 && p.r.Y0 >= 28 - 1e-9).Sum(p => p.r.Width * p.r.Height), 1e-9, "outside both: the level's");
+            Assert.AreEqual(24 * 24, pieces.Where(p => Math.Abs(p.rise + 1) < 1e-9).Sum(p => p.r.Width * p.r.Height), 1e-9, "the wing's at 8 ft");
+            b.Roof.Sections = null;
+            Assert.AreEqual(9, b.WallTopElevation(wingWest), 1e-9, "no sections: the level's");
+        }
+
+        /// <summary>
         /// A hip roof 30 × 20 at 6:12, no eaves: the ends' triangles 20 × 10 / 2 = 100 sq ft, the sides' trapezoids
         /// (30 + 10) / 2 × 10 = 200; the ridge (10, 10) to (20, 10) at 5 ft; four hips, each 10√2 on plan from a corner up to
         /// the ridge's end. A common on the south face at x = 14 runs to the ridge; at x = 4, a hip jack 4 ft long.

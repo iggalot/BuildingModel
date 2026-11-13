@@ -264,7 +264,17 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 6, EmitDefaultValue = false)] public bool NoCeilingJoists { get; set; }
 
+        /// <summary>
+        /// A vaulted gable's ridge beam (no ceiling joists to tie the rafters: owner 2026-11-12, "a ridge beam instead"): its
+        /// sawn size (<see cref="BeamSizes"/>); null: not sized, NOT DESIGNED. It runs the ridge's length, held by the walls
+        /// across it (the gable ends) and the columns reaching the roof under it; each rafter bears on it, no thrust.
+        /// </summary>
+        [DataMember(Order = 7, EmitDefaultValue = false)] public string RidgeBeamSize { get; set; }
+
         public bool IsSloped => Shape != RoofShape.Flat;
+
+        /// <summary>A gable with no ceiling joists: its rafters bear on a ridge beam (<see cref="RoofQueries.RidgeBeam"/>).</summary>
+        public bool HasRidgeBeam => Shape == RoofShape.Gable && NoCeilingJoists;
 
         /// <summary>A gable's or hip's own ceiling joists under the rafters (the roof level's diaphragm framing), not turned off.</summary>
         public bool HasCeilingJoists => IsSloped && !NoCeilingJoists;
@@ -462,7 +472,9 @@ namespace BuildingModel.Model
                   .Concat(Beams ?? Enumerable.Empty<Beam>()).Concat(Columns ?? Enumerable.Empty<Column>());
 
         /// <summary>The object with this ID (the building itself for its own ID), or null.</summary>
-        public ModelObject Find(string id) => id == null ? null : id == Id ? this : Objects().FirstOrDefault(o => o.Id == id);
+        /// <summary>The object with this ID; the roof's ridge beam (a vault's, <see cref="RoofQueries.RidgeBeam"/>) by its ID too.</summary>
+        public ModelObject Find(string id) => id == null ? null : id == Id ? this
+            : Objects().FirstOrDefault(o => o.Id == id) ?? (id == RoofQueries.RidgeBeamId ? this.RidgeBeam() : null);
 
         // ------------------------------------------------------------------ wall framing (the wall's own, else the project's)
 

@@ -171,6 +171,7 @@ namespace BuildingModel.Statics
             for (int k = 1; p0 + k * s < p1 - E; k++) if (p1 - (p0 + k * s) >= s / 4) lines.Add(p0 + k * s);
             lines.Add(p1);
             string low = ridgeX ? "south slope" : "west slope", high = ridgeX ? "north slope" : "east slope";
+            bool vault = b.Roof.HasRidgeBeam;
             Point2 P(double along, double across) => x ? new Point2(across, along) : new Point2(along, across);
             foreach (double p in lines)
                 foreach (var (a, c, side, ridgeAtEnd) in new[] { (q0, ridge, low, true), (ridge, q1, high, false) })
@@ -180,7 +181,10 @@ namespace BuildingModel.Statics
                     double at = ridgeAtEnd ? c - a : 0;
                     if (!j.Supports.Any(y => Math.Abs(y.At - at) <= Bearing))
                     {
-                        j.Supports.Add(new BeamBearing { At = at, Name = "the ridge", Where = ridgeAtEnd ? j.End : j.Start, Kind = BeamSupportKind.Ridge });
+                        // a vault: the ridge beam holds it (no thrust); else the rafter opposite, its thrust tied
+                        j.Supports.Add(vault
+                            ? new BeamBearing { At = at, Name = "the ridge beam", On = RoofQueries.RidgeBeamId, Where = ridgeAtEnd ? j.End : j.Start, Kind = BeamSupportKind.Beam }
+                            : new BeamBearing { At = at, Name = "the ridge", Where = ridgeAtEnd ? j.End : j.Start, Kind = BeamSupportKind.Ridge });
                         j.Supports = j.Supports.OrderBy(y => y.At).ToList();
                     }
                     list.Add(j);

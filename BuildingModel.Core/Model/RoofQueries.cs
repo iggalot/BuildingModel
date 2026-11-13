@@ -34,6 +34,28 @@ namespace BuildingModel.Model
             return plan.Width >= plan.Height ? RidgeAxis.WestEast : RidgeAxis.SouthNorth;
         }
 
+        /// <summary>The ridge beam's ID (it is the roof's, not one of <see cref="Building.Beams"/>).</summary>
+        public const string RidgeBeamId = "RIDGE";
+
+        /// <summary>
+        /// A vaulted gable's ridge beam (<see cref="Roof.HasRidgeBeam"/>) as a beam on the roof level: along the ridge over the
+        /// roof's plan, wall line to wall line, its size the roof's (<see cref="Roof.RidgeBeamSize"/>). Null: none.
+        /// </summary>
+        public static Beam RidgeBeam(this Building b)
+        {
+            var top = b.RoofLevel();
+            if (top == null || b.Roof == null || !b.Roof.HasRidgeBeam) return null;
+            var plan = b.RoofPlan();
+            if (plan.IsEmpty) return null;
+            bool x = b.EffectiveRidge() == RidgeAxis.WestEast;
+            double m = x ? (plan.Y0 + plan.Y1) / 2 : (plan.X0 + plan.X1) / 2;
+            return new Beam
+            {
+                Id = RidgeBeamId, LevelId = top.Id, Size = b.Roof.RidgeBeamSize,
+                Start = x ? new Point2(plan.X0, m) : new Point2(m, plan.Y0), End = x ? new Point2(plan.X1, m) : new Point2(m, plan.Y1),
+            };
+        }
+
         /// <summary>The run the roof rises over twice (ft): the plan across the ridge (the shorter side for a hip). 0 when flat.</summary>
         public static double SpanAcrossRidge(this Building b)
         {

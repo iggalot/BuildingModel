@@ -22,8 +22,9 @@ namespace BuildingModel.Sketch
         private readonly TextBox pitch, parapet, overhang;
         private readonly ComboBox ridge;
         private readonly TextBlock rise, summary, issuesText;
-        private readonly FrameworkElement pitchRow, ridgeRow, parapetRow, ceilingRow;
+        private readonly FrameworkElement pitchRow, ridgeRow, parapetRow, ceilingRow, ridgeBeamRow;
         private readonly CheckBox ceiling;
+        private readonly ComboBox ridgeBeam;
         private bool loading;
 
         /// <summary>Raised when the inputs change (the roof is <see cref="Roof"/>; <see cref="HasErrors"/> says whether it can be used).</summary>
@@ -74,6 +75,12 @@ namespace BuildingModel.Sketch
             ceiling.Checked += (s, e) => Update();
             ceiling.Unchecked += (s, e) => Update();
             Children.Add(ceilingRow = Row("Ceiling", ceiling, out _));
+            // a vaulted gable's ridge beam: its size (not sized: NOT DESIGNED, the lightest that works named)
+            ridgeBeam = new ComboBox { Width = 200, ToolTip = "A vault's ridge beam: one 2x or 2 to 4 plies. Held by the gable end walls and any column reaching the roof under it." };
+            ridgeBeam.Items.Add("(not sized)");
+            foreach (var z in BeamSizes.All) ridgeBeam.Items.Add(z);
+            ridgeBeam.SelectionChanged += (s, e) => Update();
+            Children.Add(ridgeBeamRow = Row("Ridge beam", ridgeBeam, out _));
 
             summary = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0), Foreground = Ui.Ink };
             Children.Add(summary);
@@ -106,6 +113,7 @@ namespace BuildingModel.Sketch
             parapet.Text = Num(r.Parapet);
             overhang.Text = Num(r.Overhang);
             ceiling.IsChecked = !r.NoCeilingJoists;
+            ridgeBeam.SelectedIndex = Math.Max(0, Array.IndexOf(BeamSizes.All, r.RidgeBeamSize) + 1);
             loading = false;
             Update();
         }
@@ -113,15 +121,15 @@ namespace BuildingModel.Sketch
         private void Update()
         {
             if (loading) return;
-            var r = new Roof
-            {
-                Shape = hip.IsChecked == true ? RoofShape.Hip : gable.IsChecked == true ? RoofShape.Gable : RoofShape.Flat,
-                Pitch = SlopeDegrees(),
-                Ridge = (RidgeAxis)Math.Max(0, ridge.SelectedIndex),
-                Parapet = Parse(parapet.Text),
-                Overhang = Parse(overhang.Text),
-                NoCeilingJoists = ceiling.IsChecked != true,
-            };
+            // from the roof as it is, so what this panel does not show is kept
+            var r = (building.Roof ?? new Roof()).Clone();
+            r.Shape = hip.IsChecked == true ? RoofShape.Hip : gable.IsChecked == true ? RoofShape.Gable : RoofShape.Flat;
+            r.Pitch = SlopeDegrees();
+            r.Ridge = (RidgeAxis)Math.Max(0, ridge.SelectedIndex);
+            r.Parapet = Parse(parapet.Text);
+            r.Overhang = Parse(overhang.Text);
+            r.NoCeilingJoists = ceiling.IsChecked != true;
+            r.RidgeBeamSize = ridgeBeam.SelectedIndex > 0 ? BeamSizes.All[ridgeBeam.SelectedIndex - 1] : null;
             if (!r.IsSloped) r.NoCeilingJoists = false;   // a flat roof's ceiling is in its own diaphragm
             // a box left empty or unreadable is an error, not a silent 0
             bool unreadable = r.IsSloped && double.IsNaN(r.Pitch) || double.IsNaN(r.Parapet) || double.IsNaN(r.Overhang);
@@ -132,6 +140,7 @@ namespace BuildingModel.Sketch
             ridgeRow.Visibility = r.Shape == RoofShape.Gable ? Visibility.Visible : Visibility.Collapsed;
             parapetRow.Visibility = r.IsSloped ? Visibility.Collapsed : Visibility.Visible;
             ceilingRow.Visibility = r.IsSloped ? Visibility.Visible : Visibility.Collapsed;
+            ridgeBeamRow.Visibility = r.HasRidgeBeam ? Visibility.Visible : Visibility.Collapsed;
             rise.Text = r.IsSloped && r.Pitch > 0 && r.Pitch < 90 ? $"= {r.Pitch:0.##}°" : "";
 
             // the model's own roof checks, on a copy with this roof

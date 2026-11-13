@@ -265,6 +265,31 @@ namespace BuildingModel.Model
         public override string ToString() => $"{Name ?? "section"}: {Shape} {Walls.X0:0.##},{Walls.Y0:0.##} to {Walls.X1:0.##},{Walls.Y1:0.##}{(EaveRise > 0 ? $", eave +{EaveRise:0.##} ft" : "")}";
     }
 
+    /// <summary>
+    /// A purlin under a roof's rafters (owner 2026-11-12: for rafters too long on their own): a line on plan across them
+    /// (square to them, on one face), each rafter crossing it held there, braced down to a bearing wall (IRC R802.4.5: the
+    /// purlin no smaller than the rafters, continuous; 2x4 braces to a bearing wall at 45° or steeper, no more than 4 ft
+    /// apart, each no longer than 8 ft unbraced). Its braces' feet go on the wall its line is over, found or named.
+    /// </summary>
+    [DataContract]
+    public sealed class RoofPurlin
+    {
+        [DataMember(Order = 1)] public string Id { get; set; }
+        /// <summary>Its line on plan (ft).</summary>
+        [DataMember(Order = 2)] public Point2 Start { get; set; }
+        [DataMember(Order = 3)] public Point2 End { get; set; }
+        /// <summary>Its braces' spacing (ft); 0: 4 ft (IRC R802.4.5's most).</summary>
+        [DataMember(Order = 4, EmitDefaultValue = false)] public double BraceSpacing { get; set; }
+        /// <summary>The bearing wall its braces stand on; null: the nearest under it within 45° of plumb.</summary>
+        [DataMember(Order = 5, EmitDefaultValue = false)] public string BraceTo { get; set; }
+
+        public const double MostBraceSpacing = 4;
+        public double Spacing => BraceSpacing > 0 ? BraceSpacing : MostBraceSpacing;
+        public double Length => Math.Sqrt((End.X - Start.X) * (End.X - Start.X) + (End.Y - Start.Y) * (End.Y - Start.Y));
+        public RoofPurlin Clone() => (RoofPurlin)MemberwiseClone();
+        public override string ToString() => $"purlin {Id}: ({Start.X:0.##}, {Start.Y:0.##}) to ({End.X:0.##}, {End.Y:0.##}), braces at {Spacing:0.##} ft";
+    }
+
     /// <summary>Which way the ridge runs in plan. Auto: along the longer side (a hip roof always is).</summary>
     public enum RidgeAxis { Auto = 0, WestEast = 1, SouthNorth = 2 }
 
@@ -336,10 +361,20 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 12, EmitDefaultValue = false)] public string RidgeBoardSize { get; set; }
 
+        /// <summary>Its purlins (owner 2026-11-12): each a support of the rafters crossing it, braced to a bearing wall.</summary>
+        [DataMember(Order = 13, EmitDefaultValue = false)] public List<RoofPurlin> Purlins { get; set; }
+
+        /// <summary>The purlins' sawn size (as <see cref="HipSize"/>); null: the rafters' (IRC R802.4.5: no smaller than them).</summary>
+        [DataMember(Order = 14, EmitDefaultValue = false)] public string PurlinSize { get; set; }
+
+        /// <summary>The purlins' braces' sawn size; null: 2x4 (IRC R802.4.5).</summary>
+        [DataMember(Order = 15, EmitDefaultValue = false)] public string BraceSize { get; set; }
+
         public Roof Clone()
         {
             var r = (Roof)MemberwiseClone();
             r.Sections = Sections?.Select(s => s.Clone()).ToList();
+            r.Purlins = Purlins?.Select(p => p.Clone()).ToList();
             return r;
         }
 

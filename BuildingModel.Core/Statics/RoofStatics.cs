@@ -23,6 +23,12 @@ namespace BuildingModel.Statics
         public string Name;
         /// <summary>The reaction (+ up, holding the member) per load set.</summary>
         public double[] R;
+        /// <summary>A purlin's brace (owner 2026-11-12): its rise from the wall's top to the purlin and its run on plan (ft); 0, 0: not a brace.</summary>
+        public double BraceRise, BraceRun;
+        public bool IsBrace => BraceRise > 0 || BraceRun > 0;
+        /// <summary>A brace's length (ft) and its slope from level (degrees; 90: plumb).</summary>
+        public double BraceLength => Math.Sqrt(BraceRise * BraceRise + BraceRun * BraceRun);
+        public double BraceSlopeDeg => BraceRun < 1e-9 ? 90 : Math.Atan(BraceRise / BraceRun) * 180 / Math.PI;
     }
 
     /// <summary>
@@ -39,6 +45,8 @@ namespace BuildingModel.Statics
         public List<RoofRafter> Rafters = new List<RoofRafter>();
         public RoofLine Line;
         public RoofCrease Ridge;
+        /// <summary>A purlin's model (<see cref="Roof.Purlins"/>); null: not a purlin.</summary>
+        public RoofPurlin Purlin;
         public List<RoofSupport> Supports = new List<RoofSupport>();
         /// <summary>Its own loads by set (its strip's), and what lands on it from the other members by set (ft from its start).</summary>
         public BeamLoads[] Own;
@@ -88,11 +96,11 @@ namespace BuildingModel.Statics
             var beams = b.Beams.Where(m => m.LevelId == lv.Id && m.Length > 0.1).ToList();
             var ridgeBeam = b.RidgeBeam();
             if (ridgeBeam != null) beams.Add(ridgeBeam);
-            return Of(f, BeamSupports.WallsUnder(b, lv), BeamSupports.ColumnsUnder(b, lv), beams);
+            return Of(f, BeamSupports.WallsUnder(b, lv), BeamSupports.ColumnsUnder(b, lv), beams, b.Roof?.Purlins);
         }
 
-        /// <summary>The members on the walls, columns and beams under the roof.</summary>
-        public static RoofStatics Of(RoofFrame f, IList<Wall> walls, IList<Column> cols, IList<Beam> beams)
+        /// <summary>The members on the walls, columns and beams under the roof (and its purlins, each braced down to a bearing wall).</summary>
+        public static RoofStatics Of(RoofFrame f, IList<Wall> walls, IList<Column> cols, IList<Beam> beams, IList<RoofPurlin> purlins = null)
         {
             var st = new RoofStatics();
             // the pairs: two rafters of one section meeting at a ridge on the same line
@@ -236,6 +244,62 @@ namespace BuildingModel.Statics
                 }
                 Model(bd);
             }
+            // the purlins (owner 2026-11-12): each rafter crossing one held there; each braced down to a bearing wall under it
+            int np = 0;
+            foreach (var p in purlins ?? new List<RoofPurlin>())
+            {
+                if (p == null || p.Length < 0.1) continue;
+                var pm = new RoofMember { Id = string.IsNullOrWhiteSpace(p.Id) ? $"PL{++np}" : p.Id, Kind = "purlin", Start = p.Start, End = p.End, Purlin = p };
+                int crossed = 0;
+                foreach (var m in st.Members.Where(x => x.Rafters.Count > 0).ToList())
+                {
+                    double off = 0;
+                    foreach (var r in m.Rafters)
+                    {
+                        if (Cross(r.Start, r.End, p.Start, p.End, out double t) && t > 1e-6 && t < 1 - 1e-6)
+                        {
+                            var at = new Point2(r.Start.X + (r.End.X - r.Start.X) * t, r.Start.Y + (r.End.Y - r.Start.Y) * t);
+                            Add(m, new RoofSupport { At = off + t * r.Length, Where = at, Kind = RoofTargetKind.Member, On = pm.Id, Name = "purlin " + pm.Id });
+                            crossed++;
+                        }
+                        off += r.Length;
+                    }
+                }
+                st.Members.Add(pm);
+                if (crossed == 0) st.Notes.Add($"purlin {pm.Id}: no rafter crosses it (it runs along them, or off the roof): it holds nothing.");
+                // its braces: no more than its spacing apart, one at each end; each to the nearest bearing wall parallel to it under
+                // it within 45° of plumb (its run on plan no more than its rise)
+                double L = pm.Length;
+                int nb = Math.Max(1, (int)Math.Ceiling(L / p.Spacing - 1e-9));
+                double dx = (p.End.X - p.Start.X) / L, dy = (p.End.Y - p.Start.Y) / L;
+                for (int i = 0; i <= nb; i++)
+                {
+                    double a = L * i / nb;
+                    var top = pm.At(a);
+                    double h = f.ZAt(top);
+                    Wall best = null; double run = 0; Point2 foot = top;
+                    foreach (var w in walls.Where(w => p.BraceTo == null || w.Id == p.BraceTo))
+                    {
+                        double wl = RoofCrease.Dist(w.Start, w.End);
+                        if (wl < 1e-6) continue;
+                        double ex = (w.End.X - w.Start.X) / wl, ey = (w.End.Y - w.Start.Y) / wl;
+                        if (Math.Abs(dx * ey - dy * ex) > 1e-6) continue;
+                        double s = (top.X - w.Start.X) * ex + (top.Y - w.Start.Y) * ey;
+                        if (s < -1e-6 || s > wl + 1e-6) continue;
+                        var q = new Point2(w.Start.X + ex * s, w.Start.Y + ey * s);
+                        double d = RoofCrease.Dist(top, q);
+                        if (double.IsNaN(h) || d > h + 1e-6) continue;
+                        if (best == null || d < run) { best = w; run = d; foot = q; }
+                    }
+                    if (best == null)
+                    {
+                        pm.Supports.Add(new RoofSupport { At = a, Where = top, Kind = RoofTargetKind.None, Name = $"its brace at {a:0.##} ft" });
+                        st.Notes.Add($"purlin {pm.Id}: no bearing wall{(p.BraceTo == null ? "" : " " + p.BraceTo)} under its brace at ({top.X:0.##}, {top.Y:0.##}) within 45° of plumb (IRC R802.4.5): nothing holds it there.");
+                        continue;
+                    }
+                    Add(pm, new RoofSupport { At = a, Where = foot, Kind = RoofTargetKind.Wall, On = best.Id, Name = $"brace to {best.Id}", BraceRise = h, BraceRun = run });
+                }
+            }
             foreach (var m in st.Members) m.Supports = m.Supports.OrderBy(x => x.At).ToList();
             // a support shared by the lever: its share's members
             foreach (var m in st.Members)
@@ -298,14 +362,15 @@ namespace BuildingModel.Statics
                     }).ToArray();
                     var active = m.Supports.Where(x => x.Kind != RoofTargetKind.None).ToList();
                     double[][] R = null;
-                    if (active.Count >= 2) R = BeamStatics.Reactions(m.Length, active.Select(x => x.At).ToList(), loads);
+                    if (m.Rafters.Count == 2) R = PairReactions(m, active, loads, sets);
+                    else if (active.Count >= 2) R = BeamStatics.Reactions(m.Length, active.Select(x => x.At).ToList(), loads);
                     // one support (a stub at a hip's foot, a tail): all of it on that one
                     for (int i = 0; i < active.Count; i++)
                     {
                         var s = active[i];
                         var now = new double[sets];
                         for (int k = 0; k < sets; k++)
-                            now[k] = active.Count == 1 ? TotalOf(loads[k]) : R == null ? 0 : R[k][i];
+                            now[k] = active.Count == 1 && m.Rafters.Count != 2 ? TotalOf(loads[k]) : R == null ? 0 : R[k][i];
                         if (s.R != null) for (int k = 0; k < sets; k++) change = Math.Max(change, Math.Abs(now[k] - s.R[k]));
                         else change = Math.Max(change, now.Select(Math.Abs).DefaultIfEmpty(0).Max());
                         scale = Math.Max(scale, now.Select(Math.Abs).DefaultIfEmpty(0).Max());
@@ -417,6 +482,82 @@ namespace BuildingModel.Statics
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// A rafter pair's reactions (+ up) by set on its supports (<paramref name="active"/>, in order): a three-hinged frame,
+        /// each half a beam from its own supports to the ridge (the ridge one of them: a pin), what the two put on the ridge
+        /// carried down the rafters to the two heels (the supports farthest from it each side) as an arch takes a load at its
+        /// crown, P b / (a + b) and P a / (a + b) on plan: with only the heels under it the same as one beam heel to heel. A
+        /// wall, column or beam under the ridge takes it there instead (a ridge beam). Null: a half with nothing under it.
+        /// </summary>
+        private static double[][] PairReactions(RoofMember m, List<RoofSupport> active, BeamLoads[] loads, int sets)
+        {
+            double ridge = m.Rafters[0].Length, L = m.Length;
+            var R = Enumerable.Range(0, sets).Select(_ => new double[active.Count]).ToArray();
+            int real = active.FindIndex(x => Math.Abs(x.At - ridge) <= Bearing);
+            var left = Enumerable.Range(0, active.Count).Where(i => active[i].At < ridge - Bearing).ToList();
+            var right = Enumerable.Range(0, active.Count).Where(i => active[i].At > ridge + Bearing).ToList();
+            if (left.Count == 0 && right.Count == 0 && real < 0) return null;
+            var ridgeLoad = new double[sets];
+            bool Half(List<int> idx, double u0, double u1, bool low)
+            {
+                // its loads, moved to start at u0 (a point at the ridge: on the low half)
+                var q = loads.Select(z =>
+                {
+                    var h = new BeamLoads();
+                    foreach (var (a, b, wa, wb) in z.Lines())
+                        if (b > u0 + 1e-9 && a < u1 - 1e-9)
+                        {
+                            double a1 = Math.Max(a, u0), b1 = Math.Min(b, u1), k0 = (a1 - a) / (b - a), k1 = (b1 - a) / (b - a);
+                            h.Linear.Add((a1 - u0, b1 - u0, wa + (wb - wa) * k0, wa + (wb - wa) * k1));
+                        }
+                    foreach (var (at, p) in z.Points)
+                        if (low ? at <= ridge + 1e-9 : at > ridge + 1e-9) h.Points.Add((Math.Max(0, Math.Min(u1 - u0, at - u0)), p));
+                    return h;
+                }).ToArray();
+                var at2 = idx.Select(i => active[i].At - u0).ToList();
+                double ru = (low ? ridge : ridge) - u0;
+                at2.Add(ru);
+                var order = Enumerable.Range(0, at2.Count).OrderBy(i => at2[i]).ToList();
+                var rr = BeamStatics.Reactions(u1 - u0, order.Select(i => at2[i]).ToList(), q);
+                if (rr == null) return false;
+                for (int k = 0; k < sets; k++)
+                    for (int j = 0; j < order.Count; j++)
+                    {
+                        int o = order[j];
+                        if (o < idx.Count) R[k][idx[o]] += rr[k][j];
+                        else ridgeLoad[k] += rr[k][j];
+                    }
+                return true;
+            }
+            if (!Half(left, 0, ridge, true)) return null;
+            if (!Half(right, ridge, L, false)) return null;
+            if (real >= 0) { for (int k = 0; k < sets; k++) R[k][real] += ridgeLoad[k]; return R; }
+            // the crown's load to the heels
+            int ha = left.Count > 0 ? left.First() : -1, hb = right.Count > 0 ? right.Last() : -1;
+            if (ha < 0 && hb < 0) return null;
+            double da = ha < 0 ? 0 : ridge - active[ha].At, db = hb < 0 ? 0 : active[hb].At - ridge;
+            for (int k = 0; k < sets; k++)
+            {
+                if (ha < 0) { R[k][hb] += ridgeLoad[k]; continue; }
+                if (hb < 0) { R[k][ha] += ridgeLoad[k]; continue; }
+                R[k][ha] += ridgeLoad[k] * db / (da + db);
+                R[k][hb] += ridgeLoad[k] * da / (da + db);
+            }
+            return R;
+        }
+
+        /// <summary>Where segment a–b crosses segment c–d (t along a–b; false: they do not, or run along each other).</summary>
+        private static bool Cross(Point2 a, Point2 b, Point2 c, Point2 d, out double t)
+        {
+            t = 0;
+            double rx = b.X - a.X, ry = b.Y - a.Y, sx = d.X - c.X, sy = d.Y - c.Y, den = rx * sy - ry * sx;
+            if (Math.Abs(den) < 1e-12) return false;
+            double qx = c.X - a.X, qy = c.Y - a.Y;
+            t = (qx * sy - qy * sx) / den;
+            double u = (qx * ry - qy * rx) / den;
+            return t >= -1e-9 && t <= 1 + 1e-9 && u >= -1e-9 && u <= 1 + 1e-9;
         }
 
         private static double TotalOf(BeamLoads q) =>

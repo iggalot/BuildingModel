@@ -156,11 +156,12 @@ namespace BuildingModel.Statics
         }
 
         /// <summary>
-        /// Laid out by these sections (a hip roof, or a roof of its own sections): the plain gable over the plan keeps the gable's
-        /// own layout (<see cref="Joists"/>).
+        /// Laid out by these sections (a hip roof, a roof of its own sections, or one with purlins): the plain gable over the plan
+        /// keeps the gable's own layout (<see cref="Joists"/>).
         /// </summary>
         public static bool IsSectioned(Building b) =>
-            b?.Roof != null && b.Roof.IsSloped && (b.Roof.Shape == RoofShape.Hip || (b.Roof.Sections != null && b.Roof.Sections.Count > 0));
+            b?.Roof != null && b.Roof.IsSloped && (b.Roof.Shape == RoofShape.Hip || (b.Roof.Sections != null && b.Roof.Sections.Count > 0) ||
+                                                   (b.Roof.Purlins != null && b.Roof.Purlins.Count > 0));
 
         public static RoofFrame Of(Building b) => Of(b, SectionsOf(b), b?.Roof?.Pitch ?? 0, Math.Max(0, b?.Roof?.Overhang ?? 0),
                                                        b == null ? 2 : Joists.SpacingOf(b, b.RoofLevel() ?? new Level()));

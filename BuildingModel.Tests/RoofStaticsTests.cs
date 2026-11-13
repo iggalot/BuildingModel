@@ -99,6 +99,37 @@ namespace BuildingModel.Tests
         }
 
         /// <summary>
+        /// A purlin (owner 2026-11-12; IRC R802.4.5): a gable 40 × 24 at 6:12, a purlin under the south rafters at y = 6 (3 ft up),
+        /// braced to the bearing wall at y = 4 (2 ft run for 3 ft rise: 56°, within 45° of plumb), its braces at 4 ft: 11 of
+        /// them, each on that wall. Every south rafter is held there; the whole roof still lands, every member balanced. A wall
+        /// 4 ft off (y = 2) is too far for a 3 ft rise: none found, said so.
+        /// </summary>
+        [TestMethod]
+        public void Purlin_HoldsTheRafters_BracedToTheWallUnder()
+        {
+            var f = RoofFrame.Of(null, new List<RoofSection> { new RoofSection { Walls = new Rect2(0, 0, 40, 24), Shape = RoofShape.Gable, Ridge = RidgeAxis.WestEast } }, Pitch612, 0, 2);
+            var walls = Around(new Rect2(0, 0, 40, 24));
+            walls.Add(new Wall { Id = "WI", Start = new Point2(0, 4), End = new Point2(40, 4) });
+            var purlin = new RoofPurlin { Id = "PL1", Start = new Point2(0, 6), End = new Point2(40, 6) };
+            var st = RoofStatics.Of(f, walls, new List<Column>(), new List<Beam>(), new[] { purlin });
+            st.Solve(1, m => RoofStatics.AreaLoads(m, new[] { Psf }));
+            Balances(st, 40 * 24);
+            var pm = st.Members.Single(m => m.Kind == "purlin");
+            Assert.AreEqual(11, pm.Supports.Count);
+            Assert.IsTrue(pm.Supports.All(s => s.On == "WI" && Math.Abs(s.BraceRise - 3) < 1e-9 && Math.Abs(s.BraceRun - 2) < 1e-9));
+            var common = st.Members.Single(m => m.Kind == "rafter pair" && Math.Abs(m.Rafters[0].Line - 14) < 1e-9);
+            Assert.IsTrue(common.Supports.Any(s => s.On == "PL1" && Math.Abs(s.Where.Y - 6) < 1e-9));
+            // each south half on the wall, the bearing wall under it (y = 4: it holds the rafters too), the purlin and the ridge:
+            // the purlin its reaction on supports 0, 4, 6, 12 under w = 10 psf over the 40 ft
+            var q = new BeamLoads(); q.Spread.Add((0, 12, 40 * Psf));
+            Assert.AreEqual(BeamStatics.Reactions(12, new[] { 0.0, 4, 6, 12 }, new[] { q })[0][2], pm.Points.Sum(p => p.P[0]), 1e-6);
+
+            walls[4] = new Wall { Id = "WI", Start = new Point2(0, 2), End = new Point2(40, 2) };
+            st = RoofStatics.Of(f, walls, new List<Column>(), new List<Beam>(), new[] { purlin });
+            Assert.IsTrue(st.Notes.Any(n => n.Contains("45°")), string.Join("\n", st.Notes));
+        }
+
+        /// <summary>
         /// The dormer: its header at y = 2 carries the three rafters cut there (x = 16, 18, 20), its ends on the trimmers; the
         /// dormer's rafters on its cheek walls over the main roof's rafters. All 800 sq ft lands on the walls.
         /// </summary>

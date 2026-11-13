@@ -75,7 +75,7 @@ namespace BuildingModel.Sketch
             left.Children.Add(Row("Shape", Line(sShape, Label("  ridge"), sRidge)));
             left.Children.Add(Row("Shed low", sLow));
             left.Children.Add(Row("Slope", Line(sPitch, Label(": 12 (blank: the roof's)"))));
-            left.Children.Add(Row("Eave rise", Line(sRise, Label("ft above the wall tops (a dormer)"))));
+            left.Children.Add(Row("Eave rise", Line(sRise, Label("ft above the wall tops (a dormer; a wing's plate higher, or − lower)"))));
             left.Children.Add(Row("Eaves", Line(sEaves, Label("ft (blank: the roof's)"))));
             foreach (var t in new[] { sName, sX0, sY0, sX1, sY1, sPitch, sRise, sEaves }) t.TextChanged += (s, e) => SectionEdited();
             foreach (var c in new[] { sShape, sRidge, sLow }) c.SelectionChanged += (s, e) => SectionEdited();
@@ -181,7 +181,7 @@ namespace BuildingModel.Sketch
             sRidge.SelectedIndex = (int)s.Ridge;
             sLow.SelectedIndex = (int)s.Low;
             sPitch.Text = s.Pitch > 0 && s.Pitch < 90 ? Num(12 * Math.Tan(s.Pitch * Math.PI / 180)) : "";
-            sRise.Text = s.EaveRise > 0 ? Num(s.EaveRise) : "";
+            sRise.Text = Math.Abs(s.EaveRise) > 1e-9 ? Num(s.EaveRise) : "";
             sEaves.Text = s.Overhang.HasValue ? Num(s.Overhang.Value) : "";
             loading = false;
         }
@@ -201,7 +201,7 @@ namespace BuildingModel.Sketch
             double p = RoofPanel.ParseSlope(sPitch.Text);
             s.Pitch = string.IsNullOrWhiteSpace(sPitch.Text) || double.IsNaN(p) ? 0 : p;
             double rise = Parse(sRise.Text);
-            s.EaveRise = double.IsNaN(rise) ? 0 : Math.Max(0, rise);
+            s.EaveRise = double.IsNaN(rise) ? 0 : rise;   // a dormer's up; a wing's plate may sit higher or lower than the main roof's
             double eaves = Parse(sEaves.Text);
             s.Overhang = string.IsNullOrWhiteSpace(sEaves.Text) || double.IsNaN(eaves) ? (double?)null : Math.Max(0, eaves);
             sectionsTouched = true;

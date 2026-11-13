@@ -103,7 +103,7 @@ namespace BuildingModel.Model
             if (r.Sections != null && r.Sections.Count > 0)
             {
                 // a roof of sections: each its own shape; the highest point is the faces' (ASCE 7 26.2)
-                string Of(RoofSection s) => $"{s.Name ?? "a section"} {s.Shape.ToString().ToLowerInvariant()}{(s.Shape == RoofShape.Shed ? "" : " " + (s.Ridge == RidgeAxis.WestEast ? "W-E" : s.Ridge == RidgeAxis.SouthNorth ? "S-N" : "along the longer side"))}{(s.EaveRise > 0 ? $", eave +{s.EaveRise:0.##} ft" : "")}";
+                string Of(RoofSection s) => $"{s.Name ?? "a section"} {s.Shape.ToString().ToLowerInvariant()}{(s.Shape == RoofShape.Shed ? "" : " " + (s.Ridge == RidgeAxis.WestEast ? "W-E" : s.Ridge == RidgeAxis.SouthNorth ? "S-N" : "along the longer side"))}{(s.EaveRise > 1e-9 ? $", eave +{s.EaveRise:0.##} ft" : s.EaveRise < -1e-9 ? $", eave {s.EaveRise:0.##} ft" : "")}";
                 return $"{r.RisePer12} ({r.Pitch:0.#}°), {r.Sections.Count} section{(r.Sections.Count == 1 ? "" : "s")} ({string.Join("; ", r.Sections.Select(Of))}), its highest point {b.RoofRise():0.##} ft above the eave" + extras;
             }
             return $"{r.Shape} {r.RisePer12} ({r.Pitch:0.#}°), ridge {ridge}, rises {b.RoofRise():0.##} ft" + extras;

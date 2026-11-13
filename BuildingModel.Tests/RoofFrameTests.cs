@@ -20,6 +20,141 @@ namespace BuildingModel.Tests
 
         private static RoofFrame Frame(double overhang, params RoofSection[] s) => RoofFrame.Of(null, s.ToList(), Pitch612, overhang, 2);
 
+        // ------------------------------------------------------------------ two roofs merged (owner 2026-11-13)
+
+        private static RoofFrame LHouse(double wingPlate, bool dormer = false)
+        {
+            var list = new List<RoofSection>
+            {
+                new RoofSection { Name = "main", Walls = new Rect2(0, 0, 56, 28), Shape = RoofShape.Hip, Ridge = RidgeAxis.WestEast },
+                new RoofSection { Name = "wing", Walls = new Rect2(32, 28, 56, 52), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = wingPlate },
+            };
+            if (dormer) list.Add(new RoofSection { Name = "dormer", Walls = new Rect2(12, 1, 20, 8), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 3 });
+            return RoofFrame.Of(null, list, Pitch612, 1.5, 2);
+        }
+
+        /// <summary>The roof's top over a plan point (the face over it), NaN where none is.</summary>
+        private static double Top(RoofFrame f, double x, double y)
+        {
+            double top = double.NaN;
+            foreach (var face in f.Faces)
+                foreach (var p in face.Pieces)
+                    if (p.Edges().All(e => e.a * x + e.b * y + e.c >= -1e-7)) { double z = face.Plane.Z(x, y); if (double.IsNaN(top) || z > top) top = z; }
+            return top;
+        }
+
+        /// <summary>No step along a line on plan: the roof is one surface across it (no gable wall, no fascia standing on a roof).</summary>
+        private static void Smooth(RoofFrame f, double x0, double y0, double x1, double y1, string what)
+        {
+            int n = 4000;
+            double prev = double.NaN;
+            for (int i = 0; i <= n; i++)
+            {
+                double x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n, z = Top(f, x, y);
+                Assert.IsFalse(double.IsNaN(z), $"{what}: no roof over ({x:0.###}, {y:0.###})");
+                if (!double.IsNaN(prev)) Assert.IsTrue(Math.Abs(z - prev) < 0.02, $"{what}: a step of {z - prev:0.###} ft at ({x:0.###}, {y:0.###})");
+                prev = z;
+            }
+        }
+
+        /// <summary>
+        /// The L-shaped house's roof as the owner asked (2026-11-13): the main block hipped 56 × 28, the wing's gable 24 × 24
+        /// running north from its east end, 6:12, 1.5 ft eaves. The wing's ridge (6 ft up) runs back south over the main roof
+        /// until the main roof's north slope rises to it, (28 − y) / 2 = 6 at y = 16: no gable wall at the junction. Its west
+        /// slope meets the main's north slope in a valley, x − 32 = 28 − y, from the eaves' inside corner (30.5, 29.5) up to the
+        /// ridge's end (44, 16); its east slope is the main roof's east hip face run on (the same plane, x = 56 flush). The roof
+        /// covers the two eave rectangles exactly once (59 × 31 + 27 × 24 = 2477 sq ft), and is one surface across the junction.
+        /// </summary>
+        [TestMethod]
+        public void LShapedHouse_TheWingsGableRunsIntoTheHip_TwoRoofsMerged()
+        {
+            var f = LHouse(0);
+            Assert.IsNull(f.NotLaidOut);
+            CollectionAssert.Contains(f.OpenEnds[1].ToList(), "south", "the wing's south end runs on into the main roof");
+            Assert.AreEqual(0, f.OpenEnds[0].Count);
+            Assert.AreEqual(16, f.Reach[1].Y0, 1e-6, "to where its ridge meets the main roof, no further");
+            var ridge = f.Creases.Single(c => c.Kind == CreaseKind.Ridge && c.F1.Plane.Section == 1);
+            Assert.AreEqual(44, ridge.A.X, 1e-6);
+            Assert.AreEqual(16, Math.Min(ridge.A.Y, ridge.B.Y), 1e-6);
+            Assert.AreEqual(6, ridge.ZA, 1e-6);
+            var valley = f.Creases.Single(c => c.Kind == CreaseKind.Valley && Math.Abs(c.A.X - 30.5) < 1e-3);
+            Assert.AreEqual(29.5, valley.A.Y, 1e-6);
+            Assert.AreEqual(44, valley.B.X, 1e-6);
+            Assert.AreEqual(16, valley.B.Y, 1e-6);
+            Assert.AreEqual(59 * 31 + 27 * 24, f.Faces.Sum(x => x.Area), 1e-6, "every point of the roof once");
+            Smooth(f, 40, 5, 40, 50, "x = 40, south to north");
+            Smooth(f, 20, 27, 56, 27, "y = 27, along the junction");
+            Smooth(f, 31, 20, 31, 29.4, "x = 31, the inside corner");
+        }
+
+        /// <summary>
+        /// The wing's plate 1 ft lower (owner 2026-11-13: the plate heights may differ): its ridge 5 ft up meets the main roof
+        /// at (28 − y) / 2 = 5, y = 18. The main's north slope runs on past its eave (y = 29.5) over the wing until it is under
+        /// the wing's eave edge, (1 + 0.75) / 0.5 = 3.5 ft past its wall: no eave and fascia of the hip across the gable, the
+        /// valley x − 32 − 2 = 28 − y down to the wing's eave. One surface, every point once.
+        /// </summary>
+        [TestMethod]
+        public void LShapedHouse_TheWingsPlateLower_TheHipsEavesStop()
+        {
+            var f = LHouse(-1);
+            Assert.IsNull(f.NotLaidOut);
+            Assert.AreEqual(18, f.Reach[1].Y0, 1e-6);
+            Assert.IsTrue(f.Faces.Where(x => x.Plane.Section == 0).SelectMany(x => x.Pieces).SelectMany(p => p.P).Max(p => p.Y) > 29.5 + 0.1,
+                          "the main roof's north slope runs on past its own eave, over the wing");
+            // both slopes now meet the main roof in valleys up to the ridge's end (its east slope is no longer the hip's face)
+            var valleys = f.Creases.Where(c => c.Kind == CreaseKind.Valley && Math.Abs(c.B.X - 44) < 1e-3 && Math.Abs(c.B.Y - 18) < 1e-3).ToList();
+            Assert.AreEqual(2, valleys.Count);
+            Assert.IsTrue(valleys.Any(c => c.A.X < 44) && valleys.Any(c => c.A.X > 44));
+            Assert.AreEqual(59 * 31 + 27 * 24, f.Faces.Sum(x => x.Area), 1e-6);
+            Smooth(f, 40, 5, 40, 50, "x = 40");
+            Smooth(f, 20, 27, 56, 27, "y = 27");
+            Smooth(f, 33, 28, 33, 33, "x = 33, across the hip's eave line");
+        }
+
+        /// <summary>
+        /// A wing (24 .. 48, under the main ridge) with its plate 0.5 ft higher: its ridge 6.5 ft up meets the main roof's north
+        /// slope at (28 − y) / 2 = 6.5, y = 15. Its slopes run on past its eaves (x = 22.5, 49.5) over the main roof until under
+        /// the main's eave edge, (0.5 + 0.75) / 0.5 = 2.5 ft past its walls: the valleys x − 24 + 1 = 28 − y and its mirror land
+        /// on the main's eave at (21.5, 29.5) and (50.5, 29.5), no fascia of the wing standing on the hip. All within the two
+        /// eave rectangles: every point once (59 × 31 + 27 × 24).
+        /// </summary>
+        [TestMethod]
+        public void LShapedHouse_TheWingsPlateHigher_ItsSlopesComeDownToTheHip()
+        {
+            var f = RoofFrame.Of(null, new List<RoofSection>
+            {
+                new RoofSection { Name = "main", Walls = new Rect2(0, 0, 56, 28), Shape = RoofShape.Hip, Ridge = RidgeAxis.WestEast },
+                new RoofSection { Name = "wing", Walls = new Rect2(24, 28, 48, 52), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 0.5 },
+            }, Pitch612, 1.5, 2);
+            Assert.IsNull(f.NotLaidOut);
+            Assert.AreEqual(15, f.Reach[1].Y0, 1e-6);
+            Assert.IsTrue(f.Faces.Where(x => x.Plane.Section == 1).SelectMany(x => x.Pieces).SelectMany(p => p.P).Min(p => p.X) < 22.5 - 0.1,
+                          "the wing's west slope runs on past its own eave, over the main roof");
+            Assert.IsTrue(f.Creases.Any(c => c.Kind == CreaseKind.Valley && Math.Abs(c.A.X - 21.5) < 1e-3 && Math.Abs(c.A.Y - 29.5) < 1e-3), "the west valley lands on the main's eave");
+            Assert.IsTrue(f.Creases.Any(c => c.Kind == CreaseKind.Valley && Math.Abs(c.A.X - 50.5) < 1e-3 && Math.Abs(c.A.Y - 29.5) < 1e-3), "the east valley too");
+            Assert.AreEqual(59 * 31 + 27 * 24, f.Faces.Sum(x => x.Area), 1e-6);
+            Smooth(f, 36, 5, 36, 50, "x = 36, the wing's ridge line");
+            Smooth(f, 10, 27, 56, 27, "y = 27");
+            Smooth(f, 22, 20, 22, 29.4, "x = 22, under the wing's slope run on");
+            Smooth(f, 15, 29, 30, 29, "y = 29, across the inside corner");
+        }
+
+        /// <summary>
+        /// A dormer (8 wide, its eave 3 ft up) on the south slope: its ridge, 3 + 2 = 5 ft up, runs back north until the main roof
+        /// rises to it, y / 2 = 5 at y = 10 (no back wall); its front stays a gable (the main roof falls away south of it) and its
+        /// eaves stand over the main roof (its walls stand on that roof).
+        /// </summary>
+        [TestMethod]
+        public void Dormer_ItsRidgeRunsBackIntoTheRoof_ItsFrontAGable()
+        {
+            var f = LHouse(0, dormer: true);
+            Assert.IsNull(f.NotLaidOut);
+            CollectionAssert.Contains(f.OpenEnds[2].ToList(), "north");
+            Assert.IsFalse(f.OpenEnds[2].Contains("south"));
+            Assert.AreEqual(10, f.Reach[2].Y1, 1e-6);
+            Smooth(f, 16, 3, 16, 20, "the dormer's ridge line, back into the main roof");
+        }
+
         /// <summary>
         /// An L (owner 2026-11-13, ASCE 7 26.2): a hip 56 × 28 at 6:12 rises 14 × 0.5 = 7 ft; the wing's gable 24 wide, 6 ft; a
         /// dormer's gable 8 wide with its eave 3 ft up, 3 + 2 = 5 ft. The highest point is the hip's ridge: rise 7, ridge 16, h

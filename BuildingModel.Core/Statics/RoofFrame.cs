@@ -143,6 +143,14 @@ namespace BuildingModel.Statics
         public List<RoofLine> Lines = new List<RoofLine>();
         /// <summary>Why it cannot be laid out (null: it is).</summary>
         public string NotLaidOut;
+        /// <summary>
+        /// Each section's gable ends that run on into a higher section ("south", "north", "west", "east"): the gable's slopes go on
+        /// over that roof until they die into it, the valleys where they meet (owner 2026-11-13: a cross gable or a dormer frames
+        /// into the main roof, no gable wall standing on it). The section's plan reach there is <see cref="Reach"/>.
+        /// </summary>
+        public List<HashSet<string>> OpenEnds = new List<HashSet<string>>();
+        /// <summary>Each section's reach on plan: its eaves, run on past its open ends.</summary>
+        public List<Rect2> Reach = new List<Rect2>();
 
         /// <summary>The roof's sections: its own, else the one over its plan (its shape and ridge); none for a flat roof.</summary>
         public static List<RoofSection> SectionsOf(Building b)
@@ -175,6 +183,24 @@ namespace BuildingModel.Statics
             return new Rect2(w.X0 - o, w.Y0 - o, w.X1 + o, w.Y1 + o);
         }
 
+        /// <summary>A dormer: its walls stand on another section's roof (inside that section's walls), its eave raised.</summary>
+        public static bool IsDormer(IList<RoofSection> sections, int i)
+        {
+            var w = sections[i].Walls;
+            if (!(sections[i].EaveRise > E)) return false;
+            for (int j = 0; j < sections.Count; j++)
+            {
+                if (j == i) continue;
+                var o = sections[j].Walls;
+                if (w.X0 > o.X0 - E && w.X1 < o.X1 + E && w.Y0 > o.Y0 - E && w.Y1 < o.Y1 + E) return true;
+            }
+            return false;
+        }
+
+        /// <summary>A section's own surface over a plan point: the lowest of its planes (ft above the wall tops).</summary>
+        private static double SurfaceOf(RoofFrame f, int section, double x, double y) =>
+            f.Planes.Where(p => p.Section == section).Select(p => p.Z(x, y)).DefaultIfEmpty(double.NegativeInfinity).Min();
+
         /// <summary>A gable's ridge W-E (Auto: along the longer side; a hip always).</summary>
         public static bool RidgeWestEast(RoofSection s) =>
             s.Shape == RoofShape.Gable && s.Ridge != RidgeAxis.Auto ? s.Ridge == RidgeAxis.WestEast : s.Walls.Width >= s.Walls.Height;
@@ -206,35 +232,150 @@ namespace BuildingModel.Statics
                 f.Planes.AddRange(sides.Select(P));
             }
 
+            // Two roofs merged (owner 2026-11-13: a cross gable's ridge runs back into the hip roof, two valleys, a smooth
+            // interface; the plate heights may differ; the hip's eaves stop, never running on across the gable under its roof):
+            //  1. a gable's end butting into a higher section runs on: its ridge goes on along its line to where that section's
+            //     roof rises to it, its slopes with it, so the two roofs meet in valleys. An end where the other roof never rises
+            //     to the ridge (a dormer's front, a wing taller than the main roof) stays a gable end.
+            //  2. a slope running down to a wall another section stands against runs on past its eaves over that section, until
+            //     it is under that section's lowest eave: where that section's plate is lower, the slope comes down to meet its
+            //     roof (a valley), not an eave and fascia standing over it.
+            // The highest roof then wins at every point, as before.
+            var cover = new List<Rect2>();
+            var bands = new List<List<Rect2>>();
+            for (int i = 0; i < sections.Count; i++)
+            {
+                var s = sections[i];
+                f.OpenEnds.Add(new HashSet<string>());
+                var reach = EavesOf(s, roofOverhang);
+                var cov = IsDormer(sections, i) ? s.Walls : reach;   // a dormer's eaves overhang the roof below, which runs on under them
+                if (s.Shape == RoofShape.Gable)
+                {
+                    var w = s.Walls;
+                    bool we = RidgeWestEast(s);
+                    double top = SurfaceOf(f, i, (w.X0 + w.X1) / 2, (w.Y0 + w.Y1) / 2);   // its ridge's height
+                    foreach (var (side, dir) in we ? new[] { ("west", -1), ("east", 1) } : new[] { ("south", -1), ("north", 1) })
+                    {
+                        double end = we ? (dir < 0 ? w.X0 : w.X1) : (dir < 0 ? w.Y0 : w.Y1);
+                        double ridge = we ? (w.Y0 + w.Y1) / 2 : (w.X0 + w.X1) / 2;
+                        for (int j = 0; j < sections.Count; j++)
+                        {
+                            if (j == i) continue;
+                            var o = sections[j].Walls;
+                            // the end's line on or inside the other's walls
+                            bool on = we ? end >= o.X0 - E && end <= o.X1 + E && w.Y0 >= o.Y0 - E && w.Y1 <= o.Y1 + E
+                                         : end >= o.Y0 - E && end <= o.Y1 + E && w.X0 >= o.X0 - E && w.X1 <= o.X1 + E;
+                            if (!on) continue;
+                            // walk out along the ridge line until the other roof reaches the ridge, within its eaves
+                            var oe = EavesOf(sections[j], roofOverhang);
+                            double limit = we ? (dir < 0 ? oe.X0 : oe.X1) : (dir < 0 ? oe.Y0 : oe.Y1);
+                            double Gap(double u) => SurfaceOf(f, j, we ? u : ridge, we ? ridge : u) - top;
+                            double meets = double.NaN;
+                            for (double u = end; dir < 0 ? u >= limit - E : u <= limit + E; u += dir * 0.05)
+                                if (Gap(u) >= -1e-9)
+                                {
+                                    // exactly where: halved between the last step under it and this one
+                                    double lo = u - dir * 0.05, hi = u;
+                                    if (dir < 0 ? lo > end : lo < end) lo = end;
+                                    for (int it = 0; it < 60; it++) { double mid = (lo + hi) / 2; if (Gap(mid) >= -1e-12) hi = mid; else lo = mid; }
+                                    meets = hi; break;
+                                }
+                            if (double.IsNaN(meets) || Math.Abs(meets - end) < E) continue;
+                            f.OpenEnds[i].Add(side);
+                            // run on to where the ridge meets the other roof, no further (past its ridge the other roof falls away);
+                            // never short of its own eaves
+                            if (we)
+                            {
+                                reach = dir < 0 ? new Rect2(Math.Min(reach.X0, meets), reach.Y0, reach.X1, reach.Y1) : new Rect2(reach.X0, reach.Y0, Math.Max(reach.X1, meets), reach.Y1);
+                                cov = dir < 0 ? new Rect2(Math.Min(cov.X0, meets), cov.Y0, cov.X1, cov.Y1) : new Rect2(cov.X0, cov.Y0, Math.Max(cov.X1, meets), cov.Y1);
+                            }
+                            else
+                            {
+                                reach = dir < 0 ? new Rect2(reach.X0, Math.Min(reach.Y0, meets), reach.X1, reach.Y1) : new Rect2(reach.X0, reach.Y0, reach.X1, Math.Max(reach.Y1, meets));
+                                cov = dir < 0 ? new Rect2(cov.X0, Math.Min(cov.Y0, meets), cov.X1, cov.Y1) : new Rect2(cov.X0, cov.Y0, cov.X1, Math.Max(cov.Y1, meets));
+                            }
+                            break;
+                        }
+                    }
+                }
+                f.Reach.Add(reach);
+                cover.Add(cov);
+            }
+            for (int i = 0; i < sections.Count; i++)
+            {
+                var s = sections[i];
+                var w = s.Walls;
+                double oi = OverhangOf(s, roofOverhang), ti = Math.Tan(PitchOf(s, roofPitch) * Math.PI / 180);
+                var mine = new List<Rect2>();
+                for (int j = 0; j < sections.Count; j++)
+                {
+                    if (j == i) continue;
+                    var o = sections[j].Walls;
+                    // a dormer (its walls standing on the other's roof) keeps its eaves: its fascia stands over that roof
+                    if (w.X0 > o.X0 - E && w.X1 < o.X1 + E && w.Y0 > o.Y0 - E && w.Y1 < o.Y1 + E) continue;
+                    double oj = OverhangOf(sections[j], roofOverhang), tj = Math.Tan(PitchOf(sections[j], roofPitch) * Math.PI / 180);
+                    // how far past its wall the slope must run to be under the other's lowest eave (its eave's edge)
+                    double depth = (s.EaveRise - sections[j].EaveRise + tj * oj) / ti;
+                    if (depth <= oi + E) continue;
+                    var ej = f.Reach[j];
+                    var ei = f.Reach[i];
+                    foreach (var side in new[] { "south", "north", "west", "east" })
+                    {
+                        if (!f.Planes.Any(p => p.Section == i && p.Side == side)) continue;   // no slope of its own coming down there
+                        // past its eave on that side, along its reach, over the other's roof (its reach) only
+                        var band = side == "south" ? new Rect2(ei.X0, w.Y0 - depth, ei.X1, w.Y0 - oi)
+                                 : side == "north" ? new Rect2(ei.X0, w.Y1 + oi, ei.X1, w.Y1 + depth)
+                                 : side == "west" ? new Rect2(w.X0 - depth, ei.Y0, w.X0 - oi, ei.Y1)
+                                 : new Rect2(w.X1 + oi, ei.Y0, w.X1 + depth, ei.Y1);
+                        double x0 = Math.Max(band.X0, ej.X0), x1 = Math.Min(band.X1, ej.X1), y0 = Math.Max(band.Y0, ej.Y0), y1 = Math.Min(band.Y1, ej.Y1);
+                        if (x1 - x0 <= E || y1 - y0 <= E) continue;
+                        mine.Add(new Rect2(x0, y0, x1, y1));
+                    }
+                }
+                bands.Add(mine);
+            }
+
             // the faces: each plane where it is its section's lowest, less where another section is higher
             foreach (var pl in f.Planes)
             {
                 var s = sections[pl.Section];
-                var piece = Convex.Of(EavesOf(s, roofOverhang));
-                foreach (var o in f.Planes.Where(o => o.Section == pl.Section && o != pl))
-                    piece = piece.Clip(o.Gx - pl.Gx, o.Gy - pl.Gy, o.Z0 - pl.Z0);
-                var pieces = piece.IsEmpty ? new List<Convex>() : new List<Convex> { piece };
+                var pieces = new List<Convex>();
+                var done = new List<Rect2>();
+                foreach (var rect in new[] { f.Reach[pl.Section] }.Concat(bands[pl.Section]))
+                {
+                    var piece = Convex.Of(rect);
+                    foreach (var o in f.Planes.Where(o => o.Section == pl.Section && o != pl))
+                        piece = piece.Clip(o.Gx - pl.Gx, o.Gy - pl.Gy, o.Z0 - pl.Z0);
+                    // never twice: less what the rectangles before it have
+                    var parts = piece.IsEmpty ? new List<Convex>() : new List<Convex> { piece };
+                    foreach (var d0 in done)
+                        parts = parts.SelectMany(p => p.Minus(new List<(double, double, double)> { (1, 0, -d0.X0), (-1, 0, d0.X1), (0, 1, -d0.Y0), (0, -1, d0.Y1) })).ToList();
+                    pieces.AddRange(parts.Where(p => !p.IsEmpty));
+                    done.Add(rect);
+                }
                 for (int j = 0; j < sections.Count && pieces.Count > 0; j++)
                 {
                     if (j == pl.Section) continue;
                     // another section covers this plane where its surface is above it, over its eaves (a dormer: over its walls
                     // only: its eaves overhang the roof below, which runs on under them)
-                    var cover = sections[j].EaveRise > E ? sections[j].Walls : EavesOf(sections[j], roofOverhang);
-                    var region = new List<(double, double, double)> { (1, 0, -cover.X0), (-1, 0, cover.X1), (0, 1, -cover.Y0), (0, -1, cover.Y1) };
-                    bool none = false;
-                    foreach (var o in f.Planes.Where(o => o.Section == j))
+                    foreach (var cj in new[] { cover[j] }.Concat(bands[j]))
                     {
-                        double a = o.Gx - pl.Gx, bb = o.Gy - pl.Gy, c = o.Z0 - pl.Z0;
-                        if (Math.Abs(a) < 1e-12 && Math.Abs(bb) < 1e-12)
+                        var region = new List<(double, double, double)> { (1, 0, -cj.X0), (-1, 0, cj.X1), (0, 1, -cj.Y0), (0, -1, cj.Y1) };
+                        bool none = false;
+                        foreach (var o in f.Planes.Where(o => o.Section == j))
                         {
-                            // the same plane: the earlier section has it
-                            if (c > 1e-9 || (Math.Abs(c) <= 1e-9 && j < pl.Section)) continue;
-                            none = true; break;
+                            double a = o.Gx - pl.Gx, bb = o.Gy - pl.Gy, c = o.Z0 - pl.Z0;
+                            if (Math.Abs(a) < 1e-12 && Math.Abs(bb) < 1e-12)
+                            {
+                                // the same plane: the earlier section has it
+                                if (c > 1e-9 || (Math.Abs(c) <= 1e-9 && j < pl.Section)) continue;
+                                none = true; break;
+                            }
+                            region.Add((a, bb, c));
                         }
-                        region.Add((a, bb, c));
+                        if (none) continue;
+                        pieces = pieces.SelectMany(p => p.Minus(region)).ToList();
                     }
-                    if (none) continue;
-                    pieces = pieces.SelectMany(p => p.Minus(region)).ToList();
                 }
                 pieces = pieces.Where(p => !p.IsEmpty).ToList();
                 if (pieces.Sum(p => p.Area) < 1e-3) continue;

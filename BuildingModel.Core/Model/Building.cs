@@ -268,7 +268,7 @@ namespace BuildingModel.Model
         [DataMember(Order = 8, EmitDefaultValue = false)] public double? Overhang { get; set; }
 
         public RoofSection Clone() => (RoofSection)MemberwiseClone();
-        public override string ToString() => $"{Name ?? "section"}: {Shape} {Walls.X0:0.##},{Walls.Y0:0.##} to {Walls.X1:0.##},{Walls.Y1:0.##}{(EaveRise > 0 ? $", eave +{EaveRise:0.##} ft" : "")}";
+        public override string ToString() => $"{Name ?? "section"}: {Shape} {Walls.X0:0.##},{Walls.Y0:0.##} to {Walls.X1:0.##},{Walls.Y1:0.##}{(EaveRise > 1e-9 ? $", eave +{EaveRise:0.##} ft" : EaveRise < -1e-9 ? $", eave {EaveRise:0.##} ft" : "")}";
     }
 
     /// <summary>

@@ -228,6 +228,12 @@ namespace BuildingModel.Model
         /// and deleted (<see cref="Edits.BuildingEdits.FollowSupports"/>).
         /// </summary>
         [DataMember(Order = 4, EmitDefaultValue = false)] public bool BaseFixed { get; set; }
+
+        /// <summary>
+        /// Its sawn size (owner 2026-11-12, a beam's bearing on a column): a post ("4x4", "6x6") or 2x studs nailed together
+        /// ("3-2x6"), <see cref="ColumnSizes"/>; null: not sized (the bearing it needs is given, not checked).
+        /// </summary>
+        [DataMember(Order = 5, EmitDefaultValue = false)] public string Size { get; set; }
     }
 
     /// <summary>A roof's shape; a shed (one slope) only as a section (<see cref="RoofSection"/>: a shed dormer, a lean-to).</summary>

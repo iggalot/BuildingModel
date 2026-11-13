@@ -80,6 +80,7 @@ namespace BuildingModel.Sketch
                     Children.Add(auto);
                     Levels("Base", col.BaseLevelId, id => { col.BaseLevelId = id; col.BaseFixed = true; });
                     Levels("Top", col.TopLevelId, id => col.TopLevelId = id);
+                    ColumnSize(col);
                     var through = BuildingEdits.ThroughLevels(B, col);
                     var baseLevel = B.Level(col.BaseLevelId);
                     string on = baseLevel == null ? "" : baseLevel.Elevation == 0 ? "the foundation" : $"{BuildingEdits.SupportAt(B, baseLevel, col.At, col.Id) ?? "nothing"} at {baseLevel.Name}";
@@ -355,6 +356,24 @@ namespace BuildingModel.Sketch
                 var z = (string)i.Tag;
                 if (z == bm.Size) return;
                 sketch.Edit(z == null ? $"{bm.Id} not sized." : $"{bm.Id} sized {z}.", b => bm.Size = z);
+            };
+            Row("Size", c);
+        }
+
+        /// <summary>A column's sawn size (owner 2026-11-12: the bearing of the beams on it): a post or 2x studs nailed together.</summary>
+        private void ColumnSize(Column col)
+        {
+            var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1), ToolTip = "Its sawn size: a post, or 2 to 4 2x studs nailed together (\"3-2x6\"). The beams on it are checked for their bearing on it." };
+            c.Items.Add(new ComboBoxItem { Content = "(not sized)", Tag = null, IsSelected = string.IsNullOrEmpty(col.Size) });
+            foreach (var z in ColumnSizes.All) c.Items.Add(new ComboBoxItem { Content = z, Tag = z, IsSelected = z == col.Size });
+            if (!string.IsNullOrEmpty(col.Size) && !ColumnSizes.IsSize(col.Size))
+                c.Items.Add(new ComboBoxItem { Content = col.Size + " (not a size here)", Tag = col.Size, IsSelected = true });
+            c.SelectionChanged += (s, e) =>
+            {
+                if (!(c.SelectedItem is ComboBoxItem i)) return;
+                var z = (string)i.Tag;
+                if (z == col.Size) return;
+                sketch.Edit(z == null ? $"{col.Id} not sized." : $"{col.Id} sized {z}.", b => col.Size = z);
             };
             Row("Size", c);
         }

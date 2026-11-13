@@ -66,6 +66,7 @@ namespace BuildingModel.Sketch
                     Number("End x", bm.End.X, v => bm.End = new Point2(v, bm.End.Y));
                     Number("End y", bm.End.Y, v => bm.End = new Point2(bm.End.X, v));
                     Levels("Level", bm.LevelId, id => bm.LevelId = id);
+                    BeamSize(bm);
                     Hint($"Span {bm.Length:0.##} ft. It carries the hold-downs and posts of the story above that land on it to its ends; Shear Walls sizes the end reactions and the hold-downs under them.");
                     FramingProps(bm);
                     break;
@@ -335,6 +336,27 @@ namespace BuildingModel.Sketch
             if (!roles.TryGetValue(bm.Id, out var m)) return;
             string held = m.Supports.Count == 0 ? "nothing" : string.Join(", ", m.Supports.Select(s => $"{s.On} at its {s.Name}"));
             Hint($"In the framing: a {m.Describe()}. Held up by {held}.");
+        }
+
+        /// <summary>
+        /// A beam's sawn size (owner 2026-11-12: a size per beam): one 2x or plies of it. "Not sized" leaves it to be designed:
+        /// the Load Manager and the hub say NOT DESIGNED and name the lightest size that works.
+        /// </summary>
+        private void BeamSize(Beam bm)
+        {
+            var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1), ToolTip = "Its sawn size: one 2x, or 2 to 4 plies nailed together (\"3-2x12\"). The species and grade are the framing's (Model defaults)." };
+            c.Items.Add(new ComboBoxItem { Content = "(not sized)", Tag = null, IsSelected = string.IsNullOrEmpty(bm.Size) });
+            foreach (var z in BeamSizes.All) c.Items.Add(new ComboBoxItem { Content = z, Tag = z, IsSelected = z == bm.Size });
+            if (!string.IsNullOrEmpty(bm.Size) && !BeamSizes.IsSize(bm.Size))
+                c.Items.Add(new ComboBoxItem { Content = bm.Size + " (not a size here)", Tag = bm.Size, IsSelected = true });
+            c.SelectionChanged += (s, e) =>
+            {
+                if (!(c.SelectedItem is ComboBoxItem i)) return;
+                var z = (string)i.Tag;
+                if (z == bm.Size) return;
+                sketch.Edit(z == null ? $"{bm.Id} not sized." : $"{bm.Id} sized {z}.", b => bm.Size = z);
+            };
+            Row("Size", c);
         }
 
         private void LevelProps(Level l)

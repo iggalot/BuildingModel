@@ -201,6 +201,11 @@ namespace BuildingModel.Model
         [DataMember(Order = 1)] public string LevelId { get; set; }
         [DataMember(Order = 2)] public Point2 Start { get; set; }
         [DataMember(Order = 3)] public Point2 End { get; set; }
+        /// <summary>
+        /// Its sawn size (<see cref="BeamSizes"/>: "2x10", "3-2x12"; owner 2026-11-12: a size per beam). Null: not sized yet,
+        /// and every app says it is NOT DESIGNED, with the lightest size that works.
+        /// </summary>
+        [DataMember(Order = 4, EmitDefaultValue = false)] public string Size { get; set; }
 
         public double Length => new Segment2(Start, End).Length;
         public Point2 Middle => new Point2((Start.X + End.X) / 2, (Start.Y + End.Y) / 2);

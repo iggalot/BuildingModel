@@ -977,7 +977,9 @@ namespace BuildingModel.Sketch
                 ctx.DrawLine(StepPen, s0, s1);
                 if (!ShowLabels) continue;
                 double ha = level.Elevation + a.Offset, hc = level.Elevation + c.Offset;
-                Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: shear across it NOT DESIGNED", new Point((s0.X + s1.X) / 2 + 4, (s0.Y + s1.Y) / 2 + 4), B(Palette.Error), 10, false);
+                // above the line at its west or south end, clear of the walls' and diaphragms' labels under it
+                var start = s0.X + s0.Y <= s1.X + s1.Y ? s0 : s1;
+                Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: shear across it NOT DESIGNED", new Point(start.X + 6, start.Y - 17), B(Palette.Error), 10, true);
             }
         }
 

@@ -230,7 +230,40 @@ namespace BuildingModel.Model
         [DataMember(Order = 4, EmitDefaultValue = false)] public bool BaseFixed { get; set; }
     }
 
-    public enum RoofShape { Flat = 0, Gable = 1, Hip = 2 }
+    /// <summary>A roof's shape; a shed (one slope) only as a section (<see cref="RoofSection"/>: a shed dormer, a lean-to).</summary>
+    public enum RoofShape { Flat = 0, Gable = 1, Hip = 2, Shed = 3 }
+
+    /// <summary>A side of a rectangle on plan: a shed section's low side.</summary>
+    public enum RoofSide { South = 0, North = 1, West = 2, East = 3 }
+
+    /// <summary>
+    /// One part of a sloped roof (owner 2026-11-12: wings, cross gables, hips that stick out, dormers): a rectangle on plan
+    /// (its wall lines; the eaves past them by its overhang), a gable, hip or shed of its own pitch, its eave at the wall tops
+    /// or higher (a dormer's, standing on the roof below). The roof's surface is the highest section at each point; where two
+    /// meet a valley forms, and within one its ridge and hips (<see cref="Statics.RoofFrame"/>).
+    /// </summary>
+    [DataContract]
+    public sealed class RoofSection
+    {
+        [DataMember(Order = 1)] public string Name { get; set; }
+        /// <summary>Its wall lines on plan (ft).</summary>
+        [DataMember(Order = 2)] public Rect2 Walls { get; set; }
+        /// <summary>Gable, hip or shed.</summary>
+        [DataMember(Order = 3)] public RoofShape Shape { get; set; } = RoofShape.Gable;
+        /// <summary>A gable's ridge: Auto along the longer side (a hip's always is).</summary>
+        [DataMember(Order = 4)] public RidgeAxis Ridge { get; set; } = RidgeAxis.Auto;
+        /// <summary>A shed's low side (its eave); the side opposite is its high wall.</summary>
+        [DataMember(Order = 5)] public RoofSide Low { get; set; } = RoofSide.South;
+        /// <summary>Its slope (degrees); 0: the roof's (<see cref="Roof.Pitch"/>).</summary>
+        [DataMember(Order = 6, EmitDefaultValue = false)] public double Pitch { get; set; }
+        /// <summary>Its eave above the roof level (ft): 0 at the wall tops; a dormer's, on the roof below.</summary>
+        [DataMember(Order = 7, EmitDefaultValue = false)] public double EaveRise { get; set; }
+        /// <summary>Its eaves past its walls (ft); null: the roof's (<see cref="Roof.Overhang"/>).</summary>
+        [DataMember(Order = 8, EmitDefaultValue = false)] public double? Overhang { get; set; }
+
+        public RoofSection Clone() => (RoofSection)MemberwiseClone();
+        public override string ToString() => $"{Name ?? "section"}: {Shape} {Walls.X0:0.##},{Walls.Y0:0.##} to {Walls.X1:0.##},{Walls.Y1:0.##}{(EaveRise > 0 ? $", eave +{EaveRise:0.##} ft" : "")}";
+    }
 
     /// <summary>Which way the ridge runs in plan. Auto: along the longer side (a hip roof always is).</summary>
     public enum RidgeAxis { Auto = 0, WestEast = 1, SouthNorth = 2 }
@@ -279,7 +312,18 @@ namespace BuildingModel.Model
         /// <summary>A gable's or hip's own ceiling joists under the rafters (the roof level's diaphragm framing), not turned off.</summary>
         public bool HasCeilingJoists => IsSloped && !NoCeilingJoists;
 
-        public Roof Clone() => (Roof)MemberwiseClone();
+        /// <summary>
+        /// Its sections (owner 2026-11-12: a roof of several parts, a dormer's too); none: the one section over the roof's plan,
+        /// of its shape and ridge (<see cref="Statics.RoofFrame.SectionsOf"/>).
+        /// </summary>
+        [DataMember(Order = 8, EmitDefaultValue = false)] public List<RoofSection> Sections { get; set; }
+
+        public Roof Clone()
+        {
+            var r = (Roof)MemberwiseClone();
+            r.Sections = Sections?.Select(s => s.Clone()).ToList();
+            return r;
+        }
 
         /// <summary>The pitch as rise in 12 in. of run, e.g. "4.0:12"; "-" for a flat roof or a bad slope.</summary>
         public string RisePer12 => IsSloped && Pitch > 0 && Pitch < 90 ? (12 * Math.Tan(Pitch * Math.PI / 180)).ToString("0.0") + ":12" : "-";

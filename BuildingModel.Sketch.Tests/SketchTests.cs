@@ -85,6 +85,31 @@ namespace BuildingModel.Sketch.Tests
         }
 
         /// <summary>
+        /// Diaphragms at different heights (owner 2026-11-13): the step where they meet drawn dashed in amber along y = 28, with
+        /// the wing's offset on its label; one height, none.
+        /// </summary>
+        [STATestMethod]
+        public void Render_TheStep_WhereDiaphragmsAtTwoHeightsMeet()
+        {
+            int Amber(double wingOffset)
+            {
+                var b = Building.New();
+                var top = b.AddLevel("Level 2", 9);
+                b.AddDiaphragm(top, new Rect2(0, 0, 56, 28));
+                b.AddDiaphragm(top, new Rect2(32, 28, 56, 52)).Offset = wingOffset;
+                foreach (var (x0, y0, x1, y1) in new[] { (0.0, 0.0, 56.0, 0.0), (0.0, 0.0, 0.0, 28.0), (0.0, 28.0, 32.0, 28.0), (56.0, 0.0, 56.0, 52.0), (32.0, 28.0, 32.0, 52.0), (32.0, 52.0, 56.0, 52.0) })
+                    b.AddWall(b.Ground, top, x0, y0, x1, y1);
+                var v = new SketchView();
+                v.Canvas.SetBuilding(b, top.Id);
+                Render(v, "step");
+                v.Canvas.ZoomExtents();
+                return Count(Render(v, wingOffset == 0 ? "step-none" : "step-wing-lower"), SketchCanvas.Palette.Warning, 10);
+            }
+            int with = Amber(-1), without = Amber(0);
+            Assert.IsTrue(with > without + 100, $"the step drawn: {with} amber pixels, {without} without");
+        }
+
+        /// <summary>
         /// The shear walls' horizontal pairs drawn on the plans (ShearPairs.Drawn, the hold-downs' rule): with the internal
         /// forces shown, level 2 gets both halves of the east wall's top pair; the ground plan its sill's anchor reaction; with
         /// the internal forces off and the whole structure drawn, level 2 none (inside the body).

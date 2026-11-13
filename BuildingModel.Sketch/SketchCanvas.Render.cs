@@ -201,10 +201,11 @@ namespace BuildingModel.Sketch
             if (ShowLabels)
             {
                 if (ShowWallLabels) foreach (var w in walls) WallLabel(ctx, w);
-                if (!ShowSpans) foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
+                if (!ShowSpans) foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + OffsetTag(d) + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
                 foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true); }
             }
             if (ShowSpans) foreach (var d in b.DiaphragmsOn(level)) SpanMarkers(ctx, b, d, ShowLabels);
+            DrawSteps(ctx, b, level);
             // the hold-downs after the members' labels, so theirs keep off them (the shared rule, as in every app)
             if (ShowConnections) { DrawShearPairs(ctx, b, level); DrawConnections(ctx, b, level, foundation); }
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
@@ -756,12 +757,12 @@ namespace BuildingModel.Sketch
                 var big = d.Pieces.OrderByDescending(p => p.Width * p.Height).First();
                 bool weRidge = b.EffectiveRidge() == RidgeAxis.WestEast;
                 SpanMarker(ctx, b, d.LevelId, big, weRidge ? SpanDirection.SouthNorth : SpanDirection.WestEast,
-                           $"{d.Id} · rafters {(weRidge ? "S-N" : "W-E")} (across the ridge)", label);
+                           $"{d.Id}{OffsetTag(d)} · rafters {(weRidge ? "S-N" : "W-E")} (across the ridge)", label);
                 return;
             }
             bool parts = (d.Framing?.Count ?? 0) > 1;
             foreach (var a in d.Framing ?? new List<FramingArea>())
-                SpanMarker(ctx, b, d.LevelId, a.Rect, a.Span, $"{(parts ? a.Id : d.Id)}{(string.IsNullOrEmpty(a.Name) ? "" : " " + a.Name)} · {(rafters ? "rafters" : "joists")} {(a.Span == SpanDirection.WestEast ? "W-E" : "S-N")}{(AreaNote?.Invoke(a) is string note && note.Length > 0 ? " · " + note : "")}", label);
+                SpanMarker(ctx, b, d.LevelId, a.Rect, a.Span, $"{(parts ? a.Id : d.Id + OffsetTag(d))}{(string.IsNullOrEmpty(a.Name) ? "" : " " + a.Name)} · {(rafters ? "rafters" : "joists")} {(a.Span == SpanDirection.WestEast ? "W-E" : "S-N")}{(AreaNote?.Invoke(a) is string note && note.Length > 0 ? " · " + note : "")}", label);
         }
 
         /// <summary>
@@ -950,6 +951,34 @@ namespace BuildingModel.Sketch
             ctx.DrawRoundedRectangle(NoteBrush, selected ? SelectPen : NotePen, box, 3, 3);
             ctx.DrawText(ft, new Point(box.X + 5, box.Y + 3));
             ctx.DrawEllipse(B(Palette.NoteEdge), null, s, 3, 3);
+        }
+
+        /// <summary>A diaphragm's height offset for its label (" −1 ft"), none at the level's own height.</summary>
+        private static string OffsetTag(Diaphragm d) => Math.Abs(d.Offset) < 1e-9 ? "" : $" {d.Offset:+0.##;−0.##} ft";
+
+        private static readonly Pen StepPen = MakeStepPen();
+
+        private static Pen MakeStepPen()
+        {
+            var p = new Pen(B(Palette.Warning), 3) { DashStyle = new DashStyle(new double[] { 2, 1.5 }, 0) };
+            p.Freeze();
+            return p;
+        }
+
+        /// <summary>
+        /// Where two diaphragms of the level at different heights meet (<see cref="WallTops.Steps"/>; owner 2026-11-13: each its
+        /// own diaphragm): a dashed line, "step 9 / 8 ft: shear across it NOT DESIGNED".
+        /// </summary>
+        private void DrawSteps(DrawingContext ctx, Building b, Level level)
+        {
+            foreach (var (a, c, from, to) in b.Steps(level))
+            {
+                Point s0 = ToScreen(from), s1 = ToScreen(to);
+                ctx.DrawLine(StepPen, s0, s1);
+                if (!ShowLabels) continue;
+                double ha = level.Elevation + a.Offset, hc = level.Elevation + c.Offset;
+                Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: shear across it NOT DESIGNED", new Point((s0.X + s1.X) / 2 + 4, (s0.Y + s1.Y) / 2 + 4), B(Palette.Error), 10, false);
+            }
         }
 
         private void DrawIssues(DrawingContext ctx)

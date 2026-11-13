@@ -21,6 +21,36 @@ namespace BuildingModel.Tests
         private static RoofFrame Frame(double overhang, params RoofSection[] s) => RoofFrame.Of(null, s.ToList(), Pitch612, overhang, 2);
 
         /// <summary>
+        /// An L (owner 2026-11-13, ASCE 7 26.2): a hip 56 × 28 at 6:12 rises 14 × 0.5 = 7 ft; the wing's gable 24 wide, 6 ft; a
+        /// dormer's gable 8 wide with its eave 3 ft up, 3 + 2 = 5 ft. The highest point is the hip's ridge: rise 7, ridge 16, h
+        /// 12.5, not a hip over the 56 × 52 rectangle around it (13, 22, 15.5).
+        /// </summary>
+        [TestMethod]
+        public void LShapedHouse_TheMeanRoofHeight_ByTheHighestPoint()
+        {
+            var b = Building.New();
+            var top = b.AddLevel("Level 2", 9);
+            b.AddDiaphragm(top, new Rect2(0, 0, 56, 28));
+            b.AddDiaphragm(top, new Rect2(32, 28, 56, 52));
+            b.Roof = new Roof
+            {
+                Shape = RoofShape.Hip, Pitch = Pitch612, Ridge = RidgeAxis.WestEast, Overhang = 1.5,
+                Sections = new List<RoofSection>
+                {
+                    new RoofSection { Name = "main", Walls = new Rect2(0, 0, 56, 28), Shape = RoofShape.Hip, Ridge = RidgeAxis.WestEast },
+                    new RoofSection { Name = "wing", Walls = new Rect2(32, 28, 56, 52), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth },
+                    new RoofSection { Name = "dormer", Walls = new Rect2(12, 1, 20, 8), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 3 },
+                },
+            };
+            Assert.AreEqual(7, b.RoofRise(), 1e-9);
+            Assert.AreEqual(16, b.RidgeHeight(), 1e-9);
+            Assert.AreEqual(12.5, b.MeanRoofHeight(), 1e-9);
+            StringAssert.Contains(b.DescribeRoof(), "3 sections (main hip W-E; wing gable S-N; dormer gable S-N, eave +3 ft), its highest point 7 ft above the eave");
+            b.Roof.Sections = null;
+            Assert.AreEqual(13, b.RoofRise(), 1e-9, "the plain hip over the rectangle around the plan");
+        }
+
+        /// <summary>
         /// A hip roof 30 × 20 at 6:12, no eaves: the ends' triangles 20 × 10 / 2 = 100 sq ft, the sides' trapezoids
         /// (30 + 10) / 2 × 10 = 200; the ridge (10, 10) to (20, 10) at 5 ft; four hips, each 10√2 on plan from a corner up to
         /// the ridge's end. A common on the south face at x = 14 runs to the ridge; at x = 4, a hip jack 4 ft long.

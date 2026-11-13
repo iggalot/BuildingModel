@@ -65,11 +65,22 @@ namespace BuildingModel.Model
             return b.EffectiveRidge() == RidgeAxis.WestEast ? plan.Height : plan.Width;
         }
 
-        /// <summary>How high the ridge is above the eave (ft); 0 for a flat roof or a slope out of range.</summary>
+        /// <summary>
+        /// How high the roof's highest point is above the eave (ft); 0 for a flat roof or a slope out of range. A roof of sections
+        /// (wings, dormers): the highest point of its faces as laid out (owner 2026-11-13, "follow the codes": ASCE 7 26.2's mean
+        /// roof height is the average of the eave height and the height to the highest point on the roof surface), not a hip or
+        /// gable spread over the rectangle around the plan.
+        /// </summary>
         public static double RoofRise(this Building b)
         {
             var roof = b.Roof;
             if (roof == null || !roof.IsSloped || !(roof.Pitch > 0 && roof.Pitch < 90)) return 0;
+            if (roof.Sections != null && roof.Sections.Count > 0)
+            {
+                var fr = Statics.RoofFrame.Of(b);
+                if (fr.NotLaidOut == null && fr.Faces.Count > 0)
+                    return Math.Max(0, fr.Faces.SelectMany(f => f.Pieces.SelectMany(c => c.P).Select(q => f.Plane.Z(q))).Max());
+            }
             return Math.Tan(roof.Pitch * Math.PI / 180) * b.SpanAcrossRidge() / 2;
         }
 
@@ -89,6 +100,12 @@ namespace BuildingModel.Model
             string extras = (r.Overhang > 0 ? $"; eaves {r.Overhang:0.##} ft" : "") + (!r.IsSloped && r.Parapet > 0 ? $"; parapet {r.Parapet:0.##} ft" : "") + (r.IsSloped && r.NoCeilingJoists ? "; no ceiling joists (a vault)" : "");
             if (!r.IsSloped) return "Flat roof" + extras;
             string ridge = b.EffectiveRidge() == RidgeAxis.WestEast ? "W-E" : "S-N";
+            if (r.Sections != null && r.Sections.Count > 0)
+            {
+                // a roof of sections: each its own shape; the highest point is the faces' (ASCE 7 26.2)
+                string Of(RoofSection s) => $"{s.Name ?? "a section"} {s.Shape.ToString().ToLowerInvariant()}{(s.Shape == RoofShape.Shed ? "" : " " + (s.Ridge == RidgeAxis.WestEast ? "W-E" : s.Ridge == RidgeAxis.SouthNorth ? "S-N" : "along the longer side"))}{(s.EaveRise > 0 ? $", eave +{s.EaveRise:0.##} ft" : "")}";
+                return $"{r.RisePer12} ({r.Pitch:0.#}°), {r.Sections.Count} section{(r.Sections.Count == 1 ? "" : "s")} ({string.Join("; ", r.Sections.Select(Of))}), its highest point {b.RoofRise():0.##} ft above the eave" + extras;
+            }
             return $"{r.Shape} {r.RisePer12} ({r.Pitch:0.#}°), ridge {ridge}, rises {b.RoofRise():0.##} ft" + extras;
         }
     }

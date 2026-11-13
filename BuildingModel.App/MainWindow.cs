@@ -552,7 +552,10 @@ namespace BuildingModel.App
                     var shares = env.Shares(f, env.EaveHeight);
                     text += $"{f} face: " + string.Join(", ", shares.OrderBy(kv => b.Level(kv.Key)?.Elevation).Select(kv => $"{b.Level(kv.Key)?.Name} {kv.Value:P0}")) + "\n";
                 }
-                if (env.Notes.Count > 0) text += "\nNotes:\n• " + string.Join("\n• ", env.Notes);
+                var notes = env.Notes.ToList();
+                if ((b.Roof?.Sections?.Count ?? 0) > 0 && b.Roof.IsSloped)
+                    notes.Add("The roof's sections are taken face by face by the wind, each face by its own ridge (ASCE 7 Chapter 27: Chapter 28 is for regular-shaped buildings, 28.1.2 and 28.1.3). Its mean roof height is from its highest point (26.2).");
+                if (notes.Count > 0) text += "\nNotes:\n• " + string.Join("\n• ", notes);
             }
             catch (Exception ex)
             {

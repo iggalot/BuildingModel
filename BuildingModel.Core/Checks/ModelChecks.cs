@@ -68,6 +68,13 @@ namespace BuildingModel.Checks
                     Add(Severity.Warning, "NoDiaphragm", $"{l.Name} has no diaphragm.", l.Id);
                     continue;
                 }
+                // diaphragms of one level at different heights (Diaphragm.Offset): where they meet, a step whose shear transfer
+                // is not designed (owner 2026-11-13: never leave it to someone to know it needs designing)
+                foreach (var (a, c, from, to) in b.Steps(l))
+                    Add(Severity.Warning, "DiaphragmStep",
+                        $"{l.Name}: diaphragms {a.Id} ({l.Elevation + a.Offset:0.##} ft) and {c.Id} ({l.Elevation + c.Offset:0.##} ft) meet at a step " +
+                        $"from ({from.X:0.##}, {from.Y:0.##}) to ({to.X:0.##}, {to.Y:0.##}): the shear across it is NOT DESIGNED " +
+                        "(ASCE 7-22 Table 12.3-1, horizontal irregularity type 4 if it is in the seismic system).", a.Id, c.Id);
                 var net = b.NetDiaphragm(l);
                 double open = gross.Area - net.Area;
                 if (open > DiscontinuityRatio * gross.Area)

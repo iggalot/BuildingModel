@@ -4,6 +4,7 @@ using System.Linq;
 using BuildingModel.Geometry;
 using BuildingModel.Model;
 using BuildingModel.Statics;
+using BuildingModel.Checks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace BuildingModel.Tests
@@ -242,18 +243,21 @@ namespace BuildingModel.Tests
         }
 
         /// <summary>
-        /// Each section its own wall top (owner 2026-11-13): the L with the wing's plate 1 ft lower. The wing's walls (and the wall
-        /// inside it) stop at 9 − 1 = 8 ft; the main block's walls at 9, the bearing wall where the two meet too (the higher of the
-        /// two plates); the wing's ceiling at 8 ft, the main block's at 9. A level below the roof, or the plain roof: the level's.
+        /// A diaphragm at its own height (owner 2026-11-13, "variable diaphragm heights"): the L with the wing's ceiling 1 ft lower
+        /// (its diaphragm's offset −1). The wing's walls (and the wall inside it) stop at 9 − 1 = 8 ft; the main block's at 9, the
+        /// bearing wall where the two meet too (the higher of the diaphragms over it). The wing's roof sits on its ceiling: its
+        /// ridge 5 ft over the main's wall tops meets the main roof at y = 18, as with the section's eave rise −1. Where the two
+        /// ceilings meet (y = 28, x 32 .. 56) a step, an issue saying its shear is not designed. The main block's diaphragm
+        /// level: every wall to 9.
         /// </summary>
         [TestMethod]
-        public void LShapedHouse_TheWingsWallTop_ItsOwnPlate()
+        public void LShapedHouse_TheWingsCeilingLower_ItsWallsAndRoofOnIt()
         {
             var b = Building.New();
             var g = b.Ground;
             var top = b.AddLevel("Level 2", 9);
-            b.AddDiaphragm(top, new Rect2(0, 0, 56, 28));
-            b.AddDiaphragm(top, new Rect2(32, 28, 56, 52));
+            var main = b.AddDiaphragm(top, new Rect2(0, 0, 56, 28));
+            var wingD = b.AddDiaphragm(top, new Rect2(32, 28, 56, 52));
             var north = b.AddWall(g, top, 0, 28, 56, 28);
             var south = b.AddWall(g, top, 0, 0, 56, 0);
             var wingWest = b.AddWall(g, top, 32, 28, 32, 52);
@@ -265,22 +269,35 @@ namespace BuildingModel.Tests
                 Sections = new List<RoofSection>
                 {
                     new RoofSection { Name = "main", Walls = new Rect2(0, 0, 56, 28), Shape = RoofShape.Hip, Ridge = RidgeAxis.WestEast },
-                    new RoofSection { Name = "wing", Walls = new Rect2(32, 28, 56, 52), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = -1 },
+                    new RoofSection { Name = "wing", Walls = new Rect2(32, 28, 56, 52), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth },
                     new RoofSection { Name = "dormer", Walls = new Rect2(12, 1, 20, 8), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 3 },
                 },
             };
+            Assert.AreEqual(9, b.WallTopElevation(wingWest), 1e-9, "both at the level: 9");
+            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "DiaphragmStep"));
+            wingD.Offset = -1;
             Assert.AreEqual(8, b.WallTopElevation(wingWest), 1e-9);
             Assert.AreEqual(8, b.WallTopElevation(wingNorth), 1e-9);
             Assert.AreEqual(8, b.WallTopElevation(inside), 1e-9, "a wall inside the wing: its ceiling's");
+            Assert.AreEqual(8, b.WallHeight(inside), 1e-9);
             Assert.AreEqual(9, b.WallTopElevation(south), 1e-9);
-            Assert.AreEqual(9, b.WallTopElevation(north), 1e-9, "the bearing wall between them: the higher plate");
-            Assert.AreEqual(9, b.WallTopAt(wingWest, g) + 9, 1e-9, "at another level: that level's elevation");
-            var pieces = b.CeilingPieces(top, new Rect2(30, 20, 56, 52));
-            Assert.AreEqual(26 * 8, pieces.Where(p => Math.Abs(p.rise) < 1e-9 && p.r.Y1 <= 28 + 1e-9).Sum(p => p.r.Width * p.r.Height), 1e-9, "the main block's part at 9 ft");
-            Assert.AreEqual(2 * 24, pieces.Where(p => Math.Abs(p.rise) < 1e-9 && p.r.Y0 >= 28 - 1e-9).Sum(p => p.r.Width * p.r.Height), 1e-9, "outside both: the level's");
-            Assert.AreEqual(24 * 24, pieces.Where(p => Math.Abs(p.rise + 1) < 1e-9).Sum(p => p.r.Width * p.r.Height), 1e-9, "the wing's at 8 ft");
-            b.Roof.Sections = null;
-            Assert.AreEqual(9, b.WallTopElevation(wingWest), 1e-9, "no sections: the level's");
+            Assert.AreEqual(9, b.WallTopElevation(north), 1e-9, "the bearing wall between them: the higher");
+            Assert.AreEqual(0, b.WallBaseElevation(wingWest), 1e-9, "on the ground");
+            Assert.AreEqual(-1, b.DiaphragmOffsetAt(top, new Point2(44, 40)), 1e-9);
+            // the roof on it: the wing's section 1 ft lower, as by its own eave rise
+            var f = RoofFrame.Of(b);
+            Assert.IsNull(f.NotLaidOut);
+            Assert.AreEqual(-1, f.Sections[1].EaveRise, 1e-9);
+            Assert.AreEqual(3, f.Sections[2].EaveRise, 1e-9, "the dormer over the main block's ceiling");
+            Assert.AreEqual(18, f.Reach[1].Y0, 1e-6);
+            // the step: where the two ceilings meet, an issue
+            var step = b.Steps(top).Single();
+            Assert.AreEqual(28, step.from.Y, 1e-9);
+            Assert.AreEqual(24, Math.Abs(step.to.X - step.from.X), 1e-9);
+            var issue = ModelChecks.Run(b).Single(i => i.Code == "DiaphragmStep");
+            Assert.AreEqual(Severity.Warning, issue.Severity);
+            StringAssert.Contains(issue.Message, "NOT DESIGNED");
+            CollectionAssert.AreEquivalent(new[] { main.Id, wingD.Id }, issue.Ids);
         }
 
         /// <summary>

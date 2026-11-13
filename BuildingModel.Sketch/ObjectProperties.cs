@@ -51,7 +51,11 @@ namespace BuildingModel.Sketch
             switch (o)
             {
                 case Wall w: WallProps(w); break;
-                case Diaphragm d: RectProps(d, d.Pieces); Levels("Level", d.LevelId, id => d.LevelId = id); SpanProps(d); break;
+                case Diaphragm d:
+                    RectProps(d, d.Pieces); Levels("Level", d.LevelId, id => d.LevelId = id);
+                    Number("Height offset", d.Offset, v => d.Offset = v,
+                           "ft above (− below) its level's elevation: a wing's ceiling lower or higher. The walls under it go up to it, a roof section over it sits on it; where it meets the level's other diaphragms, a step.");
+                    SpanProps(d); break;
                 case FramingArea fa: AreaProps(fa); break;
                 case Opening op:
                     RectProps(op, op.Pieces);

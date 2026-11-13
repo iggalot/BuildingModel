@@ -213,10 +213,12 @@ namespace BuildingModel.Sketch
                     {
                         bool hi = l.Id == HighlightLevelId;
                         var mat = Material(hi ? Color.FromArgb(0xE8, 0xC9, 0xA8, 0x62) : Color.FromArgb(0xB0, 0xE2, 0xD2, 0xAE));
-                        // under a roof of sections, each section's ceiling at its own plate (WallTops)
+                        // each diaphragm at its own height (WallTops)
                         foreach (var c in b.NetDiaphragm(l).Cells())
-                            foreach (var (pc, rise) in b.CeilingPieces(l, c))
-                                group.Children.Add(Box(pc.X0, pc.Y0, l.Elevation + rise - SlabThickness, pc.X1, pc.Y1, l.Elevation + rise, mat));
+                        {
+                            double z = l.Elevation + b.DiaphragmOffsetAt(l, new Point2((c.X0 + c.X1) / 2, (c.Y0 + c.Y1) / 2));
+                            group.Children.Add(Box(c.X0, c.Y0, z - SlabThickness, c.X1, c.Y1, z, mat));
+                        }
                     }
                 var other = Material(Color.FromArgb(0xD0, 0xB8, 0xBD, 0xC6));
                 foreach (var w in b.Walls.Where(w => Drawn(w.Id)))
@@ -228,7 +230,7 @@ namespace BuildingModel.Sketch
                     var r = w.Direction == WallDirection.SouthNorth
                         ? new Rect2(w.Start.X - t, w.Start.Y, w.End.X + t, w.End.Y)
                         : new Rect2(w.Start.X, w.Start.Y - t, w.End.X, w.End.Y + t);
-                    Add(group, Box(r.X0, r.Y0, lo.Elevation, r.X1, r.Y1, WallTop(b, w), Mark(w.Id, other)), w.Id);
+                    Add(group, Box(r.X0, r.Y0, b.WallBaseAt(w, lo), r.X1, r.Y1, WallTop(b, w), Mark(w.Id, other)), w.Id);
                 }
                 // beams: a box under the floor they frame; columns: a square post from base to top (rectangles for now)
                 var timber = Material(Color.FromArgb(0xF0, 0x8B, 0x4A, 0x14));
@@ -236,7 +238,7 @@ namespace BuildingModel.Sketch
                 {
                     var l = b.Level(bm.LevelId);
                     if (l == null || bm.Length <= 0) continue;
-                    double top = l.Elevation - SlabThickness;
+                    double top = BeamTop(b, bm);
                     Add(group, Along(bm.Start, bm.End, BeamWidth, top - BeamDepth, top, Mark(bm.Id, timber)), bm.Id);
                 }
                 foreach (var c in b.Columns.Where(x => Drawn(x.Id)))
@@ -245,7 +247,7 @@ namespace BuildingModel.Sketch
                     var hi = b.Level(c.TopLevelId);
                     if (lo == null || hi == null || !(hi.Elevation > lo.Elevation)) continue;
                     double h = ColumnSize / 2;
-                    Add(group, Box(c.At.X - h, c.At.Y - h, lo.Elevation, c.At.X + h, c.At.Y + h, ColumnTop(b, c), Mark(c.Id, timber)), c.Id);
+                    Add(group, Box(c.At.X - h, c.At.Y - h, lo.Elevation + b.DiaphragmOffsetAt(lo, c.At), c.At.X + h, c.At.Y + h, ColumnTop(b, c), Mark(c.Id, timber)), c.Id);
                 }
                 if (only == null)
                 {
@@ -323,14 +325,18 @@ namespace BuildingModel.Sketch
         public static double ColumnTop(Building b, Column c)
         {
             var hi = b?.Level(c.TopLevelId);
-            return hi == null ? 0 : hi.Elevation - SlabThickness - BeamDepthUnder(b, hi, c.At);
+            return hi == null ? 0 : hi.Elevation + b.DiaphragmOffsetAt(hi, c.At) - SlabThickness - BeamDepthUnder(b, hi, c.At);
         }
 
-        /// <summary>The top of a wall as drawn (ft): under the slab of the level it reaches (at its roof section's plate: WallTops).</summary>
+        /// <summary>The top of a wall as drawn (ft): under the slab of the diaphragm it holds up (its own height: WallTops).</summary>
         public static double WallTop(Building b, Wall w) => (b == null ? 0 : b.WallTopElevation(w)) - SlabThickness;
 
         /// <summary>The top of a beam as drawn (ft): under its level's slab (it is <see cref="BeamDepth"/> deep).</summary>
-        public static double BeamTop(Building b, Beam bm) => (b?.Level(bm.LevelId)?.Elevation ?? 0) - SlabThickness;
+        public static double BeamTop(Building b, Beam bm)
+        {
+            var l = b?.Level(bm.LevelId);
+            return l == null ? 0 : l.Elevation + b.DiaphragmOffsetAlong(l, bm.Start, bm.End) - SlabThickness;
+        }
 
         private void Add(Model3DGroup g, GeometryModel3D m, string id)
         {

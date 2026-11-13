@@ -75,7 +75,7 @@ namespace BuildingModel.Sketch
             left.Children.Add(Row("Shape", Line(sShape, Label("  ridge"), sRidge)));
             left.Children.Add(Row("Shed low", sLow));
             left.Children.Add(Row("Slope", Line(sPitch, Label(": 12 (blank: the roof's)"))));
-            left.Children.Add(Row("Eave rise", Line(sRise, Label("ft: a wing's own wall top over the level's (− lower; its walls and ceiling with it), or a dormer's eave over the roof"))));
+            left.Children.Add(Row("Eave rise", Line(sRise, Label("ft above its walls' tops (a dormer's eave over the roof; a wing lower or higher: its diaphragm's height offset)"))));
             left.Children.Add(Row("Eaves", Line(sEaves, Label("ft (blank: the roof's)"))));
             foreach (var t in new[] { sName, sX0, sY0, sX1, sY1, sPitch, sRise, sEaves }) t.TextChanged += (s, e) => SectionEdited();
             foreach (var c in new[] { sShape, sRidge, sLow }) c.SelectionChanged += (s, e) => SectionEdited();

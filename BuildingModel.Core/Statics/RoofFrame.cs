@@ -157,10 +157,18 @@ namespace BuildingModel.Statics
         {
             var roof = b?.Roof;
             if (roof == null || !roof.IsSloped) return new List<RoofSection>();
-            if (roof.Sections != null && roof.Sections.Count > 0) return roof.Sections.Select(s => s.Clone()).ToList();
+            // each section on the roof level's diaphragm under it (its own height: WallTops), its eave rise over that
+            var top = b.RoofLevel();
+            RoofSection On(RoofSection s)
+            {
+                var c = s.Clone();
+                c.EaveRise += b.DiaphragmOffsetAt(top, new Point2((s.Walls.X0 + s.Walls.X1) / 2, (s.Walls.Y0 + s.Walls.Y1) / 2));
+                return c;
+            }
+            if (roof.Sections != null && roof.Sections.Count > 0) return roof.Sections.Select(On).ToList();
             var plan = b.RoofPlan();
             if (plan.IsEmpty) return new List<RoofSection>();
-            return new List<RoofSection> { new RoofSection { Name = "the roof", Walls = plan, Shape = roof.Shape, Ridge = b.EffectiveRidge() } };
+            return new List<RoofSection> { On(new RoofSection { Name = "the roof", Walls = plan, Shape = roof.Shape, Ridge = b.EffectiveRidge() }) };
         }
 
         /// <summary>

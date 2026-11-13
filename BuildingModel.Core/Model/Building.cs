@@ -89,6 +89,13 @@ namespace BuildingModel.Model
         /// piece for the wind and the shear walls.
         /// </summary>
         [DataMember(Order = 4, EmitDefaultValue = false)] public List<FramingArea> Framing { get; set; } = new List<FramingArea>();
+
+        /// <summary>
+        /// Its height over its level's elevation (ft, − lower; owner 2026-11-13, "variable diaphragm heights"): a wing's ceiling
+        /// 1 ft lower than the main block's. The walls under it go up to it, those on it stand on it, a roof section over it
+        /// sits on it (<see cref="WallTops"/>). Where it meets a diaphragm of its level at another height: a step (an issue).
+        /// </summary>
+        [DataMember(Order = 5, EmitDefaultValue = false)] public double Offset { get; set; }
     }
 
     /// <summary>

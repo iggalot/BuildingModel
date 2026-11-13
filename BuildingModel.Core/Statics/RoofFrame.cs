@@ -443,7 +443,7 @@ namespace BuildingModel.Statics
                 l.TopOnFace = f.Faces.Where(o => o.Pieces.Any(pc => Inside(pc, past, 1e-6))).OrderByDescending(o => o.Plane.Z(past)).FirstOrDefault();
             }
 
-            f.LayRafters(sections, spacing);
+            f.LayRafters(sections, spacing, roofOverhang);
             f.Headers(sections);
             return f;
         }
@@ -454,21 +454,50 @@ namespace BuildingModel.Statics
         /// Each face's rafters: lines across it at the spacing from its section's wall line (one on each of its walls, none
         /// nearer an end than a quarter spacing), each line's runs through the face its rafters; each one's tributary strip
         /// half the gap to the line each side (to the face's edge past the last), its width along it exactly.
+        /// Faces in one plane (a wing's slope flush with the main roof's hip face: owner 2026-11-13, "do they run continuous
+        /// to the hip beam?") are framed as one: each line's rafter runs through them all, never stopping at the seam
+        /// between them with nothing under it; each rafter is the face's that holds its top (its section: its pair at the
+        /// ridge). A face running on past its section's walls (a wing's ridge run back over the main roof, a slope run on
+        /// past its eave) has rafters there too, at the spacing on from its wall line.
         /// </summary>
-        private void LayRafters(List<RoofSection> sections, double s)
+        private void LayRafters(List<RoofSection> sections, double s, double roofOverhang)
         {
             int n = 0;
-            foreach (var face in Faces)
+            var groups = new List<List<RoofFace>>();
+            foreach (var fc in Faces)
             {
+                var g = groups.FirstOrDefault(z => SamePlane(z[0].Plane, fc.Plane));
+                if (g != null) g.Add(fc); else groups.Add(new List<RoofFace> { fc });
+            }
+            foreach (var group in groups)
+            {
+                var face = group[0];
                 var pl = face.Plane;
                 var w = sections[pl.Section].Walls;
                 bool x = pl.AlongX;
+                var all = group.SelectMany(g => g.Pieces).ToList();
                 // across: y for a W-E rafter
-                double v0 = x ? w.Y0 : w.X0, v1 = x ? w.Y1 : w.X1;
-                double vmin = face.Pieces.SelectMany(p => p.P).Min(p => x ? p.Y : p.X), vmax = face.Pieces.SelectMany(p => p.P).Max(p => x ? p.Y : p.X);
-                var grid = new List<double> { v0 };
-                for (int k = 1; v0 + k * s < v1 - E; k++) if (v1 - (v0 + k * s) >= s / 4) grid.Add(v0 + k * s);
-                grid.Add(v1);
+                double vmin = all.SelectMany(p => p.P).Min(p => x ? p.Y : p.X), vmax = all.SelectMany(p => p.P).Max(p => x ? p.Y : p.X);
+                // each section's lines over its own walls (an earlier section's kept where they are too close)
+                var grid = new List<double>();
+                var secs = group.Select(g => g.Plane.Section).Distinct().OrderBy(z => z).ToList();
+                foreach (int si in secs)
+                {
+                    var ws = sections[si].Walls;
+                    double a0 = x ? ws.Y0 : ws.X0, a1 = x ? ws.Y1 : ws.X1;
+                    var own = new List<double> { a0 };
+                    for (int k = 1; a0 + k * s < a1 - E; k++) if (a1 - (a0 + k * s) >= s / 4) own.Add(a0 + k * s);
+                    own.Add(a1);
+                    foreach (double v in own)
+                        if (!grid.Any(g => Math.Abs(g - v) < s / 4)) grid.Add(v);
+                }
+                double v0 = secs.Min(si => x ? sections[si].Walls.Y0 : sections[si].Walls.X0), v1 = secs.Max(si => x ? sections[si].Walls.Y1 : sections[si].Walls.X1);
+                // run on past the walls (more than the eave's overhang): on at the spacing, none nearer its edge than a quarter
+                double oh = OverhangOf(sections[pl.Section], roofOverhang);
+                if (vmin < v0 - oh - E)
+                    for (int k = 1; v0 - k * s >= vmin + s / 4; k++) grid.Add(v0 - k * s);
+                if (vmax > v1 + oh + E)
+                    for (int k = 1; v1 + k * s <= vmax - s / 4; k++) grid.Add(v1 + k * s);
                 // a dormer on this face: a trimmer rafter on each of its sides (its cheek walls stand on them, its header hangs
                 // from them), the spacing kept between
                 foreach (var d in sections.Where((d, j) => j != pl.Section && d.EaveRise > sections[pl.Section].EaveRise + E))
@@ -487,7 +516,7 @@ namespace BuildingModel.Statics
                 {
                     var at = x ? new Point2(0, v) : new Point2(v, 0);
                     var runs = new List<(double a, double b)>();
-                    foreach (var pc in face.Pieces)
+                    foreach (var pc in all)
                     {
                         var r = pc.Along(at, dir, 1e-9);
                         if (r != null && r.Value.t1 - r.Value.t0 > 1e-6) runs.Add((r.Value.t0, r.Value.t1));
@@ -505,12 +534,20 @@ namespace BuildingModel.Statics
                     var merged = withRuns[li].runs;
                     double lo = li == 0 ? vmin : (withRuns[li - 1].v + v) / 2, hi = li == withRuns.Count - 1 ? vmax : (v + withRuns[li + 1].v) / 2;
                     // the strip's pieces: the face between lo and hi
-                    var strip = face.Pieces.Select(pc => x ? pc.Clip(0, 1, -lo).Clip(0, -1, hi) : pc.Clip(1, 0, -lo).Clip(-1, 0, hi)).Where(pc => !pc.IsEmpty).ToList();
+                    var strip = all.Select(pc => x ? pc.Clip(0, 1, -lo).Clip(0, -1, hi) : pc.Clip(1, 0, -lo).Clip(-1, 0, hi)).Where(pc => !pc.IsEmpty).ToList();
                     for (int k = 0; k < merged.Count; k++)
                     {
                         var (ua, ub) = merged[k];
                         double cutLo = k == 0 ? double.NegativeInfinity : (merged[k - 1].b + ua) / 2, cutHi = k == merged.Count - 1 ? double.PositiveInfinity : (ub + merged[k + 1].a) / 2;
                         var r = new RoofRafter { Id = $"RF{++n}", Face = face, AlongX = x, Line = v, Start = x ? new Point2(ua, v) : new Point2(v, ua), End = x ? new Point2(ub, v) : new Point2(v, ub) };
+                        if (group.Count > 1)
+                        {
+                            // the face that holds its top, just below it
+                            var top = pl.Up > 0 ? r.End : r.Start;
+                            double du = pl.Up > 0 ? -0.01 : 0.01;
+                            var near = x ? new Point2(top.X + du, top.Y) : new Point2(top.X, top.Y + du);
+                            r.Face = group.FirstOrDefault(g => g.Pieces.Any(pc => Inside(pc, near, 1e-9))) ?? face;
+                        }
                         double bx = 0, by = 0, ax = 0, ay = 0;
                         foreach (var pc in strip)
                         {
@@ -543,8 +580,8 @@ namespace BuildingModel.Statics
                         }
                         r.BeforeAt = r.BeforeArea > 0 ? (x ? new Point2(bx / r.BeforeArea, by / r.BeforeArea) : new Point2(by / r.BeforeArea, bx / r.BeforeArea)) : r.Start;
                         r.AfterAt = r.AfterArea > 0 ? (x ? new Point2(ax / r.AfterArea, ay / r.AfterArea) : new Point2(ay / r.AfterArea, ax / r.AfterArea)) : r.End;
-                        (r.AtStart, r.StartCrease) = EndOf(face, r.Start);
-                        (r.AtEnd, r.EndCrease) = EndOf(face, r.End);
+                        (r.AtStart, r.StartCrease) = EndOf(group, r.Start);
+                        (r.AtEnd, r.EndCrease) = EndOf(group, r.End);
                         Rafters.Add(r);
                     }
                 }
@@ -613,9 +650,12 @@ namespace BuildingModel.Statics
             return list;
         }
 
-        private (RafterEnd, RoofCrease) EndOf(RoofFace face, Point2 p)
+        private static bool SamePlane(RoofPlane a, RoofPlane b) =>
+            a.AlongX == b.AlongX && Math.Abs(a.Gx - b.Gx) < 1e-9 && Math.Abs(a.Gy - b.Gy) < 1e-9 && Math.Abs(a.Z0 - b.Z0) < 1e-9;
+
+        private (RafterEnd, RoofCrease) EndOf(List<RoofFace> group, Point2 p)
         {
-            var cr = Creases.Where(z => z.Kind != CreaseKind.Header && z.Touches(face) && z.DistanceTo(p) < 1e-3).OrderBy(z => z.Kind == CreaseKind.Ridge ? 0 : 1).FirstOrDefault();
+            var cr = Creases.Where(z => z.Kind != CreaseKind.Header && group.Any(z.Touches) && z.DistanceTo(p) < 1e-3).OrderBy(z => z.Kind == CreaseKind.Ridge ? 0 : 1).FirstOrDefault();
             if (cr == null) return (RafterEnd.Free, null);
             return (cr.Kind == CreaseKind.Ridge ? RafterEnd.Ridge : cr.Kind == CreaseKind.Hip ? RafterEnd.Hip : RafterEnd.Valley, cr);
         }

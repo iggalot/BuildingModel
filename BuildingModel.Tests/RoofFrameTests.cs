@@ -58,6 +58,26 @@ namespace BuildingModel.Tests
         }
 
         /// <summary>
+        /// Every rafter end bears on something (owner 2026-11-13: "do they run continuous to the hip beam? or were you cutting
+        /// them off"): an end not on a ridge, hip, valley or header is at the roof's edge, nothing of its own plane past it (a
+        /// lower roof under an eave is fine; the seam between two faces in one plane is not an end).
+        /// </summary>
+        private static void Framed(RoofFrame f)
+        {
+            foreach (var r in f.Rafters)
+                foreach (bool atEnd in new[] { false, true })
+                {
+                    if ((atEnd ? r.AtEnd : r.AtStart) != RafterEnd.Free) continue;
+                    var p = atEnd ? r.End : r.Start;
+                    double d = atEnd ? 0.05 : -0.05;
+                    var past = r.AlongX ? new Point2(p.X + d, p.Y) : new Point2(p.X, p.Y + d);
+                    double z = r.Face.Plane.Z(past);
+                    bool more = f.Faces.Any(fc => fc.Pieces.Any(pc => pc.Edges().All(e => e.a * past.X + e.b * past.Y + e.c >= -1e-7)) && fc.Plane.Z(past) > z - 1e-6);
+                    Assert.IsFalse(more, $"{r.Id} ({r.Face.Name}, line {r.Line}) stops at ({p.X}, {p.Y}) with its roof going on past it");
+                }
+        }
+
+        /// <summary>
         /// The L-shaped house's roof as the owner asked (2026-11-13): the main block hipped 56 × 28, the wing's gable 24 × 24
         /// running north from its east end, 6:12, 1.5 ft eaves. The wing's ridge (6 ft up) runs back south over the main roof
         /// until the main roof's north slope rises to it, (28 − y) / 2 = 6 at y = 16: no gable wall at the junction. Its west
@@ -85,6 +105,35 @@ namespace BuildingModel.Tests
             Smooth(f, 40, 5, 40, 50, "x = 40, south to north");
             Smooth(f, 20, 27, 56, 27, "y = 27, along the junction");
             Smooth(f, 31, 20, 31, 29.4, "x = 31, the inside corner");
+            Framed(f);
+        }
+
+        /// <summary>
+        /// The L's rafters where the two roofs meet (owner 2026-11-13: "what did you do with the rafters from the right hip when
+        /// they intersected with the gable overframe?"). The wing's east slope is the hip's east face run on, one plane: each
+        /// line's rafter runs in one piece from the wing's ridge (x = 44) to the eave (57.5), none stopping on the old hip line
+        /// (x − 28 = y) with nothing under it, and pairs at the ridge with the wing's west rafter. West of the ridge, over the
+        /// main roof (y 16 .. 28), the wing's slope has valley jacks from the valley up to the ridge at the spacing. The hip's
+        /// last jack is at y = 14; at y = 16 the hip and the wing's ridge meet.
+        /// </summary>
+        [TestMethod]
+        public void LShapedHouse_TheHipFacesRaftersRunToTheWingsRidge()
+        {
+            var f = LHouse(0);
+            for (double y = 18; y <= 52; y += 2)
+            {
+                var east = f.Rafters.Single(r => r.AlongX && Math.Abs(r.Line - y) < 1e-6 && r.Start.X > 43.9);
+                Assert.AreEqual(44, east.Start.X, 1e-6, $"y = {y}: from the wing's ridge");
+                Assert.AreEqual(57.5, east.End.X, 1e-6, $"y = {y}: to the eave");
+                Assert.AreEqual(RafterEnd.Ridge, east.AtStart);
+                Assert.AreEqual(1, east.Face.Plane.Section, "the wing's: paired at its ridge");
+                var west = f.Rafters.Single(r => r.AlongX && Math.Abs(r.Line - y) < 1e-6 && r.End.X < 44.1 && r.End.X > 43.9);
+                Assert.AreEqual(RafterEnd.Ridge, west.AtEnd);
+                if (y < 29) Assert.AreEqual(RafterEnd.Valley, west.AtStart, $"y = {y}: a valley jack");
+                Assert.AreEqual(y < 29 ? 32 + (28 - y) : 30.5, west.Start.X, 1e-6);
+            }
+            var st = RoofStatics.Of(f, new List<Wall>(), new List<Column>(), new List<Beam>());
+            Assert.AreEqual(18, st.Members.Count(m => m.Kind == "rafter pair" && m.Rafters.All(r => r.Face.Plane.Section == 1)), "y = 18 .. 52, each pair across the wing's ridge");
         }
 
         /// <summary>
@@ -109,6 +158,11 @@ namespace BuildingModel.Tests
             Smooth(f, 40, 5, 40, 50, "x = 40");
             Smooth(f, 20, 27, 56, 27, "y = 27");
             Smooth(f, 33, 28, 33, 33, "x = 33, across the hip's eave line");
+            Framed(f);
+            // the wing's slopes run on over the main roof down to its ridge's end: valley jacks there, y = 20 .. 30
+            for (double y = 20; y <= 30; y += 2)
+                Assert.AreEqual(2, f.Rafters.Count(r => r.AlongX && Math.Abs(r.Line - y) < 1e-6 && r.Face.Plane.Section == 1 &&
+                                                        (r.AtStart == RafterEnd.Valley || r.AtEnd == RafterEnd.Valley)), $"y = {y}");
         }
 
         /// <summary>
@@ -137,6 +191,7 @@ namespace BuildingModel.Tests
             Smooth(f, 10, 27, 56, 27, "y = 27");
             Smooth(f, 22, 20, 22, 29.4, "x = 22, under the wing's slope run on");
             Smooth(f, 15, 29, 30, 29, "y = 29, across the inside corner");
+            Framed(f);
         }
 
         /// <summary>
@@ -153,6 +208,7 @@ namespace BuildingModel.Tests
             Assert.IsFalse(f.OpenEnds[2].Contains("south"));
             Assert.AreEqual(10, f.Reach[2].Y1, 1e-6);
             Smooth(f, 16, 3, 16, 20, "the dormer's ridge line, back into the main roof");
+            Framed(f);
         }
 
         /// <summary>

@@ -348,22 +348,75 @@ namespace BuildingModel.Statics
         /// pieces past the strip (<see cref="RoofRafter.BeforeArea"/>, <see cref="RoofRafter.AfterArea"/>) as points where they
         /// are. A hip, valley, header or ridge board: none (the rafters' strips cover the roof).
         /// </summary>
-        public static BeamLoads[] AreaLoads(RoofMember m, IReadOnlyList<double> psf)
+        public static BeamLoads[] AreaLoads(RoofMember m, IReadOnlyList<double> psf) => AreaLoads(m, psf.Count, (r, p) => psf, double.PositiveInfinity);
+
+        /// <summary>
+        /// The same with the loads varying over the roof (<paramref name="psfAt"/>: psf on plan by set at a point of a rafter's
+        /// strip, its line): each strip cut into pieces no longer than <paramref name="step"/> ft, each piece's load at its middle.
+        /// </summary>
+        public static BeamLoads[] AreaLoads(RoofMember m, int sets, Func<RoofRafter, Point2, IReadOnlyList<double>> psfAt, double step = 1)
         {
-            var q = psf.Select(_ => new BeamLoads()).ToArray();
+            var q = Enumerable.Range(0, sets).Select(_ => new BeamLoads()).ToArray();
             double off = 0;
+            void Add(double a, double b, double wa, double wb, IReadOnlyList<double> psf)
+            {
+                for (int k = 0; k < sets; k++) if (psf[k] != 0) q[k].Linear.Add((a, b, wa * psf[k], wb * psf[k]));
+            }
+            void Point(double u, double area, IReadOnlyList<double> psf)
+            {
+                for (int k = 0; k < sets; k++) if (psf[k] != 0) q[k].Points.Add((Math.Max(0, Math.Min(m.Length, u)), area * psf[k]));
+            }
             foreach (var r in m.Rafters)
             {
-                for (int k = 0; k < psf.Count; k++)
+                foreach (var (a, b, wa, wb) in r.Strip)
                 {
-                    if (psf[k] == 0) continue;
-                    foreach (var (a, b, wa, wb) in r.Strip) if (b - a > 1e-9) q[k].Linear.Add((off + a, off + b, wa * psf[k], wb * psf[k]));
-                    if (r.BeforeArea > 0) q[k].Points.Add((Math.Max(0, Math.Min(m.Length, m.Along(r.BeforeAt))), r.BeforeArea * psf[k]));
-                    if (r.AfterArea > 0) q[k].Points.Add((Math.Max(0, Math.Min(m.Length, m.Along(r.AfterAt))), r.AfterArea * psf[k]));
+                    if (b - a <= 1e-9) continue;
+                    int n = double.IsInfinity(step) ? 1 : Math.Max(1, (int)Math.Ceiling((b - a) / step - 1e-9));
+                    for (int i = 0; i < n; i++)
+                    {
+                        double a1 = a + (b - a) * i / n, b1 = a + (b - a) * (i + 1) / n;
+                        double w1 = wa + (wb - wa) * i / n, w2 = wa + (wb - wa) * (i + 1) / n;
+                        Add(off + a1, off + b1, w1, w2, psfAt(r, r.At((a1 + b1) / 2)));
+                    }
                 }
+                if (r.BeforeArea > 0) Point(m.Along(r.BeforeAt), r.BeforeArea, psfAt(r, r.BeforeAt));
+                if (r.AfterArea > 0) Point(m.Along(r.AfterAt), r.AfterArea, psfAt(r, r.AfterAt));
                 off += r.Length;
             }
             return q;
+        }
+
+        /// <summary>
+        /// The roof's own loads as applied (by face, set by set): every member's, each piece at its resultant on plan; what the
+        /// roof's free body takes as its external loads, the same as statics was given.
+        /// </summary>
+        public IEnumerable<(RoofFace face, Point2 at, double[] p)> Applied()
+        {
+            foreach (var m in Members.Where(x => x.Own != null && x.Rafters.Count > 0))
+            {
+                RoofFace FaceAt(double u)
+                {
+                    double off = 0;
+                    foreach (var r in m.Rafters) { if (u <= off + r.Length + 1e-9) return r.Face; off += r.Length; }
+                    return m.Rafters.Last().Face;
+                }
+                for (int k = 0; k < Sets; k++)
+                {
+                    foreach (var (at, p) in m.Own[k].Points)
+                    {
+                        var v = new double[Sets]; v[k] = p;
+                        yield return (FaceAt(at), m.At(at), v);
+                    }
+                    foreach (var (a, b, wa, wb) in m.Own[k].Lines())
+                    {
+                        double f = (b - a) * (wa + wb) / 2;
+                        if (Math.Abs(f) < 1e-12) continue;
+                        double c = Math.Abs(wa + wb) < 1e-12 ? (a + b) / 2 : a + (b - a) * (wa + 2 * wb) / (3 * (wa + wb));
+                        var v = new double[Sets]; v[k] = f;
+                        yield return (FaceAt((a + b) / 2), m.At(c), v);
+                    }
+                }
+            }
         }
 
         private static double TotalOf(BeamLoads q) =>

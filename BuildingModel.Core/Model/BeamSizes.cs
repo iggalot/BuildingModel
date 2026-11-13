@@ -19,7 +19,37 @@ namespace BuildingModel.Model
             Enumerable.Range(1, MostPlies).SelectMany(n => Plies.Select(p => n == 1 ? p : $"{n}-{p}"))
                       .OrderBy(s => PliesOf(s) * DepthOf(s)).ThenByDescending(DepthOf).ToArray();
 
-        public static bool IsSize(string size) => Array.IndexOf(All, size) >= 0;
+        /// <summary>
+        /// The engineered beams (owner 2026-11-12, "LVL and glulam"), lightest first: LVL 1-3/4" plies, 1 to 3 of them
+        /// ("2-1.75x11.875 LVL"), and glulam 24F-1.8E ("5.125x12 GL": 3-1/8", 5-1/8" and 6-3/4" wide, 1-1/2" laminations).
+        /// Actual sizes (in). Sized only when no sawn size works (the design names the lightest that does).
+        /// </summary>
+        public static readonly string[] Engineered =
+            new[] { 9.25, 9.5, 11.25, 11.875, 14, 16, 18 }.SelectMany(d => Enumerable.Range(1, 3).Select(n => (n == 1 ? "" : $"{n}-") + $"1.75x{Num(d)} LVL"))
+            .Concat(new[] { 3.125, 5.125, 6.75 }.SelectMany(w => Enumerable.Range(6, 11).Select(k => 1.5 * k).Where(d => d >= 9 && d <= 24 && d / w <= 6.5).Select(d => $"{Num(w)}x{Num(d)} GL")))
+            .OrderBy(s => BreadthOf0(s) * DepthOf0(s)).ThenByDescending(DepthOf0).ToArray();
+
+        private static string Num(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+        public static bool IsSize(string size) => Array.IndexOf(All, size) >= 0 || Array.IndexOf(Engineered, size) >= 0;
+
+        /// <summary>An LVL or glulam size ("… LVL", "… GL").</summary>
+        public static bool IsEngineered(string size) => size != null && (size.EndsWith(" LVL") || size.EndsWith(" GL"));
+
+        // an engineered size's actual breadth and depth (in), from its name
+        private static double BreadthOf0(string size)
+        {
+            string core = size.Substring(0, size.LastIndexOf(' '));
+            int n = PliesOf(size);
+            if (core.Contains("-")) core = core.Substring(core.IndexOf('-') + 1);
+            return n * double.Parse(core.Split('x')[0], System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private static double DepthOf0(string size)
+        {
+            string core = size.Substring(0, size.LastIndexOf(' '));
+            return double.Parse(core.Split('x')[1], System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         /// <summary>"3-2x12": 3; "2x10": 1; not a size: 0.</summary>
         public static int PliesOf(string size)
@@ -33,11 +63,12 @@ namespace BuildingModel.Model
         public static string PlyOf(string size) => string.IsNullOrEmpty(size) ? size : size.Substring(size.IndexOf('-') + 1);
 
         /// <summary>The actual breadth (in): 1-1/2 a ply; 0 when not a size.</summary>
-        public static double BreadthOf(string size) => IsSize(size) ? 1.5 * PliesOf(size) : 0;
+        public static double BreadthOf(string size) => !IsSize(size) ? 0 : IsEngineered(size) ? BreadthOf0(size) : 1.5 * PliesOf(size);
 
         /// <summary>The actual depth (in): 2x6 5.5, 2x8 7.25, 2x10 9.25, 2x12 11.25; 0 when not a size.</summary>
         public static double DepthOf(string size)
         {
+            if (IsEngineered(size)) return IsSize(size) ? DepthOf0(size) : 0;
             switch (PlyOf(size))
             {
                 case "2x6": return 5.5;

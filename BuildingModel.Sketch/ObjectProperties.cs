@@ -345,9 +345,10 @@ namespace BuildingModel.Sketch
         /// </summary>
         private void BeamSize(Beam bm)
         {
-            var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1), ToolTip = "Its sawn size: one 2x, or 2 to 4 plies nailed together (\"3-2x12\"). The species and grade are the framing's (Model defaults)." };
+            var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1), ToolTip = "Its size: one 2x, or 2 to 4 plies nailed together (\"3-2x12\"), the species and grade the framing's (Model defaults); or an engineered beam, LVL (1-3/4\" plies) or glulam 24F-1.8E, actual sizes in inches." };
             c.Items.Add(new ComboBoxItem { Content = "(not sized)", Tag = null, IsSelected = string.IsNullOrEmpty(bm.Size) });
             foreach (var z in BeamSizes.All) c.Items.Add(new ComboBoxItem { Content = z, Tag = z, IsSelected = z == bm.Size });
+            foreach (var z in BeamSizes.Engineered) c.Items.Add(new ComboBoxItem { Content = z.EndsWith(" GL") ? z + " (glulam 24F-1.8E)" : z, Tag = z, IsSelected = z == bm.Size });
             if (!string.IsNullOrEmpty(bm.Size) && !BeamSizes.IsSize(bm.Size))
                 c.Items.Add(new ComboBoxItem { Content = bm.Size + " (not a size here)", Tag = bm.Size, IsSelected = true });
             c.SelectionChanged += (s, e) =>

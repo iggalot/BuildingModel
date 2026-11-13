@@ -64,10 +64,27 @@ namespace BuildingModel.Statics
         /// <summary>Every joist of a level, with what holds it up (none on the ground; a gable roof's rafters; none for a hip roof yet).</summary>
         public static List<Joist> Of(Building b, Level lv)
         {
+            if (b == null || lv == null || lv.Elevation <= 0) return new List<Joist>();
+            if (IsRoof(b, lv) && b.Roof != null && b.Roof.IsSloped) return b.Roof.Shape == RoofShape.Gable ? Gable(b, lv) : new List<Joist>();
+            return Framed(b, lv, SpacingOf(b, lv));
+        }
+
+        /// <summary>
+        /// A gable's or hip's ceiling joists (owner 2026-11-12): the roof level's diaphragm at the wall tops is the ceiling,
+        /// separate from the roof above, its framing areas laid out as a floor's are, at the rafters' spacing (each rafter
+        /// tied where they run along the rafters). None for a flat roof (its ceiling is in the roof's own diaphragm) or when the
+        /// roof's ceiling joists are turned off (<see cref="Roof.NoCeilingJoists"/>: a vault).
+        /// </summary>
+        public static List<Joist> CeilingOf(Building b, Level lv)
+        {
+            if (b?.Roof == null || lv == null || lv.Elevation <= 0 || !IsRoof(b, lv) || !b.Roof.HasCeilingJoists) return new List<Joist>();
+            return Framed(b, lv, SpacingOf(b, lv));
+        }
+
+        /// <summary>A level's diaphragm framing laid out: each run of areas framed the same way, its joists at the spacing <paramref name="s"/> (ft).</summary>
+        private static List<Joist> Framed(Building b, Level lv, double s)
+        {
             var list = new List<Joist>();
-            if (b == null || lv == null || lv.Elevation <= 0) return list;
-            if (IsRoof(b, lv) && b.Roof != null && b.Roof.IsSloped) return b.Roof.Shape == RoofShape.Gable ? Gable(b, lv) : list;
-            double s = SpacingOf(b, lv);
             var holes = b.OpeningsCutting(lv).SelectMany(o => o.Pieces).ToList();
             var walls = BeamSupports.WallsUnder(b, lv);
             var cols = BeamSupports.ColumnsUnder(b, lv);

@@ -32,7 +32,7 @@ namespace BuildingModel.Sketch
                                  newLength = new TextBox(), newWidth = new TextBox(), newStories = new TextBox();
         private readonly ComboBox studFirst = new ComboBox(), studAbove = new ComboBox(), studSpacing = new ComboBox(), species = new ComboBox(),
                                   grade = new ComboBox(), deflection = new ComboBox(), rafterSpacing = new ComboBox(), floorJoist = new ComboBox(), joistSpacing = new ComboBox(),
-                                  roofBlocking = new ComboBox(), rafterSize = new ComboBox(), bridging = new ComboBox();
+                                  roofBlocking = new ComboBox(), rafterSize = new ComboBox(), bridging = new ComboBox(), ceilingJoistSize = new ComboBox();
         private ModelDefaults shown;
         /// <summary>What was wrong with the values typed when OK was pressed (null: nothing).</summary>
         public string Problem { get; private set; }
@@ -92,6 +92,7 @@ namespace BuildingModel.Sketch
             Add("Floor joists (the rim)", floorJoist, "Their depth is the rim's: a collector or chord where no wall is under a line or an edge.");
             Add("Roof blocking", roofBlocking, "The roof's continuous blocking between its rafters: its collector or chord where no wall is under it.");
             Add("Roof rafters (flat roof)", rafterSize, "A flat roof's rafters: checked for their loads as the floors' joists are.");
+            Add("Ceiling joists (gable)", ceilingJoistSize, "A gable's ceiling joists, at the rafters' spacing wall to wall: the ties of the rafter pairs, carrying the ceiling and the attic (the Load Manager's ceiling loads).");
             Add("Bridging or blocking", bridging, "Rows between the joists and rafters, the most apart: each holds the bottom edge where it is in compression (NDS 3.3.3.4: the unsupported length). None: only at their bearings.");
 
             var note = new TextBlock
@@ -167,6 +168,7 @@ namespace BuildingModel.Sketch
             Fill(floorJoist, MemberSizes, d.FloorJoistSize, s => s, Same);
             Fill(roofBlocking, MemberSizes, d.RoofBlockingSize, s => s, Same);
             Fill(rafterSize, MemberSizes, d.RafterSize, s => s, Same);
+            Fill(ceilingJoistSize, MemberSizes, d.CeilingJoistSize, s => s, Same);
             Fill(bridging, Bridgings, d.JoistBridging, v => v > 0 ? $"at {Num(v)} ft or less" : "none (at the bearings only)", Near);
         }
 
@@ -202,6 +204,7 @@ namespace BuildingModel.Sketch
             d.FloorJoistSize = Picked(floorJoist, d.FloorJoistSize);
             d.RoofBlockingSize = Picked(roofBlocking, d.RoofBlockingSize);
             d.RafterSize = Picked(rafterSize, d.RafterSize);
+            d.CeilingJoistSize = Picked(ceilingJoistSize, d.CeilingJoistSize);
             d.JoistBridging = Picked(bridging, d.JoistBridging);
             Problem = bad.Count == 0 ? null : string.Join("\n", bad);
             return d;

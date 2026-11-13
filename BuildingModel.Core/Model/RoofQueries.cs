@@ -64,7 +64,7 @@ namespace BuildingModel.Model
         public static string DescribeRoof(this Building b)
         {
             var r = b.Roof ?? new Roof();
-            string extras = (r.Overhang > 0 ? $"; eaves {r.Overhang:0.##} ft" : "") + (!r.IsSloped && r.Parapet > 0 ? $"; parapet {r.Parapet:0.##} ft" : "");
+            string extras = (r.Overhang > 0 ? $"; eaves {r.Overhang:0.##} ft" : "") + (!r.IsSloped && r.Parapet > 0 ? $"; parapet {r.Parapet:0.##} ft" : "") + (r.IsSloped && r.NoCeilingJoists ? "; no ceiling joists (a vault)" : "");
             if (!r.IsSloped) return "Flat roof" + extras;
             string ridge = b.EffectiveRidge() == RidgeAxis.WestEast ? "W-E" : "S-N";
             return $"{r.Shape} {r.RisePer12} ({r.Pitch:0.#}°), ridge {ridge}, rises {b.RoofRise():0.##} ft" + extras;

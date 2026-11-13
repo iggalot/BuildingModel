@@ -252,7 +252,17 @@ namespace BuildingModel.Model
         /// <summary>Eaves: how far the roof reaches past the wall line (ft); 0 for none.</summary>
         [DataMember(Order = 5)] public double Overhang { get; set; }
 
+        /// <summary>
+        /// A gable's or hip's ceiling joists turned off (owner 2026-11-12: they can be; the roof never is): a vault, nothing at the
+        /// wall tops under the rafters. Off by default: a sloped roof has its ceiling, the roof level's diaphragm at the wall tops,
+        /// its framing areas the ceiling joists, separate from the roof above. A flat roof's ceiling is in the roof diaphragm.
+        /// </summary>
+        [DataMember(Order = 6, EmitDefaultValue = false)] public bool NoCeilingJoists { get; set; }
+
         public bool IsSloped => Shape != RoofShape.Flat;
+
+        /// <summary>A gable's or hip's own ceiling joists under the rafters (the roof level's diaphragm framing), not turned off.</summary>
+        public bool HasCeilingJoists => IsSloped && !NoCeilingJoists;
 
         public Roof Clone() => (Roof)MemberwiseClone();
 
@@ -324,6 +334,13 @@ namespace BuildingModel.Model
         /// </summary>
         [DataMember(Order = 19, EmitDefaultValue = false)] public double JoistBridging { get; set; }
 
+        /// <summary>
+        /// A gable's ceiling joists (nominal sawn size; owner 2026-11-12, 2x6 to start): at the rafters' spacing, wall to wall
+        /// under them, each the tie of its rafter pair at the heels; they carry the ceiling and the attic (the Load Manager's
+        /// ceiling entry), checked for that bending with the tie's tension (WoodFraming).
+        /// </summary>
+        [DataMember(Order = 20)] public string CeilingJoistSize { get; set; }
+
         public ModelDefaults() => Start();
 
         /// <summary>The program's starting values: the one place they are written. A value missing from a file keeps its starting value.</summary>
@@ -347,6 +364,7 @@ namespace BuildingModel.Model
             RoofBlockingSize = "2x6";
             FloorJoistSpacing = 16;
             RafterSize = "2x10";
+            CeilingJoistSize = "2x6";
         }
 
         [OnDeserializing]

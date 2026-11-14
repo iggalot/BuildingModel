@@ -21,7 +21,10 @@ namespace BuildingModel.Sketch
         public static readonly Brush Muted = Frozen(Color.FromRgb(0x6B, 0x72, 0x80));
         public static readonly Brush Bar = Frozen(Color.FromRgb(0xF8, 0xF9, 0xFA));
         public static readonly Brush Line = Frozen(Color.FromRgb(0xE3, 0xE6, 0xEA));
-        public static readonly Brush Error = Frozen(Color.FromRgb(0xB4, 0x23, 0x18));
+        public static readonly Brush Error = Frozen(PlanStatus.Fail); // the status language's red
+        /// <summary>The review tier (ⓘ): the engineer's to agree with, not a failure (owner 2026-11-14, UI audit A7).</summary>
+        public static readonly Brush Info = Frozen(Color.FromRgb(0x1E, 0x5A, 0xA8));
+        public static readonly Brush InfoFill = Frozen(Color.FromRgb(0xE3, 0xEE, 0xFB));
         public static readonly Brush Warning = Frozen(Color.FromRgb(0x8A, 0x5A, 0x00));
 
         public static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }

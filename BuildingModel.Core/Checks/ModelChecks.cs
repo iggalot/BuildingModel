@@ -24,6 +24,15 @@ namespace BuildingModel.Checks
         /// <summary>Where to mark it on that plan (null: no one place).</summary>
         public Point2? At { get; set; }
 
+        /// <summary>
+        /// The app where it is fixed (<see cref="SuiteApps"/>: "building", "wind", "loads", "shearwalls"); null: the app showing
+        /// it. Another app's issue gets a "Fix in the …" link that opens that app at its member (owner 2026-11-14, UI audit A6).
+        /// </summary>
+        public string FixIn { get; set; }
+
+        /// <summary>An error that says the thing is not designed (its code or its message): ⊘, not ✗.</summary>
+        public bool NotDesigned => Severity == Severity.Error && ((Code ?? "").Contains("NotDesigned") || (Message ?? "").Contains("NOT DESIGNED"));
+
         public override string ToString() => $"{Severity} {Code}: {Message}";
     }
 
@@ -152,7 +161,7 @@ namespace BuildingModel.Checks
             FramingChecks(b, issues);
             RoofChecks(b, Add);
             OverlapChecks(b, Add);
-            foreach (var i in issues) Locate(b, i);
+            foreach (var i in issues) { Locate(b, i); i.FixIn = i.FixIn ?? SuiteApps.Building; } // the model's: fixed in the Building Model
             return issues;
         }
 

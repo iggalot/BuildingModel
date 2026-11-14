@@ -322,6 +322,18 @@ namespace BuildingModel.Statics
                 f.OpenEnds.Add(new HashSet<string>());
                 var reach = EavesOf(s, roofOverhang);
                 var cov = IsDormer(sections, i) ? s.Walls : reach;   // a dormer's eaves overhang the roof below, which runs on under them
+                if (IsDormer(sections, i))
+                {
+                    // a dormer wall flush with the wall below (owner 2026-11-14: pushed out to the outside wall line, that wall holds
+                    // it up): the roof below stops at its sides there, its own roof overhangs the wall, no rafter tails under it
+                    var w = s.Walls;
+                    foreach (var o in sections.Where((o, j) => j != i && !IsDormer(sections, j)).Select(o => o.Walls))
+                    {
+                        if (!(w.X0 > o.X0 - E && w.X1 < o.X1 + E && w.Y0 > o.Y0 - E && w.Y1 < o.Y1 + E)) continue;
+                        cov = new Rect2(Math.Abs(w.X0 - o.X0) < E ? reach.X0 : cov.X0, Math.Abs(w.Y0 - o.Y0) < E ? reach.Y0 : cov.Y0,
+                                        Math.Abs(w.X1 - o.X1) < E ? reach.X1 : cov.X1, Math.Abs(w.Y1 - o.Y1) < E ? reach.Y1 : cov.Y1);
+                    }
+                }
                 if (s.Shape == RoofShape.Gable)
                 {
                     var w = s.Walls;
@@ -565,7 +577,11 @@ namespace BuildingModel.Statics
                     wall.Id = $"DW{++nw}";
                     var mid = wall.Samples[wall.Samples.Count / 2].p;
                     var below = Faces.Where(fc => fc.Plane.Section != i && fc.Pieces.Any(pc => Inside(pc, mid, 1e-6))).OrderByDescending(fc => fc.Plane.Z(mid)).FirstOrDefault();
-                    wall.Kind = below == null ? "wall" : (below.Plane.AlongX == (Math.Abs(b.Y - a.Y) < E)) ? "cheek" : "front";
+                    // a cheek along the rafters of the roof below, the front across them; with no roof under it (flush with the wall
+                    // below) by its own ridge: the gable end its front
+                    bool weLine = Math.Abs(b.Y - a.Y) < E;
+                    wall.Kind = below != null ? (below.Plane.AlongX == weLine ? "cheek" : "front")
+                              : sections[i].Shape == RoofShape.Gable ? (RidgeWestEast(sections[i]) == weLine ? "cheek" : "front") : "wall";
                     DormerPanels.Add(wall);
                     // where it stands on a wall below (owner 2026-11-13: "if there's actually a wall already below them, you don't need
                     // to add a beam ... only the stretch with nothing under it gets the beam"): it bears on that wall there
@@ -585,13 +601,19 @@ namespace BuildingModel.Statics
                         k = m;
                     }
                     if (names.Count > 0) wall.OnWall = string.Join(", ", names) + (bare.Count > 0 ? " (part)" : "");
-                    if (below == null || bare.Count == 0) continue;
+                    if (bare.Count == 0) continue;
                     // each stretch's beam, from the wall below that ends it (it bears there) or else on along the framing to its
                     // supports: a cheek's the trimmer's run, eave wall to ridge; a front's the header's, trimmer to trimmer
                     double line = lx ? a.Y : a.X;
                     Point2 At(double u) => lx ? new Point2(u, line) : new Point2(line, u);
                     double r0, r1; RoofCrease hd = null;
-                    if (wall.Kind == "cheek")
+                    if (below == null)
+                    {
+                        // no roof under it (flush with the wall below, the roof below stopping at its sides): over a gap in that wall
+                        // a beam from wall end to wall end
+                        r0 = double.PositiveInfinity; r1 = double.NegativeInfinity;
+                    }
+                    else if (wall.Kind == "cheek")
                     {
                         bool x = below.Plane.AlongX;
                         var on = Rafters.Where(r => r.Face == below && r.AlongX == x && Math.Abs(r.Line - line) < 1e-6).ToList();

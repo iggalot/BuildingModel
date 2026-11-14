@@ -168,9 +168,22 @@ namespace BuildingModel.Sketch.Tests
             string all2 = string.Join("; ", f2.DormerPanels) + " | " + string.Join("; ", f2.DormerBeams);
             var south = WallAt(b2, 0, 0, 56, 0);
             var front = f2.DormerPanels.Single(dw => dw.Side == "south");
+            Assert.AreEqual("front", front.Kind, all2);
             Assert.AreEqual($"wall {south.Id}", front.OnWall, all2);
             Assert.IsFalse(f2.DormerBeams.Any(dm => dm.Wall == front), all2);
             Assert.AreEqual(2, f2.DormerBeams.Count(dm => dm.Kind == "cheek beam"), all2);
+            var v2 = new SketchView();
+            v2.Canvas.SetBuilding(b2, b2.RoofLevel().Id);
+            v2.Canvas.ShowLevel(RoofQueries.RoofPlanId);
+            v2.Canvas.ZoomExtents();
+            SketchTests.Render(v2, "dormer-flush-r");
+            // the main roof's eave stops at its sides: no rafter tails in front of it, no header cut there; the trimmers run on
+            Assert.IsFalse(f2.Rafters.Any(r => r.Face.Name == "main, south face" && r.Line > 12.5 && r.Line < 19.5 && Math.Max(r.Start.Y, r.End.Y) < 0.5), all2);
+            Assert.IsFalse(f2.Creases.Any(c => c.Kind == BuildingModel.Statics.CreaseKind.Header), all2);
+            Assert.AreEqual(2, f2.Rafters.Count(r => r.Face.Name == "main, south face" && (Math.Abs(r.Line - 12) < 1e-6 || Math.Abs(r.Line - 20) < 1e-6)), all2);
+            var v23 = new Building3DView();
+            v23.Show(b2);
+            SketchTests.Render(v23, "dormer-flush-3d");
 
             // the south wall with a 2 ft gap under the front (16 to 18): only that stretch gets a beam, bearing on the walls'
             // ends each side (owner 2026-11-13: "only the stretch with nothing under it gets the beam")

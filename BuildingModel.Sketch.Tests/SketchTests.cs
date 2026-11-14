@@ -110,6 +110,35 @@ namespace BuildingModel.Sketch.Tests
         }
 
         /// <summary>
+        /// A diaphragm picked is seen at a glance (owner 2026-11-13): tinted all over, not only a thin outline; the L's main
+        /// block, whose rectangle the wing's edge runs through, tinted whole.
+        /// </summary>
+        [STATestMethod]
+        public void Render_ThePickedDiaphragm_TintedAllOver()
+        {
+            var b = Building.New();
+            var top = b.AddLevel("Level 2", 9);
+            var d1 = b.AddDiaphragm(top, new Rect2(0, 0, 56, 28));
+            b.AddDiaphragm(top, new Rect2(32, 28, 56, 52));
+            var v = new SketchView();
+            v.Canvas.SetBuilding(b, top.Id);
+            Render(v, "pick");
+            v.Canvas.ZoomExtents();
+            int Cyan(RenderTargetBitmap bmp) // the select cyan over the floor's beige: blue well over red
+            {
+                var px = new byte[W * H * 4];
+                bmp.CopyPixels(px, W * 4, 0);
+                int n = 0;
+                for (int i = 0; i < px.Length; i += 4) if (px[i] - px[i + 2] > 15) n++;
+                return n;
+            }
+            int before = Cyan(Render(v, "pick-none"));
+            v.Canvas.Select(new[] { d1.Id });
+            int after = Cyan(Render(v, "pick-d1"));
+            Assert.IsTrue(after > before + 20000, $"D1 tinted: {after} pixels, {before} before");
+        }
+
+        /// <summary>
         /// The shear walls' horizontal pairs drawn on the plans (ShearPairs.Drawn, the hold-downs' rule): with the internal
         /// forces shown, level 2 gets both halves of the east wall's top pair; the ground plan its sill's anchor reaction; with
         /// the internal forces off and the whole structure drawn, level 2 none (inside the body).

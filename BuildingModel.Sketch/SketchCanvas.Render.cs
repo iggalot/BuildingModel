@@ -90,6 +90,8 @@ namespace BuildingModel.Sketch
         private static readonly Pen AbovePen = P(Palette.Above, 1.2, 4, 3);
         private static readonly Pen HaloPen = P(Color.FromArgb(0x80, 0x08, 0x91, 0xB2), 12);
         private static readonly Pen SelectPen = P(Palette.Select, 2.5);
+        private static readonly Pen SelectBoldPen = P(Palette.Select, 4);
+        private static readonly Brush SelectTint = B(Color.FromArgb(0x38, Palette.Select.R, Palette.Select.G, Palette.Select.B));
         private static readonly Pen PreviewPen = P(Palette.Preview, 2, 4, 3);
         private static readonly Pen RubberPen = P(Palette.Muted, 1, 3, 3);
         private static readonly Pen MeasurePen = P(Palette.Measure, 1.5);
@@ -931,6 +933,19 @@ namespace BuildingModel.Sketch
                     var s = ToScreen(n.At);
                     ctx.DrawEllipse(null, HaloPen, s, 8, 8);
                     break;
+                case Diaphragm _:
+                {
+                    // a floor or roof picked: tinted all over, its outline (the pieces' union: no seams inside) haloed and bold,
+                    // seen at a glance (owner 2026-11-13: "it needs to be more visually noticeable")
+                    var pieces = LevelView.PiecesOf(o).ToList();
+                    foreach (var r in pieces) ctx.DrawRectangle(SelectTint, null, ScreenRect(r));
+                    var edges = Region.Of(pieces).Outline();
+                    foreach (var e in edges) Line(ctx, HaloPen, e.A, e.B);
+                    foreach (var e in edges) Line(ctx, SelectBoldPen, e.A, e.B);
+                    foreach (var r in pieces)
+                        Label(ctx, $"{r.Width:0.##} × {r.Height:0.##} ft", ToScreen(new Point2((r.X0 + r.X1) / 2, r.Y0)) + new Vector(-30, 4), B(Palette.Select), 10, true, true);
+                    break;
+                }
                 default:
                     foreach (var r in LevelView.PiecesOf(o))
                     {

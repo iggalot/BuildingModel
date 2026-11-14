@@ -1,4 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using BuildingModel.Checks;
 using System.Windows.Media;
 
 namespace BuildingModel.Sketch
@@ -58,6 +62,29 @@ namespace BuildingModel.Sketch
             if (brushes[i] == null) { var b = new SolidColorBrush(ColorOf(h)); b.Freeze(); brushes[i] = b; }
             return brushes[i];
         }
+
+        /// <summary>
+        /// The members the model's errors name, each in its state for the plan: NOT DESIGNED when the error says so (its code
+        /// or message), else it fails ("beam not held up"). Warnings colour nothing: red is for what is unsafe.
+        /// </summary>
+        public static Dictionary<string, MemberHealth> FromIssues(IEnumerable<ModelIssue> issues)
+        {
+            var map = new Dictionary<string, MemberHealth>();
+            foreach (var i in issues ?? Enumerable.Empty<ModelIssue>())
+            {
+                if (i == null || i.Severity != Severity.Error || i.Ids == null) continue;
+                bool nd = (i.Code ?? "").Contains("NotDesigned") || (i.Message ?? "").Contains("NOT DESIGNED");
+                string what = Words(i.Code);
+                foreach (var id in i.Ids.Where(x => !string.IsNullOrEmpty(x)))
+                    if (!map.TryGetValue(id, out var had) || (nd && had.State != Health.NotDesigned))
+                        map[id] = nd ? MemberHealth.NotDesigned(what) : MemberHealth.Failing(what);
+            }
+            return map;
+        }
+
+        /// <summary>"BeamNotHeldUp" → "beam not held up".</summary>
+        public static string Words(string code) =>
+            string.IsNullOrEmpty(code) ? null : Regex.Replace(code, "(?<=[a-z0-9])(?=[A-Z])", " ").ToLowerInvariant();
 
         /// <summary>A member's line in its state: heavier the worse it is; NOT DESIGNED dashed.</summary>
         public static Pen PenOf(Health h, double width)

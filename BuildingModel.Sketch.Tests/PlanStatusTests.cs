@@ -75,6 +75,23 @@ namespace BuildingModel.Sketch.Tests
             Assert.IsTrue(raised && c.ShowsLabel(LabelRank.Detail));
         }
 
+        /// <summary>The model's errors colour the members they name; a warning colours nothing; NOT DESIGNED wins over a plain error.</summary>
+        [TestMethod]
+        public void FromIssues_ErrorsNameTheirMembers()
+        {
+            var issues = new System.Collections.Generic.List<BuildingModel.Checks.ModelIssue>
+            {
+                new BuildingModel.Checks.ModelIssue { Severity = BuildingModel.Checks.Severity.Error, Code = "BeamNotHeldUp", Message = "BM1 and BM2 hold each other up", Ids = { "BM1", "BM2" } },
+                new BuildingModel.Checks.ModelIssue { Severity = BuildingModel.Checks.Severity.Warning, Code = "WallShort", Message = "short", Ids = { "W3" } },
+                new BuildingModel.Checks.ModelIssue { Severity = BuildingModel.Checks.Severity.Error, Code = "DiaphragmStep", Message = "a step with no wall under it: NOT DESIGNED", Ids = { "BM2" } },
+            };
+            var map = PlanStatus.FromIssues(issues);
+            Assert.AreEqual(Health.Fails, map["BM1"].State);
+            Assert.AreEqual("beam not held up", map["BM1"].What);
+            Assert.AreEqual(Health.NotDesigned, map["BM2"].State, "NOT DESIGNED wins");
+            Assert.IsFalse(map.ContainsKey("W3"), "a warning is not red");
+        }
+
         /// <summary>A host's ratios colour its members: a failing wall red, a close one amber; none given, no status colour at all.</summary>
         [STATestMethod]
         public void Render_MembersInTheirState_OnlyWhenTheHostSaysSo()

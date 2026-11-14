@@ -293,6 +293,9 @@ namespace BuildingModel.App
             var b = Sketch.Building;
             var issues = ModelChecks.Run(b);
             Sketch.Issues = issues;
+            // the members an error names drawn red with a tag (owner 2026-11-14: red for what is unsafe or NOT DESIGNED only)
+            var health = PlanStatus.FromIssues(issues);
+            Sketch.HealthOf = id => health.TryGetValue(id, out var h) ? h : null;
             issueList.Show(issues);
             issuesButton.Show(issues);
             var fp = b.Footprint();

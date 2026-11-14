@@ -200,6 +200,21 @@ namespace BuildingModel.Sketch.Tests
             var gap = f3.DormerBeams.Single(dm => dm.Wall == front3);
             Assert.AreEqual(16, Math.Min(gap.A.X, gap.B.X), 0.26, all3);
             Assert.AreEqual(18, Math.Max(gap.A.X, gap.B.X), 0.26, all3);
+
+            // its statics (owner 2026-11-14, sizing the dormer beams): the gap's beam a member on the two walls' ends; the dormer
+            // walls' weight (10 psf) on what holds each piece, the front's straight onto the walls each side; all of it lands
+            var st = BuildingModel.Statics.RoofStatics.Of(b3, top3, f3);
+            st.DormerWallWeights(10);
+            st.Solve(4, m => BuildingModel.Statics.RoofStatics.AreaLoads(m, new double[] { 15, 0, 0, 0 }));
+            var gm = st.Members.Single(m => m.Dormer == gap);
+            Assert.AreEqual("header", gm.Kind);
+            Assert.AreEqual(2, gm.Supports.Count(x => x.Kind == BuildingModel.Statics.RoofTargetKind.Wall), string.Join("; ", gm.Supports.Select(x => x.Name)));
+            Assert.IsTrue(gm.Points.Any(p => p.From == front3.Id), "the front's weight over the gap on its beam");
+            Assert.IsTrue(st.Landings.Any(l => l.From == front3.Id), "the front's weight beside the gap straight onto the walls");
+            double applied = st.Applied().Sum(x => x.p[0]), carried = st.Landings.Sum(l => l.P[0]);
+            Assert.AreEqual(applied, carried, 1e-6 * applied, string.Join(" | ", st.Notes));
+            double walls = f3.DormerPanels.Sum(dw => dw.Area) * 10;
+            Assert.IsTrue(applied > st.Members.Where(m => m.Rafters.Count > 0).Sum(m => m.Own[0].Points.Sum(p => p.P) + m.Own[0].Lines().Sum(l => (l.B - l.A) * (l.WA + l.WB) / 2)) + walls * 0.99, $"the walls' {walls:0} lb in the roof's applied load");
         }
 
         private static bool Near(List<Point2> poly, Point2 p)

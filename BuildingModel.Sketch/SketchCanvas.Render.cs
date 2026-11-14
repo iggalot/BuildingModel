@@ -746,10 +746,17 @@ namespace BuildingModel.Sketch
                             var walls = (b.Roof.Sections ?? new List<RoofSection>()).ElementAtOrDefault(g.Key)?.Walls;
                             if (walls == null) continue;
                             var beams = frame.DormerBeams.Where(dm => g.Contains(dm.Wall)).ToList();
-                            string text = $"dormer: {string.Join(", ", g.Select(dw => $"{dw.Id} {dw.Kind}{(dw.OnWall != null ? $" on {dw.OnWall}" : "")}"))}" +
-                                          (beams.Count > 0 ? $" · {string.Join(", ", beams.Select(dm => $"{dm.Id} {dm.Kind}"))} NOT DESIGNED" : "");
+                            // two lines: its walls, then its beams with their sizes (not sized: NOT DESIGNED; sized: checked in the
+                            // Load Manager's joists window)
+                            string text = $"dormer: {string.Join(", ", g.Select(dw => $"{dw.Id} {dw.Kind}{(dw.OnWall != null ? $" on {dw.OnWall}" : "")}"))}";
+                            string SizeOf(Statics.DormerBeam dm) => dm.Kind == "header" ? b.Roof.HeaderSize : b.Roof.CheekBeamSize;
+                            var sized = beams.Where(dm => !string.IsNullOrEmpty(SizeOf(dm))).Select(dm => $"{dm.Id} {dm.Kind} {SizeOf(dm)}").ToList();
+                            var unsized = beams.Where(dm => string.IsNullOrEmpty(SizeOf(dm))).Select(dm => $"{dm.Id} {dm.Kind}").ToList();
+                            if (unsized.Count > 0) sized.Add(string.Join(", ", unsized) + ": not sized, NOT DESIGNED");
+                            string under = beams.Count == 0 ? null : string.Join(" · ", sized);
                             var at = ToScreen(new Point2(walls.Value.X0, walls.Value.Y0));
-                            Label(ctx, text, at + new Vector(0, 18), B(Palette.Error), 10);
+                            Label(ctx, text, at + new Vector(0, 18), B(Palette.Wall), 10);
+                            if (under != null) Label(ctx, under, at + new Vector(0, 32), B(beams.Any(dm => string.IsNullOrEmpty(dm.Kind == "header" ? b.Roof.HeaderSize : b.Roof.CheekBeamSize)) ? Palette.Error : Palette.Wall), 10);
                         }
                     }
                 }

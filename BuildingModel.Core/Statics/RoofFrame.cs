@@ -144,7 +144,7 @@ namespace BuildingModel.Statics
     /// <summary>
     /// What holds a dormer wall up (owner 2026-11-13: "a beam object under every dormer wall ... parallel to the rafters next to
     /// it"): under a cheek a beam on the trimmer's line, sloping with the roof below; under the front the header. On plan A to
-    /// B, its top at ZA and ZB (ft above the roof level's plates). NOT DESIGNED (sized later).
+    /// B, its top at ZA and ZB (ft above the roof level's plates). Sized in the roof framing check (the Load Manager's joists window: <see cref="Roof.CheekBeamSize"/>, <see cref="Roof.HeaderSize"/>).
     /// </summary>
     public sealed class DormerBeam
     {
@@ -160,7 +160,7 @@ namespace BuildingModel.Statics
         public double Length => RoofCrease.Dist(A, B);
         /// <summary>Along its slope (ft).</summary>
         public double SlopedLength => Math.Sqrt(Length * Length + (ZB - ZA) * (ZB - ZA));
-        public override string ToString() => $"{Kind} {Id} under {Wall?.Id}: {SlopedLength:0.##} ft, NOT DESIGNED";
+        public override string ToString() => $"{Kind} {Id} under {Wall?.Id}: {SlopedLength:0.##} ft";
     }
 
     /// <summary>A hip or valley rafter: along its crease on plan, from its low end A to its high end B.</summary>
@@ -545,7 +545,7 @@ namespace BuildingModel.Statics
         /// gable end that runs on into the roof (<see cref="OpenEnds"/>), from the roof below up to its own roof, where that is
         /// higher (a cheek: a triangle on the slope; the front: its gable over a strip). Under each wall along the rafters of the
         /// roof below, a beam on that line (the trimmer's), from that section's wall up the slope as far as the rafters there run;
-        /// under a wall across them, the header from trimmer to trimmer (<see cref="Headers"/>). Laid out only: NOT DESIGNED.
+        /// under a wall across them, the header from trimmer to trimmer (<see cref="Headers"/>). Laid out here; sized in the roof framing check.
         /// </summary>
         private void LayDormers(List<RoofSection> sections)
         {

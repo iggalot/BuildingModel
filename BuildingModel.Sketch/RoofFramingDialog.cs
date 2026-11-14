@@ -30,7 +30,7 @@ namespace BuildingModel.Sketch
         private bool sectionsTouched;
         private readonly ListBox sectionList, purlinList;
         private readonly TextBox sName, sX0, sY0, sX1, sY1, sPitch, sRise, sEaves, pId, pX0, pY0, pX1, pY1, pSpacing;
-        private readonly ComboBox sShape, sRidge, sLow, pBraceTo, hipSize, valleySize, headerSize, ridgeBoardSize, purlinSize, braceSize;
+        private readonly ComboBox sShape, sRidge, sLow, pBraceTo, hipSize, valleySize, headerSize, cheekBeamSize, ridgeBoardSize, purlinSize, braceSize;
         private readonly Canvas plan;
         private readonly TextBlock issues;
         private bool loading;
@@ -101,14 +101,16 @@ namespace BuildingModel.Sketch
             // the members' sizes
             left.Children.Add(Head("Sizes"));
             hipSize = SizeCombo("(not sized)", roof.HipSize); valleySize = SizeCombo("(not sized)", roof.ValleySize); headerSize = SizeCombo("(not sized)", roof.HeaderSize);
+            cheekBeamSize = SizeCombo("(not sized)", roof.CheekBeamSize);
             ridgeBoardSize = SizeCombo("(not sized)", roof.RidgeBoardSize); purlinSize = SizeCombo("(the rafters')", roof.PurlinSize);
             braceSize = new ComboBox { Width = 120 };
             foreach (var z in new[] { "(2x4)", "2x4", "2x6" }) braceSize.Items.Add(z);
             braceSize.SelectedIndex = roof.BraceSize == "2x6" ? 2 : roof.BraceSize == "2x4" ? 1 : 0;
             left.Children.Add(Row("Hips", Line(hipSize, Label("  valleys"), valleySize)));
             left.Children.Add(Row("Headers", Line(headerSize, Label("  ridge boards"), ridgeBoardSize)));
+            left.Children.Add(Row("Dormers", Line(Label("cheek beams"), cheekBeamSize)));
             left.Children.Add(Row("Purlins", Line(purlinSize, Label("  braces"), braceSize)));
-            foreach (var c in new[] { hipSize, valleySize, headerSize, ridgeBoardSize, purlinSize, braceSize }) c.SelectionChanged += (s, e) => Update();
+            foreach (var c in new[] { hipSize, valleySize, headerSize, cheekBeamSize, ridgeBoardSize, purlinSize, braceSize }) c.SelectionChanged += (s, e) => Update();
             left.Children.Add(Note("Not sized: NOT DESIGNED, the lightest that works named (the joist window)."));
 
             // the plan and what is wrong
@@ -281,7 +283,7 @@ namespace BuildingModel.Sketch
             r.Sections = sectionsTouched ? sections.Select(x => x.Clone()).ToList() : roof.Sections;
             r.Purlins = purlins.Count == 0 ? null : purlins.Select(x => x.Clone()).ToList();
             string Size(ComboBox c) => c.SelectedIndex > 0 ? (string)c.SelectedItem : null;
-            r.HipSize = Size(hipSize); r.ValleySize = Size(valleySize); r.HeaderSize = Size(headerSize);
+            r.HipSize = Size(hipSize); r.ValleySize = Size(valleySize); r.HeaderSize = Size(headerSize); r.CheekBeamSize = Size(cheekBeamSize);
             r.RidgeBoardSize = Size(ridgeBoardSize); r.PurlinSize = Size(purlinSize); r.BraceSize = Size(braceSize);
             Roof = r;
 

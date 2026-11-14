@@ -403,6 +403,13 @@ namespace BuildingModel.Model
         /// <summary>The purlins' braces' sawn size; null: 2x4 (IRC R802.4.5).</summary>
         [DataMember(Order = 15, EmitDefaultValue = false)] public string BraceSize { get; set; }
 
+        /// <summary>
+        /// A dormer's cheek beams' sawn size (as <see cref="HipSize"/>; owner 2026-11-14): each the rafter on the trimmer's line
+        /// under a cheek wall where no wall is below it, carrying the roof's strip, the dormer's rafters on that wall, the
+        /// wall's own weight and the header's end.
+        /// </summary>
+        [DataMember(Order = 16, EmitDefaultValue = false)] public string CheekBeamSize { get; set; }
+
         public Roof Clone()
         {
             var r = (Roof)MemberwiseClone();

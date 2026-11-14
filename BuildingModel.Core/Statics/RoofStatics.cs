@@ -47,6 +47,8 @@ namespace BuildingModel.Statics
         public RoofCrease Ridge;
         /// <summary>A purlin's model (<see cref="Roof.Purlins"/>); null: not a purlin.</summary>
         public RoofPurlin Purlin;
+        /// <summary>The dormer beam it is (a header's; a beam over a gap in the wall below a dormer's front); null: none.</summary>
+        public DormerBeam Dormer;
         public List<RoofSupport> Supports = new List<RoofSupport>();
         /// <summary>Its own loads by set (its strip's), and what lands on it from the other members by set (ft from its start).</summary>
         public BeamLoads[] Own;
@@ -133,9 +135,19 @@ namespace BuildingModel.Statics
             foreach (var l in f.Lines)
             {
                 var m = new RoofMember { Id = l.Id, Kind = l.Kind == CreaseKind.Hip ? "hip rafter" : l.Kind == CreaseKind.Valley ? "valley rafter" : "header", Start = l.A, End = l.B, Line = l };
+                if (l.Kind == CreaseKind.Header) m.Dormer = f.DormerBeams.FirstOrDefault(d => d.Header == l.Crease);
                 st.Members.Add(m);
                 byLine[l] = m;
             }
+            // a dormer's front over a gap in the wall below it, no roof under it (owner 2026-11-14): its beam, wall end to wall end
+            foreach (var d in f.DormerBeams.Where(d => d.Kind == "header" && d.Header == null))
+            {
+                var mid = new Point2((d.A.X + d.B.X) / 2, (d.A.Y + d.B.Y) / 2);
+                if (f.Creases.Any(c => c.Kind == CreaseKind.Header && c.DistanceTo(mid) < 1e-3)) continue;   // a stretch of a header: that one
+                st.Members.Add(new RoofMember { Id = d.Id, Kind = "header", Start = d.A, End = d.B, Dormer = d });
+            }
+            st.frame = f;
+            st.wallsUnder = walls;
             // a ridge board on each ridge carrying what meets it with no pair (a hip's top, a rafter opposite a dormer)
             var boards = new Dictionary<RoofCrease, RoofMember>();
             RoofMember Board(RoofCrease cr)
@@ -311,6 +323,48 @@ namespace BuildingModel.Statics
             return st;
         }
 
+        private RoofFrame frame;
+        private IList<Wall> wallsUnder;
+        /// <summary>The dormers' walls' own weight (lb, dead), piece by piece: the member under it (null: the wall below, or nothing).</summary>
+        private readonly List<(DormerWall wall, Point2 at, double lb, double width, RoofMember on, Wall below, RoofFace face)> dormerWeights =
+            new List<(DormerWall, Point2, double, double, RoofMember, Wall, RoofFace)>();
+
+        /// <summary>
+        /// The dormers' walls' own weight (owner 2026-11-14, sizing the dormer beams): <paramref name="psf"/> (the walls' dead
+        /// load per sq ft of wall) times each wall's height along it, on what holds it up there: a cheek on the rafter under it
+        /// (its beam, the trimmer's line), a front on its header (or the beam over a gap in the wall below), else straight onto
+        /// the wall below it. Call before <see cref="Solve"/>: its points go into the members' dead load, its landings onto the
+        /// walls.
+        /// </summary>
+        public void DormerWallWeights(double psf)
+        {
+            dormerWeights.Clear();
+            if (!(psf > 0) || frame == null) return;
+            double lost = 0;
+            foreach (var dw in frame.DormerPanels)
+                for (int k = 1; k < dw.Samples.Count; k++)
+                {
+                    var s0 = dw.Samples[k - 1]; var s1 = dw.Samples[k];
+                    double ds = RoofCrease.Dist(s0.p, s1.p), h = ((s0.top - s0.bottom) + (s1.top - s1.bottom)) / 2;
+                    if (ds < 1e-9 || h <= 1e-9) continue;
+                    var p = new Point2((s0.p.X + s1.p.X) / 2, (s0.p.Y + s1.p.Y) / 2);
+                    double lb = psf * h * ds;
+                    RoofMember OnRafter() => Members.FirstOrDefault(m => m.Rafters.Any(r => r.Face.Plane.Section != dw.Section && OnRun(r, p)));
+                    RoofMember OnHeader() => Members.FirstOrDefault(m => m.Kind == "header" && RoofCrease.ToSegment(p, m.Start, m.End) < 0.01);
+                    var on = dw.Kind == "cheek" ? OnRafter() ?? OnHeader() : OnHeader() ?? OnRafter();
+                    var below = on != null ? null : wallsUnder?.FirstOrDefault(w => RoofCrease.ToSegment(p, w.Start, w.End) <= 0.26);
+                    var face = frame.Faces.Where(fc => fc.Plane.Section != dw.Section && fc.Pieces.Any(pc => pc.Edges().All(e => e.a * p.X + e.b * p.Y + e.c >= -1e-6)))
+                                          .OrderByDescending(fc => fc.Plane.Z(p)).FirstOrDefault() ?? frame.Faces.FirstOrDefault(fc => fc.Plane.Section == dw.Section);
+                    if (on == null && below == null) { lost += lb; continue; }
+                    dormerWeights.Add((dw, p, lb, ds, on, below, face));
+                }
+            if (lost > 0.5) Notes.Add($"The dormers' walls: {lost:N0} lb of their weight stands on nothing (no rafter, header or wall under it): not traced down.");
+        }
+
+        private static bool OnRun(RoofRafter r, Point2 p) =>
+            r.AlongX ? Math.Abs(p.Y - r.Line) < 1e-6 && p.X >= Math.Min(r.Start.X, r.End.X) - 1e-6 && p.X <= Math.Max(r.Start.X, r.End.X) + 1e-6
+                     : Math.Abs(p.X - r.Line) < 1e-6 && p.Y >= Math.Min(r.Start.Y, r.End.Y) - 1e-6 && p.Y <= Math.Max(r.Start.Y, r.End.Y) + 1e-6;
+
         /// <summary>
         /// Every member solved for its loads (<paramref name="own"/>: each member's own, by set, ft from its start; null: none),
         /// round until nothing changes; the landings on the model's walls, columns and beams.
@@ -319,6 +373,13 @@ namespace BuildingModel.Statics
         {
             Sets = sets;
             foreach (var m in Members) m.Own = own(m) ?? Enumerable.Range(0, sets).Select(_ => new BeamLoads()).ToArray();
+            // the dormers' walls' weight: on the member under it, else straight onto the wall below
+            foreach (var x in dormerWeights.Where(z => z.on == null))
+            {
+                var p = new double[sets]; p[0] = x.lb;
+                Landings.Add(new RoofLanding { Kind = RoofTargetKind.Wall, On = x.below.Id, Where = x.at, P = p, From = x.wall.Id, Width = x.width,
+                                               AlongX = Math.Abs(x.below.End.Y - x.below.Start.Y) < 1e-6 });
+            }
             var byId = Members.ToDictionary(m => m.Id);
             var apexes = Members.Where(m => m.Supports.Any(s => s.Kind == RoofTargetKind.Apex)).GroupBy(m => m.Supports.First(s => s.Kind == RoofTargetKind.Apex).On).ToList();
             double change = double.MaxValue;
@@ -327,6 +388,12 @@ namespace BuildingModel.Statics
             {
                 // what each member gets from the others this pass, from last pass's reactions
                 var incoming = Members.ToDictionary(m => m, m => new List<(double, double[], string)>());
+                // the dormers' walls standing on it (their own weight, dead)
+                foreach (var x in dormerWeights.Where(z => z.on != null))
+                {
+                    var w = new double[sets]; w[0] = x.lb;
+                    incoming[x.on].Add((Math.Max(0, Math.Min(x.on.Length, x.on.Along(x.at))), w, x.wall.Id));
+                }
                 foreach (var m in Members)
                     foreach (var s in m.Supports.Where(x => x.R != null))
                     {
@@ -457,6 +524,12 @@ namespace BuildingModel.Statics
         /// </summary>
         public IEnumerable<(RoofFace face, Point2 at, double[] p)> Applied()
         {
+            // the dormers' walls' weight, on the roof face under each piece (applied once: the members' own points skip it)
+            foreach (var x in dormerWeights.Where(z => z.face != null))
+            {
+                var v = new double[Sets]; v[0] = x.lb;
+                yield return (x.face, x.at, v);
+            }
             foreach (var m in Members.Where(x => x.Own != null && x.Rafters.Count > 0))
             {
                 RoofFace FaceAt(double u)

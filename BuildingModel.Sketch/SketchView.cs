@@ -28,7 +28,22 @@ namespace BuildingModel.Sketch
         public SketchCanvas Canvas { get; } = new SketchCanvas();
 
         private readonly Dictionary<SketchTool, ToggleButton> tools = new Dictionary<SketchTool, ToggleButton>();
-        private readonly ToggleButton snap, ortho, grid, issuesButton, planButton, planSnap, wallBy;
+        private readonly ToggleButton snap, ortho, grid, issuesButton, planButton, planSnap, wallBy, labelsButton;
+
+        /// <summary>Labels ▾: how much text the plan shows (owner 2026-11-14: Critical when it opens).</summary>
+        private void LabelsMenu()
+        {
+            var menu = new ContextMenu { PlacementTarget = labelsButton, Placement = PlacementMode.Top };
+            foreach (LabelDensity d in Enum.GetValues(typeof(LabelDensity)))
+            {
+                var density = d;
+                var m = new MenuItem { Header = LabelDensities.Name(d), ToolTip = LabelDensities.Help(d), IsCheckable = true, IsChecked = Canvas.Labels == d };
+                m.Click += (s, e) => { Canvas.Labels = density; UpdateButtons(); };
+                menu.Items.Add(m);
+            }
+            menu.Closed += (s, e) => UpdateButtons();
+            menu.IsOpen = true;
+        }
 
         /// <summary>The Wall tool's line: centreline, left face or right face.</summary>
         private void WallByMenu()
@@ -133,6 +148,8 @@ namespace BuildingModel.Sketch
             viewBar.Children.Add(grid);
             viewBar.Children.Add(wallBy);
             viewBar.Children.Add(Ui.Separator());
+            labelsButton = Ui.Toggle("", "Labels: Critical ▾", "How much text the plan shows: Critical (the marks, and what fails, is close to its limit or is NOT DESIGNED), Normal (and the governing values), All, or Off. A label not shown appears when the pointer is on it.", (s, e) => LabelsMenu());
+            viewBar.Children.Add(labelsButton);
             issuesButton = Ui.Toggle("", "Issues", "Show the issues on the plan (circle: error, triangle: warning). Click a marker to select what it is about.",
                                      (s, e) => { Canvas.ShowIssues = issuesButton.IsChecked == true; Canvas.Refresh(); });
             viewBar.Children.Add(issuesButton);
@@ -162,6 +179,7 @@ namespace BuildingModel.Sketch
             Canvas.Status += (s, e) => { status.Text = e.Text; status.Foreground = !e.IsWarning ? Ui.Ink : e.Text != null && e.Text.StartsWith("Error") ? Ui.Error : Ui.Warning; };
             Canvas.CursorMoved += (s, e) => coords.Text = $"x {Canvas.CursorPoint.X:0.00}   y {Canvas.CursorPoint.Y:0.00} ft";
             Canvas.ToolChanged += (s, e) => UpdateButtons();
+            Canvas.LabelsChanged += (s, e) => UpdateButtons();
             Canvas.ModelChanged += (s, e) => { UpdateButtons(); UpdateLevels(); };
             Canvas.ActiveLevelChanged += (s, e) => UpdateLevels();
             Canvas.SelectionChanged += (s, e) => UpdateButtons();
@@ -228,6 +246,8 @@ namespace BuildingModel.Sketch
             grid.IsChecked = Canvas.ShowGrid;
             wallBy.Content = Ui.Content("", "Wall: " + SketchCanvas.WallLineWords(Canvas.WallDrawnBy) + " ▾");
             wallBy.IsChecked = Canvas.WallDrawnBy != WallLine.Centre;
+            labelsButton.Content = Ui.Content("", "Labels: " + LabelDensities.Name(Canvas.Labels) + " ▾");
+            labelsButton.IsChecked = Canvas.Labels != LabelDensity.Critical;
             wallBy.Visibility = Canvas.EnabledTools.Contains(SketchTool.Wall) && (!tools.TryGetValue(SketchTool.Wall, out var wt) || wt.Visibility == Visibility.Visible)
                 ? Visibility.Visible : Visibility.Collapsed;
             issuesButton.IsChecked = Canvas.ShowIssues;

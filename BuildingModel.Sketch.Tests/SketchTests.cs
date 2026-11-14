@@ -85,13 +85,14 @@ namespace BuildingModel.Sketch.Tests
         }
 
         /// <summary>
-        /// Diaphragms at different heights (owner 2026-11-13): the step where they meet drawn dashed in amber along y = 28, with
-        /// the wing's offset on its label; one height, none.
+        /// Diaphragms at different heights (owner 2026-11-13): the step where they meet drawn dashed along y = 28. With no wall
+        /// under it, it is NOT DESIGNED and drawn red (the status language, owner 2026-11-14); on a wall it is information,
+        /// drawn muted; one height, none.
         /// </summary>
         [STATestMethod]
         public void Render_TheStep_WhereDiaphragmsAtTwoHeightsMeet()
         {
-            int Amber(double wingOffset)
+            int Red(double wingOffset, bool wallUnder)
             {
                 var b = Building.New();
                 var top = b.AddLevel("Level 2", 9);
@@ -99,14 +100,16 @@ namespace BuildingModel.Sketch.Tests
                 b.AddDiaphragm(top, new Rect2(32, 28, 56, 52)).Offset = wingOffset;
                 foreach (var (x0, y0, x1, y1) in new[] { (0.0, 0.0, 56.0, 0.0), (0.0, 0.0, 0.0, 28.0), (0.0, 28.0, 32.0, 28.0), (56.0, 0.0, 56.0, 52.0), (32.0, 28.0, 32.0, 52.0), (32.0, 52.0, 56.0, 52.0) })
                     b.AddWall(b.Ground, top, x0, y0, x1, y1);
+                if (wallUnder) b.AddWall(b.Ground, top, 32, 28, 56, 28);
                 var v = new SketchView();
                 v.Canvas.SetBuilding(b, top.Id);
                 Render(v, "step");
                 v.Canvas.ZoomExtents();
-                return Count(Render(v, wingOffset == 0 ? "step-none" : "step-wing-lower"), SketchCanvas.Palette.Warning, 10);
+                return Count(Render(v, wingOffset == 0 ? "step-none" : wallUnder ? "step-on-wall" : "step-wing-lower"), PlanStatus.Fail, 10);
             }
-            int with = Amber(-1), without = Amber(0);
-            Assert.IsTrue(with > without + 100, $"the step drawn: {with} amber pixels, {without} without");
+            int with = Red(-1, false), without = Red(0, false), onWall = Red(-1, true);
+            Assert.IsTrue(with > without + 100, $"the step with no wall under it drawn red: {with} red pixels, {without} without a step");
+            Assert.IsTrue(onWall < without + 20, $"on a wall it is not a warning: {onWall} red pixels, {without} without a step");
         }
 
         /// <summary>

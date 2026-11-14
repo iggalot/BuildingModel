@@ -463,6 +463,7 @@ namespace BuildingModel.Sketch
                 return;
             }
             UpdateCursor(pos);
+            HoverHidden(pos); // a label hidden by the density or another label: shown while the pointer is on it
             if (Tool == SketchTool.Select && grip == null && windowFrom == null)
             {
                 Hover(pos);

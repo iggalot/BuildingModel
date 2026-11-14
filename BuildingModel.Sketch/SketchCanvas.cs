@@ -478,6 +478,63 @@ namespace BuildingModel.Sketch
         public bool ShowWallLabels { get; set; } = true;
         public bool ShowLabels { get; set; } = true;
 
+        private LabelDensity labelDensity = LabelDensity.Critical;
+
+        /// <summary>
+        /// How much text the plan shows (owner 2026-11-14: Critical when it opens; the view bar's Labels ▾). The apps' own
+        /// overlays ask <see cref="ShowsLabel"/> too, so one setting thins every label.
+        /// </summary>
+        public LabelDensity Labels
+        {
+            get => labelDensity;
+            set { if (labelDensity == value) return; labelDensity = value; LabelsChanged?.Invoke(this, EventArgs.Empty); InvalidateVisual(); }
+        }
+        public event EventHandler LabelsChanged;
+
+        /// <summary>Whether a label of this rank is shown at the current <see cref="Labels"/>.</summary>
+        public bool ShowsLabel(LabelRank rank) => LabelDensities.Shows(labelDensity, rank);
+
+        /// <summary>
+        /// A member's state by its ID (a wall, beam or column; the host's checks), drawn in the one status language
+        /// (<see cref="PlanStatus"/>): its line in its colour, and the worst ones tagged. Null, or a null answer: drawn as before.
+        /// </summary>
+        public Func<string, MemberHealth> HealthOf { get; set; }
+
+        /// <summary>Draw the members in their state (<see cref="HealthOf"/>). On by default.</summary>
+        public bool ShowHealth { get; set; } = true;
+
+        /// <summary>The labels not drawn this frame (their rank, or another label in the way): each shows when hovered.</summary>
+        private readonly List<(Rect box, string text, Brush brush)> hiddenLabels = new List<(Rect, string, Brush)>();
+        private string hoverLabel;
+
+        /// <summary>The labels drawn this frame (screen): an overlay's label of a value keeps off them, or is hidden.</summary>
+        public IReadOnlyList<Rect> LabelBoxes => drawnLabels;
+        private readonly List<Rect> drawnLabels = new List<Rect>();
+
+        /// <summary>A label a host did not draw (its rank, or no room): shown when the pointer is over <paramref name="box"/>.</summary>
+        public void HideLabel(Rect box, string text, Brush brush = null)
+        {
+            if (!string.IsNullOrEmpty(text)) hiddenLabels.Add((box, text, brush));
+        }
+
+        /// <summary>A host's label drawn on the plan this frame: the shared labels of a value keep off it.</summary>
+        public void TakeLabel(Rect box) => drawnLabels.Add(box);
+
+        /// <summary>The hidden label under the pointer (with a margin), if any; redraws when it changes.</summary>
+        private void HoverHidden(Point p)
+        {
+            string over = null;
+            foreach (var (box, text, _) in hiddenLabels)
+            {
+                var r = box;
+                r.Inflate(6, 6);
+                if (r.Contains(p)) { over = text; break; }
+            }
+            if (over == hoverLabel) return;
+            hoverLabel = over;
+            InvalidateVisual();
+        }
+
         /// <summary>A span marker in every framing zone (each floor or roof diaphragm): the way its joists or rafters run, as on a framing plan.</summary>
         public bool ShowSpans { get; set; } = true;
 

@@ -38,7 +38,7 @@ namespace BuildingModel.Sketch
             public static readonly Color Select = Color.FromRgb(0x08, 0x91, 0xB2);                 // cyan
             public static readonly Color Preview = Color.FromRgb(0x2A, 0x78, 0xD6);
             public static readonly Color Measure = Color.FromRgb(0x6D, 0x28, 0xD9);                // violet
-            public static readonly Color Error = Color.FromRgb(0xD5, 0x5E, 0x00);                  // vermilion (Okabe-Ito)
+            public static readonly Color Error = PlanStatus.Fail;                                  // the status red: unsafe or unchecked only (owner 2026-11-14)
             public static readonly Color Warning = Color.FromRgb(0xE6, 0x9F, 0x00);                // amber (Okabe-Ito)
             public static readonly Color NoteFill = Color.FromRgb(0xFF, 0xF7, 0xC2);
             public static readonly Color NoteEdge = Color.FromRgb(0xB4, 0x8A, 0x00);
@@ -127,6 +127,8 @@ namespace BuildingModel.Sketch
         protected override void OnRender(DrawingContext ctx)
         {
             memberLabels.Clear();
+            drawnLabels.Clear();
+            hiddenLabels.Clear();
             var bounds = new Rect(0, 0, ActualWidth, ActualHeight);
             ctx.DrawRectangle(PaperBrush, null, bounds);
             if (Building == null || ActiveLevel == null) return;
@@ -172,7 +174,7 @@ namespace BuildingModel.Sketch
             else
             {
                 foreach (var w in b.WallsOver(level)) Line(ctx, AbovePen, w.Start, w.End);
-                foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? WallPen, w.Start, w.End);
+                foreach (var w in walls) Line(ctx, HealthPen(w.Id, WallPen.Thickness) ?? WallStyle?.Invoke(w) ?? WallPen, w.Start, w.End);
             }
             if (ShowJoints && !roofPlan) DrawJoints(ctx, b, walls);
             if (ShowShearParts && !roofPlan) DrawShearParts(ctx, b, walls);
@@ -185,13 +187,15 @@ namespace BuildingModel.Sketch
             foreach (var bm in b.BeamsOn(level))
             {
                 Line(ctx, BeamPen, bm.Start, bm.End);
+                var bh = HealthPen(bm.Id, BeamPen.Thickness);
+                if (bh != null) Line(ctx, bh, bm.Start, bm.End); // its state over the dash-dot
                 BeamLabel(ctx, bm, roles != null && roles.TryGetValue(bm.Id, out var role) && role.Role == Statics.FramingRole.Girder ? " · girder" : "");
             }
             foreach (var c in b.ColumnsUnder(level))
             {
                 var cs = ToScreen(c.At);
                 double half = Math.Max(4, 0.25 * Zoom);
-                ctx.DrawRectangle(BeamBrush, ColumnEdge, new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half));
+                ctx.DrawRectangle(BeamBrush, HealthPen(c.Id, 2) ?? ColumnEdge, new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half));
                 ColumnLabel(ctx, cs, half, c.Id, above: true);
             }
             // the columns standing on this level (on the ground: run down to the foundation): an outlined square, "C1 base"
@@ -210,8 +214,15 @@ namespace BuildingModel.Sketch
             if (ShowLabels)
             {
                 if (ShowWallLabels && !roofPlan) foreach (var w in walls) WallLabel(ctx, w);
-                if (!ShowSpans && !roofPlan) foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + OffsetTag(d) + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
-                foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true); }
+                if (!ShowSpans && !roofPlan) foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + OffsetTag(d) + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false, rank: LabelRank.Value); }
+                foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true, rank: LabelRank.Value); }
+            }
+            // each checked member's state: the ones needing the engineer's eye tagged at Critical, the rest from Normal up
+            if (!roofPlan && HealthOf != null && ShowHealth)
+            {
+                foreach (var w in walls) HealthTag(ctx, w.Id, w.Start, w.End);
+                foreach (var bm in b.BeamsOn(level)) HealthTag(ctx, bm.Id, bm.Start, bm.End);
+                foreach (var c in b.ColumnsUnder(level)) HealthTag(ctx, c.Id, c.At, c.At);
             }
             if (ShowSpans && !roofPlan) foreach (var d in b.DiaphragmsOn(level)) SpanMarkers(ctx, b, d, ShowLabels);
             if (!roofPlan) DrawSteps(ctx, b, level);
@@ -247,6 +258,22 @@ namespace BuildingModel.Sketch
             DrawPreview(ctx);
             DrawLevelTag(ctx);
             DrawScaleBar(ctx);
+            DrawHoveredLabel(ctx);
+        }
+
+        private static readonly Pen HoverEdge = P(Color.FromRgb(0x9C, 0xA3, 0xAF), 1);
+
+        /// <summary>A label not drawn (the density, or no room) under the pointer: drawn on top, where it would have been.</summary>
+        private void DrawHoveredLabel(DrawingContext ctx)
+        {
+            if (hoverLabel == null) return;
+            foreach (var (box, text, brush) in hiddenLabels.Where(h => h.text == hoverLabel).Take(1))
+            {
+                var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10 * LabelScale, brush ?? InkBrush, Dpi);
+                var r = new Rect(box.X, box.Y, ft.Width + 6, ft.Height + 4);
+                ctx.DrawRoundedRectangle(Brushes.White, HoverEdge, r, 3, 3);
+                ctx.DrawText(ft, new Point(r.X + 3, r.Y + 2));
+            }
         }
 
         // ------------------------------------------------------------------ the foundation plan's connections
@@ -366,7 +393,7 @@ namespace BuildingModel.Sketch
                 Line(ctx, pen, a, e);
                 if (ShowLabels)
                     Label(ctx, d.NotDesigned ? "SW NOT DESIGNED" : d.Fails ? "SW fails" : "SW", ToScreen(new Point2(a.X + 0.15 * (e.X - a.X), a.Y + 0.15 * (e.Y - a.Y))) + new Vector(6, -6),
-                          d.Fails || d.NotDesigned ? FailsInk : ShearWallInk, 9, false, bold: d.NotDesigned);
+                          d.Fails || d.NotDesigned ? PlanStatus.BrushOf(Health.Fails) : ShearWallInk, 9, false, bold: d.NotDesigned, rank: d.Fails || d.NotDesigned ? LabelRank.Critical : LabelRank.Value);
             }
         }
 
@@ -734,12 +761,12 @@ namespace BuildingModel.Sketch
                         foreach (var dm in frame.DormerBeams)
                         {
                             Line(ctx, BeamPen, dm.A, dm.B);
-                            Label(ctx, dm.Id, ToScreen(new Point2((dm.A.X + dm.B.X) / 2, (dm.A.Y + dm.B.Y) / 2)) + (dm.Header != null ? new Vector(4, 3) : new Vector(-26, -6)), B(Palette.Error), 9);
+                            Label(ctx, dm.Id, ToScreen(new Point2((dm.A.X + dm.B.X) / 2, (dm.A.Y + dm.B.Y) / 2)) + (dm.Header != null ? new Vector(4, 3) : new Vector(-26, -6)), BeamBrush, 9, rank: LabelRank.Mark);
                         }
                         foreach (var dw in frame.DormerPanels)
                         {
                             Line(ctx, WallPen, dw.A, dw.B);
-                            Label(ctx, dw.Id, ToScreen(new Point2((dw.A.X + dw.B.X) / 2, (dw.A.Y + dw.B.Y) / 2)) + new Vector(4, -14), B(Palette.Wall), 9);
+                            Label(ctx, dw.Id, ToScreen(new Point2((dw.A.X + dw.B.X) / 2, (dw.A.Y + dw.B.Y) / 2)) + new Vector(4, -14), B(Palette.Wall), 9, rank: LabelRank.Mark);
                         }
                         foreach (var g in frame.DormerPanels.GroupBy(dw => dw.Section))
                         {
@@ -755,8 +782,8 @@ namespace BuildingModel.Sketch
                             if (unsized.Count > 0) sized.Add(string.Join(", ", unsized) + ": not sized, NOT DESIGNED");
                             string under = beams.Count == 0 ? null : string.Join(" · ", sized);
                             var at = ToScreen(new Point2(walls.Value.X0, walls.Value.Y0));
-                            Label(ctx, text, at + new Vector(0, 18), B(Palette.Wall), 10);
-                            if (under != null) Label(ctx, under, at + new Vector(0, 32), B(beams.Any(dm => string.IsNullOrEmpty(dm.Kind == "header" ? b.Roof.HeaderSize : b.Roof.CheekBeamSize)) ? Palette.Error : Palette.Wall), 10);
+                            Label(ctx, text, at + new Vector(0, 18), B(Palette.Wall), 10, rank: LabelRank.Value);
+                            if (under != null) { bool notSized = unsized.Count > 0; Label(ctx, under, at + new Vector(0, 32), notSized ? PlanStatus.BrushOf(Health.NotDesigned) : B(Palette.Wall), 10, rank: notSized ? LabelRank.Critical : LabelRank.Value); }
                         }
                     }
                 }
@@ -904,17 +931,50 @@ namespace BuildingModel.Sketch
             var blocks = lines.Select(s => { var p = ToScreen(s.A); var q = ToScreen(s.B); var rr = new Rect(p, q); rr.Inflate(4, 4); return rr; }).Concat(memberLabels).ToList();
             var at = tries.FirstOrDefault(t => !blocks.Any(x => x.IntersectsWith(new Rect(t.X, t.Y, tw, th))));
             if (at == default(Point)) at = tries[0];
-            Label(ctx, text, new Point(at.X + 2, at.Y + 1), SpanInk, 10, true);
+            Label(ctx, text, new Point(at.X + 2, at.Y + 1), SpanInk, 10, true, rank: LabelRank.Value);
         }
 
-        /// <summary>A label at a screen point (top-left), on a light back when asked.</summary>
-        public void Label(DrawingContext ctx, string text, Point at, Brush brush, double size = 11, bool back = true, bool bold = false)
+        /// <summary>
+        /// A label at a screen point (top-left), on a light back when asked. <paramref name="rank"/> says what it is
+        /// (<see cref="LabelRank"/>): one the density does not show, or a value or detail that would land on a label already
+        /// drawn, is not drawn but shows when hovered (owner 2026-11-14: critical first, the rest one move away).
+        /// </summary>
+        public void Label(DrawingContext ctx, string text, Point at, Brush brush, double size = 11, bool back = true, bool bold = false, LabelRank rank = LabelRank.Live)
         {
             var ft = new FormattedText(text ?? "", CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                                       new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, bold ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal),
+                                       new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, bold || rank == LabelRank.Critical ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal),
                                        size * LabelScale, brush, Dpi);
-            if (back) ctx.DrawRoundedRectangle(LabelBack, null, new Rect(at.X - 2, at.Y - 1, ft.Width + 4, ft.Height + 2), 2, 2);
+            var box = new Rect(at.X - 2, at.Y - 1, ft.Width + 4, ft.Height + 2);
+            if (!ShowsLabel(rank) || ((rank == LabelRank.Value || rank == LabelRank.Detail) && drawnLabels.Concat(memberLabels).Any(r => r.IntersectsWith(box))))
+            {
+                HideLabel(box, text, brush);
+                return;
+            }
+            if (back) ctx.DrawRoundedRectangle(LabelBack, null, box, 2, 2);
             ctx.DrawText(ft, at);
+            if (rank != LabelRank.Live) drawnLabels.Add(box);
+        }
+
+        /// <summary>A member's line in its state (<see cref="HealthOf"/>), heavier than a plain one; null: no state, drawn as before.</summary>
+        private Pen HealthPen(string id, double width)
+        {
+            if (!ShowHealth || HealthOf == null || id == null) return null;
+            var h = HealthOf(id);
+            return h == null || h.State == Health.None ? null : PlanStatus.PenOf(h.State, PlanStatus.Attention(h.State) ? width + 1.5 : width);
+        }
+
+        /// <summary>
+        /// The state's tag beside a member's middle ("✗ 2.13", "⊘ NOT DESIGNED"): Critical when it needs the engineer's eye, else
+        /// a value (Normal up).
+        /// </summary>
+        private void HealthTag(DrawingContext ctx, string id, Point2 a, Point2 c)
+        {
+            if (!ShowHealth || HealthOf == null || id == null) return;
+            var h = HealthOf(id);
+            if (h == null || h.State == Health.None) return;
+            var mid = ToScreen(new Point2((a.X + c.X) / 2, (a.Y + c.Y) / 2));
+            string text = $"{id} {h.Tag}" + (PlanStatus.Attention(h.State) && !string.IsNullOrEmpty(h.What) ? $" {h.What}" : "");
+            Label(ctx, text, mid + new Vector(6, -20), PlanStatus.BrushOf(h.State), 10, true, true, PlanStatus.Attention(h.State) ? LabelRank.Critical : LabelRank.Value);
         }
 
         /// <summary>A wall's name and length along the wall, beside its middle (below a level wall, right of an upright one).</summary>
@@ -928,10 +988,11 @@ namespace BuildingModel.Sketch
         /// A label turned to run along the line a–b (screen), beside its middle: read left to right, or bottom to top on a
         /// line running up the screen (as the walls' design tags), on the side below or right of the line.
         /// </summary>
-        private void AlongLabel(DrawingContext ctx, string text, Point a, Point b, Brush brush)
+        private void AlongLabel(DrawingContext ctx, string text, Point a, Point b, Brush brush, LabelRank rank = LabelRank.Mark)
         {
             var along = b - a;
             if (along.Length < 1) return;
+            if (!ShowsLabel(rank)) { HideLabel(new Rect(a + (b - a) / 2 - new Vector(20, 8), new Size(40, 16)), text, brush); return; }
             double ang = MemberLabelAngle(along);
             double t = ang * Math.PI / 180;
             var n = new Vector(-Math.Sin(t), Math.Cos(t)); // the label's "down": below a level line, right of an upright one
@@ -961,6 +1022,7 @@ namespace BuildingModel.Sketch
         /// </summary>
         private void ColumnLabel(DrawingContext ctx, Point cs, double half, string text, bool above)
         {
+            if (!ShowsLabel(LabelRank.Mark)) { HideLabel(new Rect(cs.X - half, cs.Y - half, 2 * half, 2 * half), text, BeamBrush); return; }
             var ft = new FormattedText(text ?? "", CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10 * LabelScale, BeamBrush, Dpi);
             var corner = cs + new Vector(half, above ? -half : half);
             const double off = 11;
@@ -1052,9 +1114,17 @@ namespace BuildingModel.Sketch
 
         private static readonly Pen StepPen = MakeStepPen();
 
+        private static readonly Pen StepOnWallsPen = MakeStepOnWallsPen();
+        private static Pen MakeStepOnWallsPen()
+        {
+            var p = new Pen(B(Palette.Muted), 2) { DashStyle = new DashStyle(new double[] { 2, 1.5 }, 0) };
+            p.Freeze();
+            return p;
+        }
+
         private static Pen MakeStepPen()
         {
-            var p = new Pen(B(Palette.Warning), 3) { DashStyle = new DashStyle(new double[] { 2, 1.5 }, 0) };
+            var p = new Pen(B(Palette.Error), 3) { DashStyle = new DashStyle(new double[] { 2, 1.5 }, 0) };
             p.Freeze();
             return p;
         }
@@ -1069,16 +1139,16 @@ namespace BuildingModel.Sketch
             foreach (var (a, c, from, to) in b.Steps(level))
             {
                 Point s0 = ToScreen(from), s1 = ToScreen(to);
-                ctx.DrawLine(StepPen, s0, s1);
+                ctx.DrawLine(b.StepOnWalls(level, from, to) ? StepOnWallsPen : StepPen, s0, s1); // on walls: information, not a warning
                 if (!ShowLabels) continue;
                 double ha = level.Elevation + a.Offset, hc = level.Elevation + c.Offset;
                 // above the line at its west or south end, clear of the walls' and diaphragms' labels under it
                 var start = s0.X + s0.Y <= s1.X + s1.Y ? s0 : s1;
                 // on walls the two stay separate diaphragms, the lower on a ledger (owner 2026-11-14); with no wall under it, NOT DESIGNED
                 if (b.StepOnWalls(level, from, to))
-                    Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: two diaphragms, the lower on a ledger", new Point(start.X + 6, start.Y - 17), B(Palette.Warning), 10, true);
+                    Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: two diaphragms, the lower on a ledger", new Point(start.X + 6, start.Y - 17), MutedBrush, 10, true, rank: LabelRank.Value);
                 else
-                    Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: no wall under it, NOT DESIGNED", new Point(start.X + 6, start.Y - 17), B(Palette.Error), 10, true);
+                    Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: no wall under it, NOT DESIGNED", new Point(start.X + 6, start.Y - 17), PlanStatus.BrushOf(Health.NotDesigned), 10, true, rank: LabelRank.Critical);
             }
         }
 

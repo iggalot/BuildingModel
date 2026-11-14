@@ -336,6 +336,11 @@ namespace BuildingModel.Statics
                                  : side == "west" ? new Rect2(w.X0 - depth, ei.Y0, w.X0 - oi, ei.Y1)
                                  : new Rect2(w.X1 + oi, ei.Y0, w.X1 + depth, ei.Y1);
                         double x0 = Math.Max(band.X0, ej.X0), x1 = Math.Min(band.X1, ej.X1), y0 = Math.Max(band.Y0, ej.Y0), y1 = Math.Min(band.Y1, ej.Y1);
+                        // along the other's walls only, not over its eaves (owner 2026-11-13: at an L's inside corner the lower
+                        // eave runs straight to the first wall it meets; over the other's eave strip the two planes would cross
+                        // on a diagonal, a mitre)
+                        if (side == "south" || side == "north") { x0 = Math.Max(x0, o.X0); x1 = Math.Min(x1, o.X1); }
+                        else { y0 = Math.Max(y0, o.Y0); y1 = Math.Min(y1, o.Y1); }
                         if (x1 - x0 <= E || y1 - y0 <= E) continue;
                         mine.Add(new Rect2(x0, y0, x1, y1));
                     }

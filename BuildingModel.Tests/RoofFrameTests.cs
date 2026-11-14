@@ -160,18 +160,28 @@ namespace BuildingModel.Tests
             Smooth(f, 20, 27, 56, 27, "y = 27");
             Smooth(f, 33, 28, 33, 33, "x = 33, across the hip's eave line");
             Framed(f);
-            // the wing's slopes run on over the main roof down to its ridge's end: valley jacks there, y = 20 .. 30
-            for (double y = 20; y <= 30; y += 2)
+            // the wing's slopes run on over the main roof down to its ridge's end: valley jacks there, y = 20 .. 28
+            for (double y = 20; y <= 28; y += 2)
                 Assert.AreEqual(2, f.Rafters.Count(r => r.AlongX && Math.Abs(r.Line - y) < 1e-6 && r.Face.Plane.Section == 1 &&
                                                         (r.AtStart == RafterEnd.Valley || r.AtEnd == RafterEnd.Valley)), $"y = {y}");
+            // the inside corner (owner 2026-11-13): the wing's west eave, the lower, runs straight south to the main block's north
+            // wall, under the main's eave there; the main's slope runs on over the wing's walls only, not over that eave: no
+            // diagonal across the corner, the wing's rafter at y = 30 out to its eave at x = 30.5
+            var corner = f.Rafters.Single(r => r.AlongX && Math.Abs(r.Line - 30) < 1e-6 && r.Face.Plane.Section == 1 && r.Start.X < 32);
+            Assert.AreEqual(30.5, corner.Start.X, 1e-6, "y = 30: the wing's west rafter out to its eave");
+            Assert.AreEqual(RafterEnd.Free, corner.AtStart);
+            Assert.IsFalse(f.Creases.Any(c => c.Kind != CreaseKind.Header && Math.Abs(c.A.X - c.B.X) > 1e-6 && Math.Abs(c.A.Y - c.B.Y) > 1e-6 &&
+                                              Math.Max(c.A.X, c.B.X) <= 32 + 1e-6 && Math.Min(c.A.X, c.B.X) >= 30.5 - 1e-6 && Math.Min(c.A.Y, c.B.Y) >= 28 - 1e-6),
+                           "no diagonal crease over the wing's west eave");
         }
 
         /// <summary>
         /// A wing (24 .. 48, under the main ridge) with its plate 0.5 ft higher: its ridge 6.5 ft up meets the main roof's north
-        /// slope at (28 − y) / 2 = 6.5, y = 15. Its slopes run on past its eaves (x = 22.5, 49.5) over the main roof until under
-        /// the main's eave edge, (0.5 + 0.75) / 0.5 = 2.5 ft past its walls: the valleys x − 24 + 1 = 28 − y and its mirror land
-        /// on the main's eave at (21.5, 29.5) and (50.5, 29.5), no fascia of the wing standing on the hip. All within the two
-        /// eave rectangles: every point once (59 × 31 + 27 × 24).
+        /// slope at (28 − y) / 2 = 6.5, y = 15: the valleys x − 24 + 1 = 28 − y and its mirror. At the inside corners the main's
+        /// eave, the lower, runs straight on under the wing's eave to the wing's wall (owner 2026-11-13: "the lower eave would run
+        /// straight to the first wall it hits, instead of being cut at an angle"; before, the wing's slope ran on over the main's
+        /// eave and the valley landed on it): the valleys end at the wing's eave edge, (22.5, 28.5) and (49.5, 28.5). All within
+        /// the two eave rectangles: every point once (59 × 31 + 27 × 24).
         /// </summary>
         [TestMethod]
         public void LShapedHouse_TheWingsPlateHigher_ItsSlopesComeDownToTheHip()
@@ -183,15 +193,15 @@ namespace BuildingModel.Tests
             }, Pitch612, 1.5, 2);
             Assert.IsNull(f.NotLaidOut);
             Assert.AreEqual(15, f.Reach[1].Y0, 1e-6);
-            Assert.IsTrue(f.Faces.Where(x => x.Plane.Section == 1).SelectMany(x => x.Pieces).SelectMany(p => p.P).Min(p => p.X) < 22.5 - 0.1,
-                          "the wing's west slope runs on past its own eave, over the main roof");
-            Assert.IsTrue(f.Creases.Any(c => c.Kind == CreaseKind.Valley && Math.Abs(c.A.X - 21.5) < 1e-3 && Math.Abs(c.A.Y - 29.5) < 1e-3), "the west valley lands on the main's eave");
-            Assert.IsTrue(f.Creases.Any(c => c.Kind == CreaseKind.Valley && Math.Abs(c.A.X - 50.5) < 1e-3 && Math.Abs(c.A.Y - 29.5) < 1e-3), "the east valley too");
+            Assert.AreEqual(22.5, f.Faces.Where(x => x.Plane.Section == 1).SelectMany(x => x.Pieces).SelectMany(p => p.P).Min(p => p.X), 1e-6,
+                            "the wing's west slope stops at its own eave: none of it over the main's eave");
+            Assert.IsTrue(f.Creases.Any(c => c.Kind == CreaseKind.Valley && Math.Abs(c.A.X - 22.5) < 1e-3 && Math.Abs(c.A.Y - 28.5) < 1e-3), "the west valley ends at the wing's eave edge");
+            Assert.IsTrue(f.Creases.Any(c => c.Kind == CreaseKind.Valley && Math.Abs(c.A.X - 49.5) < 1e-3 && Math.Abs(c.A.Y - 28.5) < 1e-3), "the east valley too");
             Assert.AreEqual(59 * 31 + 27 * 24, f.Faces.Sum(x => x.Area), 1e-6);
             Smooth(f, 36, 5, 36, 50, "x = 36, the wing's ridge line");
             Smooth(f, 10, 27, 56, 27, "y = 27");
-            Smooth(f, 22, 20, 22, 29.4, "x = 22, under the wing's slope run on");
-            Smooth(f, 15, 29, 30, 29, "y = 29, across the inside corner");
+            Smooth(f, 22, 20, 22, 29.4, "x = 22, the main's own roof and eave");
+            Smooth(f, 15, 29, 22.4, 29, "y = 29, the main's eave running straight on");
             Framed(f);
         }
 

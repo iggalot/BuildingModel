@@ -231,6 +231,8 @@ namespace BuildingModel.Sketch
                         ? new Rect2(w.Start.X - t, w.Start.Y, w.End.X + t, w.End.Y)
                         : new Rect2(w.Start.X, w.Start.Y - t, w.End.X, w.End.Y + t);
                     Add(group, Box(r.X0, r.Y0, b.WallBaseAt(w, lo), r.X1, r.Y1, WallTop(b, w), Mark(w.Id, other)), w.Id);
+                    var gable = GableOver(b, w);
+                    if (gable != null) Add(group, new GeometryModel3D(gable, Mark(w.Id, other)) { BackMaterial = Mark(w.Id, other) }, w.Id);
                 }
                 // beams: a box under the floor they frame; columns: a square post from base to top (rectangles for now)
                 var timber = Material(Color.FromArgb(0xF0, 0x8B, 0x4A, 0x14));
@@ -410,6 +412,92 @@ namespace BuildingModel.Sketch
         /// rising to the ridge height; a flat roof's parapet as a low wall around the plan.</summary>
         public const double ParapetThickness = 0.5;
 
+        /// <summary>
+        /// A gable end closed (owner 2026-11-13: "the gable end wall needs to draw a wall"): an outside wall of the roof level
+        /// whose roof rises over its top is filled from its top up to the roof, the roof's own profile along it (a triangle at a
+        /// gable, nothing under an eave). Null when there is nothing to fill (no sectioned roof laid out, an inside wall, an
+        /// eave wall).
+        /// </summary>
+        public static MeshGeometry3D GableOver(Building b, Wall w)
+        {
+            var roofLevel = b?.RoofLevel();
+            if (roofLevel == null || w.TopLevelId != roofLevel.Id || b.Roof == null || !b.Roof.IsSloped) return null;
+            if (!BuildingModel.Statics.RoofFrame.IsSectioned(b)) return null;
+            var frame = BuildingModel.Statics.RoofFrame.Of(b);
+            if (frame.NotLaidOut != null || frame.Faces.Count == 0) return null;
+            double len = w.Length;
+            if (!(len > 0)) return null;
+            // outside: the footprint on one side of it only
+            var foot = b.Footprint();
+            var mid = w.Middle;
+            double nx = -(w.End.Y - w.Start.Y) / len, ny = (w.End.X - w.Start.X) / len, d = 0.75;
+            if (foot.Contains(mid.X + nx * d, mid.Y + ny * d) == foot.Contains(mid.X - nx * d, mid.Y - ny * d)) return null;
+            double eave = b.EaveHeight(), bottom = WallTop(b, w);
+            int n = Math.Max(2, (int)Math.Ceiling(len / 0.25));
+            var pts = new List<(Point2 p, double z)>();
+            bool rises = false;
+            for (int i = 0; i <= n; i++)
+            {
+                double s = len * i / n;
+                var p = new Point2(w.Start.X + (w.End.X - w.Start.X) * s / len, w.Start.Y + (w.End.Y - w.Start.Y) * s / len);
+                double z = frame.ZAt(p);
+                z = double.IsNaN(z) ? bottom : Math.Max(bottom, eave + z);
+                if (z > bottom + SlabThickness + 0.25) rises = true; // over the plate, not only the slab
+                pts.Add((p, z));
+            }
+            if (!rises) return null;
+            var mesh = new MeshGeometry3D();
+            foreach (var (p, z) in pts)
+            {
+                mesh.Positions.Add(new Point3D(p.X, bottom, -p.Y));
+                mesh.Positions.Add(new Point3D(p.X, z, -p.Y));
+            }
+            for (int i = 0; i < n; i++)
+            {
+                int a = 2 * i, c = 2 * (i + 1);
+                mesh.TriangleIndices.Add(a); mesh.TriangleIndices.Add(c); mesh.TriangleIndices.Add(c + 1);
+                mesh.TriangleIndices.Add(a); mesh.TriangleIndices.Add(c + 1); mesh.TriangleIndices.Add(a + 1);
+            }
+            mesh.Freeze();
+            return mesh;
+        }
+
+        /// <summary>
+        /// A roof plane's shade: by the side it slopes down to (south lightest, then west, east, north), a step lighter for each
+        /// section after the first, so planes that meet always differ.
+        /// </summary>
+        public static Color RoofShade(string side, int section)
+        {
+            Color c;
+            switch (side)
+            {
+                case "south": c = Color.FromRgb(0xB0, 0x6E, 0x50); break;
+                case "west": c = Color.FromRgb(0x8E, 0x5C, 0x46); break;
+                case "east": c = Color.FromRgb(0x9C, 0x7A, 0x5E); break;
+                case "north": c = Color.FromRgb(0x6E, 0x4E, 0x40); break;
+                default: c = Color.FromRgb(0x7A, 0x6A, 0x5A); break;
+            }
+            double k = Math.Min(0.45, 0.14 * Math.Max(0, section)); // toward white
+            byte L(byte v) => (byte)Math.Round(v + (255 - v) * k);
+            return Color.FromArgb(0xEC, L(c.R), L(c.G), L(c.B));
+        }
+
+        /// <summary>A flat strip from a to b, <paramref name="width"/> wide across it on plan (a ridge, hip or valley line).</summary>
+        private static MeshGeometry3D Ribbon(Point3D a, Point3D b, double width)
+        {
+            double dx = b.X - a.X, dz = b.Z - a.Z, len = Math.Sqrt(dx * dx + dz * dz);
+            if (!(len > 1e-6)) return null;
+            double nx = -dz / len * width / 2, nz = dx / len * width / 2;
+            var m = new MeshGeometry3D();
+            m.Positions.Add(new Point3D(a.X + nx, a.Y, a.Z + nz));
+            m.Positions.Add(new Point3D(b.X + nx, b.Y, b.Z + nz));
+            m.Positions.Add(new Point3D(b.X - nx, b.Y, b.Z - nz));
+            m.Positions.Add(new Point3D(a.X - nx, a.Y, a.Z - nz));
+            foreach (int i in new[] { 0, 1, 2, 0, 2, 3 }) m.TriangleIndices.Add(i);
+            m.Freeze();
+            return m;
+        }
+
         private static void AddRoof(Model3DGroup group, Building b)
         {
             var roof = b.Roof;
@@ -433,16 +521,29 @@ namespace BuildingModel.Sketch
                 var frame = BuildingModel.Statics.RoofFrame.Of(b);
                 if (frame.NotLaidOut == null && frame.Faces.Count > 0)
                 {
-                    var faces = new MeshGeometry3D();
+                    // each plane its own shade (owner 2026-11-13: the sections hard to tell apart in one colour): by the side it
+                    // slopes down to, a little lighter section by section; the ridges, hips and valleys drawn dark over them
                     foreach (var f in frame.Faces)
+                    {
+                        var faces = new MeshGeometry3D();
                         foreach (var pc in f.Pieces)
                         {
                             int i0 = faces.Positions.Count;
                             foreach (var q in pc.P) faces.Positions.Add(new Point3D(q.X, eave + f.Plane.Z(q), -q.Y));
                             for (int k = 1; k + 1 < pc.P.Count; k++) { faces.TriangleIndices.Add(i0); faces.TriangleIndices.Add(i0 + k); faces.TriangleIndices.Add(i0 + k + 1); }
                         }
-                    faces.Freeze();
-                    group.Children.Add(new GeometryModel3D(faces, roofMat) { BackMaterial = roofMat });
+                        faces.Freeze();
+                        var mat = Material(RoofShade(f.Plane.Side, f.Plane.Section));
+                        group.Children.Add(new GeometryModel3D(faces, mat) { BackMaterial = mat });
+                    }
+                    var creaseMat = Material(Color.FromArgb(0xF0, 0x3A, 0x2A, 0x20));
+                    foreach (var c in frame.Creases.Where(c => c.Kind != BuildingModel.Statics.CreaseKind.Header))
+                    {
+                        double za = frame.ZAt(c.A), zb = frame.ZAt(c.B);
+                        if (double.IsNaN(za) || double.IsNaN(zb)) continue;
+                        var ribbon = Ribbon(new Point3D(c.A.X, eave + za + 0.04, -c.A.Y), new Point3D(c.B.X, eave + zb + 0.04, -c.B.Y), 0.3);
+                        if (ribbon != null) group.Children.Add(new GeometryModel3D(ribbon, creaseMat) { BackMaterial = creaseMat });
+                    }
                     return;
                 }
             }
@@ -461,19 +562,20 @@ namespace BuildingModel.Sketch
                 double half = (v1 - v0) / 2;
                 ua = Math.Min(u0 + half, (u0 + u1) / 2); ub = Math.Max(u1 - half, (u0 + u1) / 2);
             }
-            var mesh = new MeshGeometry3D();
-            void Face(params Point3D[] pts)
+            // each slope its own shade, by the side it faces (as a sectioned roof's planes)
+            void Face(string side, params Point3D[] pts)
             {
-                int i = mesh.Positions.Count;
+                var mesh = new MeshGeometry3D();
                 foreach (var p in pts) mesh.Positions.Add(p);
-                for (int k = 1; k + 1 < pts.Length; k++) { mesh.TriangleIndices.Add(i); mesh.TriangleIndices.Add(i + k); mesh.TriangleIndices.Add(i + k + 1); }
+                for (int k = 1; k + 1 < pts.Length; k++) { mesh.TriangleIndices.Add(0); mesh.TriangleIndices.Add(k); mesh.TriangleIndices.Add(k + 1); }
+                mesh.Freeze();
+                var mat = Material(RoofShade(side, 0));
+                group.Children.Add(new GeometryModel3D(mesh, mat) { BackMaterial = mat });
             }
-            Face(P(u0, v0, ze), P(u1, v0, ze), P(ub, vc, zr), P(ua, vc, zr));   // one slope
-            Face(P(u1, v1, ze), P(u0, v1, ze), P(ua, vc, zr), P(ub, vc, zr));   // the other
-            Face(P(u0, v1, ze), P(u0, v0, ze), P(ua, vc, zr));                  // the ends: a hip's slopes, a gable's triangles
-            Face(P(u1, v0, ze), P(u1, v1, ze), P(ub, vc, zr));
-            mesh.Freeze();
-            group.Children.Add(new GeometryModel3D(mesh, roofMat) { BackMaterial = roofMat });
+            Face(alongX ? "south" : "west", P(u0, v0, ze), P(u1, v0, ze), P(ub, vc, zr), P(ua, vc, zr));   // one slope
+            Face(alongX ? "north" : "east", P(u1, v1, ze), P(u0, v1, ze), P(ua, vc, zr), P(ub, vc, zr));   // the other
+            Face(alongX ? "west" : "south", P(u0, v1, ze), P(u0, v0, ze), P(ua, vc, zr));                  // the ends: a hip's slopes, a gable's triangles
+            Face(alongX ? "east" : "north", P(u1, v0, ze), P(u1, v1, ze), P(ub, vc, zr));
         }
 
         /// <summary>While <see cref="Show"/> builds: <see cref="Ghost"/> (one view builds at a time, on the UI thread).</summary>

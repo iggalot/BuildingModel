@@ -541,7 +541,7 @@ namespace BuildingModel.Sketch
                     {
                         double za = frame.ZAt(c.A), zb = frame.ZAt(c.B);
                         if (double.IsNaN(za) || double.IsNaN(zb)) continue;
-                        var ribbon = Ribbon(new Point3D(c.A.X, eave + za + 0.04, -c.A.Y), new Point3D(c.B.X, eave + zb + 0.04, -c.B.Y), 0.3);
+                        var ribbon = Ribbon(new Point3D(c.A.X, eave + za + 0.04, -c.A.Y), new Point3D(c.B.X, eave + zb + 0.04, -c.B.Y), 0.12);   // a fine line (owner 2026-11-13: 0.3 ft read too thick)
                         if (ribbon != null) group.Children.Add(new GeometryModel3D(ribbon, creaseMat) { BackMaterial = creaseMat });
                     }
                     // the dormers' cheeks and fronts (owner 2026-11-13: walls of their own, standing on the roof below), as the walls

@@ -159,6 +159,18 @@ namespace BuildingModel.Sketch.Tests
             v.Canvas.ShowLevel(RoofQueries.RoofPlanId);
             v.Canvas.ZoomExtents();
             SketchTests.Render(v, "dormer-r");
+
+            // the same dormer brought out to the south wall (owner 2026-11-13: on a wall below, no beam): its front stands on the
+            // model's south wall, no header; its cheeks, on the slope, keep their beams
+            var b2 = L();
+            b2.Roof.Sections.Add(new RoofSection { Name = "dormer", Walls = new Rect2(12, 0, 20, 7), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 3 });
+            var f2 = BuildingModel.Statics.RoofFrame.Of(b2);
+            string all2 = string.Join("; ", f2.DormerPanels) + " | " + string.Join("; ", f2.DormerBeams);
+            var south = WallAt(b2, 0, 0, 56, 0);
+            var front = f2.DormerPanels.Single(dw => dw.Side == "south");
+            Assert.AreEqual($"wall {south.Id}", front.OnWall, all2);
+            Assert.IsFalse(f2.DormerBeams.Any(dm => dm.Wall == front), all2);
+            Assert.AreEqual(2, f2.DormerBeams.Count(dm => dm.Kind == "cheek beam"), all2);
         }
 
         private static bool Near(List<Point2> poly, Point2 p)

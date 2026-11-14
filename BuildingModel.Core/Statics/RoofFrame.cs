@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using BuildingModel.Geometry;
+using BuildingModel.Edits;
 using BuildingModel.Model;
 
 namespace BuildingModel.Statics
@@ -118,6 +119,8 @@ namespace BuildingModel.Statics
         /// <summary>"cheek", "front" (or "wall" with no roof under it).</summary>
         public string Kind;
         public List<(Point2 p, double bottom, double top)> Samples = new List<(Point2, double, double)>();
+        /// <summary>The wall below it stands on all along ("wall W3"; no beam under it), or null: on the roof, a beam under it.</summary>
+        public string OnWall;
         public Point2 A => Samples.Count > 0 ? Samples[0].p : default(Point2);
         public Point2 B => Samples.Count > 0 ? Samples[Samples.Count - 1].p : default(Point2);
         /// <summary>Its length on plan (ft).</summary>
@@ -135,7 +138,7 @@ namespace BuildingModel.Statics
                 return s;
             }
         }
-        public override string ToString() => $"dormer {Kind} {Id}: {Length:0.##} ft long, {Height:0.##} ft high, {Area:0.#} sq ft";
+        public override string ToString() => $"dormer {Kind} {Id}: {Length:0.##} ft long, {Height:0.##} ft high, {Area:0.#} sq ft{(OnWall != null ? $", on {OnWall}" : "")}";
     }
 
     /// <summary>
@@ -277,6 +280,8 @@ namespace BuildingModel.Statics
         public static RoofFrame Of(Building b, List<RoofSection> sections, double roofPitch, double roofOverhang, double spacing)
         {
             var f = new RoofFrame { Sections = sections };
+            var roofLevel = b?.RoofLevel();
+            if (roofLevel != null) f.wallsBelow = BeamSupports.WallsUnder(b, roofLevel);
             for (int i = 0; i < sections.Count; i++)
             {
                 var s = sections[i];
@@ -562,7 +567,10 @@ namespace BuildingModel.Statics
                     var below = Faces.Where(fc => fc.Plane.Section != i && fc.Pieces.Any(pc => Inside(pc, mid, 1e-6))).OrderByDescending(fc => fc.Plane.Z(mid)).FirstOrDefault();
                     wall.Kind = below == null ? "wall" : (below.Plane.AlongX == (Math.Abs(b.Y - a.Y) < E)) ? "cheek" : "front";
                     DormerPanels.Add(wall);
-                    if (below == null) continue;
+                    // standing on a wall below all along (owner 2026-11-13: "if there's actually a wall already below them, you don't
+                    // need to add a beam"): it bears on that wall, no beam
+                    wall.OnWall = OnWallBelow(sections, i, wall);
+                    if (below == null || wall.OnWall != null) continue;
                     if (wall.Kind == "cheek")
                     {
                         // along the rafters: on the trimmer's line, from the section's wall up as far as the rafters there run
@@ -589,6 +597,45 @@ namespace BuildingModel.Statics
                 }
             }
         }
+
+        /// <summary>
+        /// The wall a dormer wall stands on all along, or null (it stands on the roof below: a beam under it). It touches a wall
+        /// below where its line is on an outside wall line of the section under it (that section's eave wall, its bottom there
+        /// at the plate, or its gable end wall, up to the rake), and, in a building, on one of the walls under the roof level
+        /// (a wall inside stops at the plates, under the rafters: the dormer wall does not touch it).
+        /// </summary>
+        private string OnWallBelow(List<RoofSection> sections, int dormer, DormerWall wall)
+        {
+            const double near = 0.26;
+            string on = null;
+            // the samples with height (the ends' points of none are where it meets the roof)
+            foreach (var s in wall.Samples.Where(z => z.top > z.bottom + 1e-3))
+            {
+                var p = s.p;
+                int j = -1; double best = double.NegativeInfinity;
+                for (int k = 0; k < sections.Count; k++)
+                {
+                    if (k == dormer || Reach.Count <= k) continue;
+                    var r = Reach[k];
+                    if (!(r.X0 - E <= p.X && p.X <= r.X1 + E && r.Y0 - E <= p.Y && p.Y <= r.Y1 + E)) continue;
+                    double z = SurfaceOf(this, k, p.X, p.Y);
+                    if (z > best) { best = z; j = k; }
+                }
+                if (j < 0) return null;
+                var w = sections[j].Walls;
+                bool onEdge = (Math.Abs(p.X - w.X0) <= near || Math.Abs(p.X - w.X1) <= near) && p.Y >= w.Y0 - near && p.Y <= w.Y1 + near
+                           || (Math.Abs(p.Y - w.Y0) <= near || Math.Abs(p.Y - w.Y1) <= near) && p.X >= w.X0 - near && p.X <= w.X1 + near;
+                if (!onEdge) return null;
+                if (wallsBelow == null) { on = on ?? $"{sections[j].Name ?? "the roof below"}'s wall"; continue; }
+                var under = wallsBelow.FirstOrDefault(x => Snapper.DistanceToSegment(p, new Segment2(x.Start, x.End)) <= near);
+                if (under == null) return null;
+                on = on ?? $"wall {under.Id}";
+            }
+            return on;
+        }
+
+        /// <summary>The walls under the roof level (a building's; null: sections only, their outside wall lines taken as walls).</summary>
+        private List<Wall> wallsBelow;
 
         /// <summary>The roof under a dormer at a point: the highest of the other sections' surfaces whose reach is over it.</summary>
         private double SurfaceBelow(List<RoofSection> sections, int dormer, Point2 p)

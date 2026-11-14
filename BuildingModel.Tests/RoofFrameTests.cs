@@ -501,6 +501,31 @@ namespace BuildingModel.Tests
             Assert.AreEqual("header", header.Kind);
             Assert.AreEqual(8, header.Length, 1e-9);
             Assert.AreEqual(2, header.A.Y, 1e-9);
+            Assert.IsTrue(f.DormerPanels.All(w => w.OnWall == null), "all three stand on the roof");
+        }
+
+        /// <summary>
+        /// A dormer whose walls stand on the walls below (owner 2026-11-13: "if there's actually a wall already below them, you
+        /// don't need to add a beam. If it doesn't touch the wall below, then you do"): its front flush with the main roof's
+        /// south eave wall (y = 0) bears on it, no header; its west cheek flush with the main gable end wall (x = 0) bears on it,
+        /// no beam; its east cheek, out on the slope, still has its beam.
+        /// </summary>
+        [TestMethod]
+        public void Dormer_OnTheWallBelow_NoBeam()
+        {
+            var f = Frame(0,
+                new RoofSection { Name = "main", Walls = new Rect2(0, 0, 40, 20), Shape = RoofShape.Gable, Ridge = RidgeAxis.WestEast },
+                new RoofSection { Name = "dormer", Walls = new Rect2(0, 0, 8, 7), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 2 });
+            string all = string.Join("; ", f.DormerPanels) + " | " + string.Join("; ", f.DormerBeams);
+            var front = f.DormerPanels.Single(w => w.Side == "south");
+            Assert.IsNotNull(front.OnWall, all);
+            Assert.IsFalse(f.DormerBeams.Any(bm => bm.Wall == front), all);
+            var west = f.DormerPanels.Single(w => w.Side == "west");
+            Assert.IsNotNull(west.OnWall, all);
+            Assert.IsFalse(f.DormerBeams.Any(bm => bm.Wall == west), all);
+            var east = f.DormerPanels.Single(w => w.Side == "east");
+            Assert.IsNull(east.OnWall, all);
+            Assert.AreEqual(1, f.DormerBeams.Count(bm => bm.Wall == east && bm.Kind == "cheek beam"), all);
         }
     }
 }

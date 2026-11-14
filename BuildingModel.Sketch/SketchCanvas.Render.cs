@@ -746,7 +746,7 @@ namespace BuildingModel.Sketch
                             var walls = (b.Roof.Sections ?? new List<RoofSection>()).ElementAtOrDefault(g.Key)?.Walls;
                             if (walls == null) continue;
                             var beams = frame.DormerBeams.Where(dm => g.Contains(dm.Wall)).ToList();
-                            string text = $"dormer: {string.Join(", ", g.Select(dw => $"{dw.Id} {dw.Kind}"))}" +
+                            string text = $"dormer: {string.Join(", ", g.Select(dw => $"{dw.Id} {dw.Kind}{(dw.OnWall != null ? $" on {dw.OnWall}" : "")}"))}" +
                                           (beams.Count > 0 ? $" · {string.Join(", ", beams.Select(dm => $"{dm.Id} {dm.Kind}"))} NOT DESIGNED" : "");
                             var at = ToScreen(new Point2(walls.Value.X0, walls.Value.Y0));
                             Label(ctx, text, at + new Vector(0, 18), B(Palette.Error), 10);

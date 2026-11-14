@@ -75,27 +75,67 @@ namespace BuildingModel.Tests
             Assert.IsTrue(feet.Max() - feet.Min() < 1e-6, string.Join(", ", feet));
         }
 
-        /// <summary>The L: the wing's valley jacks on its valleys, the valleys' tops on the main roof's rafters, all of it down.</summary>
+        /// <summary>
+        /// The L: the wing's valley jacks on its valleys, all of it down. Overframed (owner 2026-11-14): the main roof framed
+        /// through under the wing, each valley laid on it, held by every main rafter it crosses (x = 12 to 18 west, its top on the one under the wing's ridge; 18 to 24
+        /// east), none ending on it; no member on one it holds up. A vault: cut in, each valley's top on the main rafters there.
+        /// </summary>
         [TestMethod]
         public void Wing_TheValleysCarryTheirJacks_AndTheRoofLands()
         {
-            var f = RoofFrame.Of(null, new List<RoofSection>
+            var sections = new List<RoofSection>
             {
                 new RoofSection { Name = "main", Walls = new Rect2(0, 0, 40, 20), Shape = RoofShape.Gable, Ridge = RidgeAxis.WestEast },
                 new RoofSection { Name = "wing", Walls = new Rect2(10, -16, 26, 10), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth },
-            }, Pitch612, 0, 2);
+            };
             var walls = Around(new Rect2(0, 0, 40, 20));
             walls.Add(new Wall { Id = "WW", Start = new Point2(10, -16), End = new Point2(10, 0) });
             walls.Add(new Wall { Id = "WE", Start = new Point2(26, -16), End = new Point2(26, 0) });
             walls.Add(new Wall { Id = "WS", Start = new Point2(10, -16), End = new Point2(26, -16) });
+            var f = RoofFrame.Of(null, sections, Pitch612, 0, 2);
             var st = Solve(f, walls);
             Balances(st, f.Faces.Sum(x => x.Area));
             foreach (var v in st.Members.Where(m => m.Kind == "valley rafter"))
             {
                 Assert.IsTrue(v.Points.Count > 0, v + ": its jacks");
+                Assert.IsTrue(v.Supports.All(s => s.Shares == null), v + ": overframed, no lever onto the rafters at its top");
+                var under = v.Supports.Where(s => s.Kind == RoofTargetKind.Member).Select(s => st.Members.Single(m => m.Id == s.On)).ToList();
+                var lines = under.Select(m => m.Rafters[0].Line).OrderBy(x => x).ToList();
+                Assert.IsTrue(lines.SequenceEqual(v.Start.X < 18 ? new[] { 12.0, 14, 16, 18 } : new[] { 18.0, 20, 22, 24 }), v + ": " + string.Join(", ", lines));
+                Assert.IsTrue(under.All(m => m.Supports.All(s => s.On != v.Id)), v + ": a main rafter under it ends on it");
+            }
+
+            var vault = new Building { Roof = new Roof { NoCeilingJoists = true } };
+            f = RoofFrame.Of(vault, sections, Pitch612, 0, 2);
+            st = Solve(f, walls);
+            Balances(st, f.Faces.Sum(x => x.Area));
+            foreach (var v in st.Members.Where(m => m.Kind == "valley rafter"))
+            {
                 var top = v.Supports.Single(s => s.Shares != null);
                 Assert.IsTrue(top.Shares.Count >= 1 && Math.Abs(top.Shares.Sum(x => x.share) - 1) < 1e-9);
             }
+        }
+
+        /// <summary>
+        /// A rafter on a wall's line (owner 2026-11-14: "a rafter doesnt lie along the length of the wall. If rafters are parallel
+        /// to walls, the walls will be balloon frame up"): a gable 24 × 20 S-N, its end rafters on the gable end walls held all
+        /// the way along them, a foot apart at most; the pair's own load lands on that wall, none of it on the side walls but
+        /// its ends' share; the roof balances.
+        /// </summary>
+        [TestMethod]
+        public void RafterOnAGableEndWall_TheWallHoldsItAllAlong()
+        {
+            var f = RoofFrame.Of(null, new List<RoofSection> { new RoofSection { Walls = new Rect2(0, 0, 24, 20), Shape = RoofShape.Gable, Ridge = RidgeAxis.WestEast } }, Pitch612, 0, 2);
+            var walls = Around(new Rect2(0, 0, 24, 20));
+            var st = Solve(f, walls);
+            Balances(st, 24 * 20);
+            var end = st.Members.Single(m => m.Kind == "rafter pair" && Math.Abs(m.Rafters[0].Line) < 1e-9);
+            Assert.IsTrue(end.Supports.Count >= 21, end + ": " + end.Supports.Count);
+            Assert.IsTrue(end.Supports.Zip(end.Supports.Skip(1), (a, b) => b.At - a.At).All(d => d <= 1 + 1e-9));
+            Assert.IsTrue(end.Supports.All(s => s.On == "W4" && s.R[0] > -1e-9), string.Join(", ", end.Supports.Select(s => s.On + " " + s.R[0].ToString("0"))));
+            Assert.IsTrue(end.Supports.All(s => s.Spread > 0));
+            // the landings on W4 spread along it: the end rafter's strip, 1 ft × 20 ft × 10 psf
+            Assert.AreEqual(1 * 20 * Psf, st.Landings.Where(l => l.From == end.Id).Sum(l => l.P[0]), 1e-6);
         }
 
         /// <summary>
@@ -120,8 +160,9 @@ namespace BuildingModel.Tests
             var common = st.Members.Single(m => m.Kind == "rafter pair" && Math.Abs(m.Rafters[0].Line - 14) < 1e-9);
             Assert.IsTrue(common.Supports.Any(s => s.On == "PL1" && Math.Abs(s.Where.Y - 6) < 1e-9));
             // each south half on the wall, the bearing wall under it (y = 4: it holds the rafters too), the purlin and the ridge:
-            // the purlin its reaction on supports 0, 4, 6, 12 under w = 10 psf over the 40 ft
-            var q = new BeamLoads(); q.Spread.Add((0, 12, 40 * Psf));
+            // the purlin its reaction on supports 0, 4, 6, 12 under w = 10 psf over the 38 ft between the end rafters' strips (the
+            // two on the gable end walls held all along them, owner 2026-11-14: none of theirs on it)
+            var q = new BeamLoads(); q.Spread.Add((0, 12, 38 * Psf));
             Assert.AreEqual(BeamStatics.Reactions(12, new[] { 0.0, 4, 6, 12 }, new[] { q })[0][2], pm.Points.Sum(p => p.P[0]), 1e-6);
 
             walls[4] = new Wall { Id = "WI", Start = new Point2(0, 2), End = new Point2(40, 2) };

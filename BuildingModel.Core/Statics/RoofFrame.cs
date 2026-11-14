@@ -33,6 +33,11 @@ namespace BuildingModel.Statics
         public string Name;
         public RoofPlane Plane;
         public List<Convex> Pieces = new List<Convex>();
+        /// <summary>
+        /// Its plane under another section's roof, inside its own walls (owner 2026-11-14: overframed where possible): its
+        /// rafters run on through it whole to their walls, the other roof built on top of it. Not roof surface: no load of its own.
+        /// </summary>
+        public List<Convex> Hidden = new List<Convex>();
         public double Area => Pieces.Sum(p => p.Area);
         public override string ToString() => $"{Name}: {Area:0.##} sq ft on plan";
     }
@@ -207,6 +212,15 @@ namespace BuildingModel.Statics
         /// <summary>Why it cannot be laid out (null: it is).</summary>
         public string NotLaidOut;
         /// <summary>
+        /// Overframed (owner 2026-11-14: "Overframed where possible. Only when the ceiling is vaulted is this not possible."): where a
+        /// wing's ridge dies into a roof, that roof is framed through under the wing (<see cref="RoofFace.Hidden"/>), the wing's
+        /// valleys laid on it, bearing on each of its rafters they cross. False (a vault): cut in, each valley's top on its rafters
+        /// there. A dormer is cut in either way.
+        /// </summary>
+        public bool Overframed = true;
+        /// <summary>The roof's eave overhang (ft on plan; a section's own may differ, <see cref="OverhangOf"/>).</summary>
+        public double RoofOverhang;
+        /// <summary>
         /// Each section's gable ends that run on into a higher section ("south", "north", "west", "east"): the gable's slopes go on
         /// over that roof until they die into it, the valleys where they meet (owner 2026-11-13: a cross gable or a dormer frames
         /// into the main roof, no gable wall standing on it). The section's plan reach there is <see cref="Reach"/>.
@@ -279,7 +293,7 @@ namespace BuildingModel.Statics
         /// <param name="spacing">The rafters' spacing (ft).</param>
         public static RoofFrame Of(Building b, List<RoofSection> sections, double roofPitch, double roofOverhang, double spacing)
         {
-            var f = new RoofFrame { Sections = sections };
+            var f = new RoofFrame { Sections = sections, Overframed = b?.Roof?.NoCeilingJoists != true, RoofOverhang = roofOverhang };
             var roofLevel = b?.RoofLevel();
             if (roofLevel != null) f.wallsBelow = BeamSupports.WallsUnder(b, roofLevel);
             for (int i = 0; i < sections.Count; i++)
@@ -532,6 +546,7 @@ namespace BuildingModel.Statics
                 var past = new Point2(l.B.X + (l.B.X - l.A.X) / len * 0.01, l.B.Y + (l.B.Y - l.A.Y) / len * 0.01);
                 l.TopOnFace = f.Faces.Where(o => o.Pieces.Any(pc => Inside(pc, past, 1e-6))).OrderByDescending(o => o.Plane.Z(past)).FirstOrDefault();
             }
+            if (f.Overframed) f.FrameThrough(sections, cover);
 
             f.LayRafters(sections, spacing, roofOverhang);
             f.Headers(sections);
@@ -722,8 +737,10 @@ namespace BuildingModel.Statics
                 var w = sections[pl.Section].Walls;
                 bool x = pl.AlongX;
                 var all = group.SelectMany(g => g.Pieces).ToList();
+                // the rafters run through its hidden pieces too (overframed: under a wing, to their walls); the strips are its surface's
+                var through = all.Concat(group.SelectMany(g => g.Hidden)).ToList();
                 // across: y for a W-E rafter
-                double vmin = all.SelectMany(p => p.P).Min(p => x ? p.Y : p.X), vmax = all.SelectMany(p => p.P).Max(p => x ? p.Y : p.X);
+                double vmin = through.SelectMany(p => p.P).Min(p => x ? p.Y : p.X), vmax = through.SelectMany(p => p.P).Max(p => x ? p.Y : p.X);
                 // each section's lines over its own walls (an earlier section's kept where they are too close)
                 var grid = new List<double>();
                 var secs = group.Select(g => g.Plane.Section).Distinct().OrderBy(z => z).ToList();
@@ -762,7 +779,7 @@ namespace BuildingModel.Statics
                 {
                     var at = x ? new Point2(0, v) : new Point2(v, 0);
                     var runs = new List<(double a, double b)>();
-                    foreach (var pc in all)
+                    foreach (var pc in through)
                     {
                         var r = pc.Along(at, dir, 1e-9);
                         if (r != null && r.Value.t1 - r.Value.t0 > 1e-6) runs.Add((r.Value.t0, r.Value.t1));
@@ -894,6 +911,45 @@ namespace BuildingModel.Statics
                 if (below != null) list.Add((Math.Max(0, Math.Min(r.Length, u)), p, below));
             }
             return list;
+        }
+
+        /// <summary>
+        /// Overframing (owner 2026-11-14): for each wing whose ridge dies into another section's roof (a valley's top on it), that
+        /// roof's planes under the wing, inside its own walls, its hidden pieces: its rafters run on through them whole. A dormer
+        /// is cut in, never framed over.
+        /// </summary>
+        private void FrameThrough(List<RoofSection> sections, List<Rect2> cover)
+        {
+            var done = new HashSet<(int, int)>();
+            foreach (var l in Lines.Where(z => z.Kind == CreaseKind.Valley && z.TopOnFace != null))
+            {
+                int a = l.TopOnFace.Plane.Section;
+                var wingFace = l.Crease.F1.Plane.Section == a ? l.Crease.F2 : l.Crease.F1;
+                int w = wingFace.Plane.Section;
+                if (w == a || IsDormer(sections, w) || IsDormer(sections, a) || !done.Add((a, w))) continue;
+                var mine = sections[a].Walls; var over = cover[w];
+                var box = new Rect2(Math.Max(mine.X0, over.X0), Math.Max(mine.Y0, over.Y0), Math.Min(mine.X1, over.X1), Math.Min(mine.Y1, over.Y1));
+                if (box.X1 - box.X0 <= E || box.Y1 - box.Y0 <= E) continue;
+                foreach (var pl in Planes.Where(p => p.Section == a))
+                {
+                    var face = Faces.FirstOrDefault(fc => fc.Plane == pl);
+                    if (face == null) continue;
+                    var piece = Convex.Of(box);
+                    foreach (var o in Planes.Where(o => o.Section == a && o != pl))
+                        piece = piece.Clip(o.Gx - pl.Gx, o.Gy - pl.Gy, o.Z0 - pl.Z0);
+                    var parts = piece.IsEmpty ? new List<Convex>() : new List<Convex> { piece };
+                    // less the roof surface it has in that plane, what is hidden already, and every dormer's walls (cut in)
+                    foreach (var vis in Faces.Where(fc => SamePlane(fc.Plane, pl)).SelectMany(fc => fc.Pieces.Concat(fc.Hidden)).ToList())
+                        parts = parts.SelectMany(p => p.Minus(vis.Edges())).ToList();
+                    for (int j = 0; j < sections.Count; j++)
+                        if (IsDormer(sections, j))
+                        {
+                            var d = sections[j].Walls;
+                            parts = parts.SelectMany(p => p.Minus(new List<(double, double, double)> { (1, 0, -d.X0), (-1, 0, d.X1), (0, 1, -d.Y0), (0, -1, d.Y1) })).ToList();
+                        }
+                    face.Hidden.AddRange(parts.Where(p => !p.IsEmpty && p.Area > 1e-3));
+                }
+            }
         }
 
         private static bool SamePlane(RoofPlane a, RoofPlane b) =>

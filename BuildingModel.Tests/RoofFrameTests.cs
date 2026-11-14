@@ -70,6 +70,8 @@ namespace BuildingModel.Tests
                 {
                     if ((atEnd ? r.AtEnd : r.AtStart) != RafterEnd.Free) continue;
                     var p = atEnd ? r.End : r.Start;
+                    // overframed (owner 2026-11-14): run on under a wing to its own wall, the wing's roof over it
+                    if (f.Faces.Any(fc => fc.Plane.Section == r.Face.Plane.Section && fc.Hidden.Any(pc => pc.Edges().All(e => e.a * p.X + e.b * p.Y + e.c >= -1e-6)))) continue;
                     double d = atEnd ? 0.05 : -0.05;
                     var past = r.AlongX ? new Point2(p.X + d, p.Y) : new Point2(p.X, p.Y + d);
                     double z = r.Face.Plane.Z(past);
@@ -397,8 +399,27 @@ namespace BuildingModel.Tests
             Assert.AreEqual(8, Math.Max(wingRidge.A.Y, wingRidge.B.Y), 1e-6);
             Assert.IsTrue(f.Lines.All(l => l.TopOnFace?.Name == "main, south face"));
             Assert.AreEqual(1056, f.Rafters.Sum(r => r.Area), 1e-6);
-            // a main rafter over the wing (x = 16) runs from the valley up to the ridge: a valley jack
+            // overframed (owner 2026-11-14: "Overframed where possible"): the main rafter under the wing (x = 16) runs whole from
+            // its wall up to the ridge, the wing built on top of it; the main south face's hidden part under the wing is the
+            // triangle under the wing's roof inside the main walls, 64
+            Assert.IsTrue(f.Overframed);
+            Assert.AreEqual(64, f.Faces.Single(x => x.Name == "main, south face").Hidden.Sum(p => p.Area), 1e-6);
             var vj = f.Rafters.Single(r => r.Face.Name == "main, south face" && Math.Abs(r.Line - 16) < T);
+            Assert.AreEqual(0, vj.Start.Y, 1e-6);
+            Assert.AreEqual(RafterEnd.Free, vj.AtStart);
+            Assert.AreEqual(RafterEnd.Ridge, vj.AtEnd);
+            Framed(f);
+
+            // a vault (no ceiling joists): cut in, that rafter from the valley up to the ridge: a valley jack
+            var vault = new Building { Roof = new Roof { NoCeilingJoists = true } };
+            f = RoofFrame.Of(vault, new List<RoofSection>
+            {
+                new RoofSection { Name = "main", Walls = new Rect2(0, 0, 40, 20), Shape = RoofShape.Gable, Ridge = RidgeAxis.WestEast },
+                new RoofSection { Name = "wing", Walls = new Rect2(10, -16, 26, 10), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth },
+            }, Pitch612, 0, 2);
+            Assert.IsFalse(f.Overframed);
+            Assert.IsTrue(f.Faces.All(x => x.Hidden.Count == 0));
+            vj = f.Rafters.Single(r => r.Face.Name == "main, south face" && Math.Abs(r.Line - 16) < T);
             Assert.AreEqual(6, vj.Start.Y, 1e-6);
             Assert.AreEqual(RafterEnd.Valley, vj.AtStart);
             Assert.AreEqual("valley jack", vj.Kind);

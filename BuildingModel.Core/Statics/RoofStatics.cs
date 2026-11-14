@@ -23,6 +23,12 @@ namespace BuildingModel.Statics
         public string Name;
         /// <summary>The reaction (+ up, holding the member) per load set.</summary>
         public double[] R;
+        /// <summary>
+        /// A wall the member runs along, holding it all the way (owner 2026-11-14: a rafter does not lie along a wall; a wall
+        /// parallel to the rafters is balloon framed up to the roof): one of its supports at most a foot apart along that
+        /// stretch, each this long (ft) along the wall, where its share lands. 0: a support at a point.
+        /// </summary>
+        public double Spread;
         /// <summary>A purlin's brace (owner 2026-11-12): its rise from the wall's top to the purlin and its run on plan (ft); 0, 0: not a brace.</summary>
         public double BraceRise, BraceRun;
         public bool IsBrace => BraceRise > 0 || BraceRun > 0;
@@ -54,6 +60,11 @@ namespace BuildingModel.Statics
         public BeamLoads[] Own;
         public List<(double At, double[] P, string From)> Points = new List<(double, double[], string)>();
         public bool Stands => Supports.Count >= 2 || (Supports.Count == 1 && Supports[0].Kind != RoofTargetKind.None);
+        /// <summary>
+        /// On a wall all its length (owner 2026-11-14: a wall parallel to the rafters is balloon framed up to the roof; no rafter
+        /// sits on it): every support of it the wall's, a foot apart; the wall carries its strip. No rafter of its own to size.
+        /// </summary>
+        public bool OnWall => Supports.Count > 0 && Supports.Where(s => s.Kind != RoofTargetKind.None).All(s => s.Spread > 0);
         public double Along(Point2 p)
         {
             double L = Length;
@@ -193,6 +204,32 @@ namespace BuildingModel.Statics
             }
             void Model(RoofMember m)
             {
+                // a wall it runs along holds it all the way along (balloon framed up to the roof, owner 2026-11-14): first, its
+                // supports a foot apart at most along the stretch
+                double L = m.Length;
+                if (L > 1e-6)
+                {
+                    double ux = (m.End.X - m.Start.X) / L, uy = (m.End.Y - m.Start.Y) / L;
+                    foreach (var w in walls)
+                    {
+                        double wl = RoofCrease.Dist(w.Start, w.End);
+                        if (wl < 1e-6) continue;
+                        double wx = (w.End.X - w.Start.X) / wl, wy = (w.End.Y - w.Start.Y) / wl;
+                        if (Math.Abs(ux * wy - uy * wx) > 1e-6) continue;
+                        // on its line: both its ends within the bearing of the wall's line
+                        double Off(Point2 p) => Math.Abs((p.X - w.Start.X) * wy - (p.Y - w.Start.Y) * wx);
+                        if (Off(m.Start) > Bearing || Off(m.End) > Bearing) continue;
+                        double a = Math.Max(0, Math.Min(m.Along(w.Start), m.Along(w.End))), c = Math.Min(L, Math.Max(m.Along(w.Start), m.Along(w.End)));
+                        if (c - a <= Bearing) continue;
+                        int n = Math.Max(1, (int)Math.Ceiling(c - a - 1e-9));
+                        double step = (c - a) / n;
+                        for (int i = 0; i <= n; i++)
+                        {
+                            double u = a + step * i;
+                            Add(m, new RoofSupport { At = u, Where = m.At(u), On = w.Id, Name = w.Id + " (along it)", Kind = RoofTargetKind.Wall, Spread = i == 0 || i == n ? step / 2 : step });
+                        }
+                    }
+                }
                 foreach (var x in Joists.SupportsOf(m.Start, m.End, walls, cols, beams))
                     Add(m, new RoofSupport { At = x.At, Where = x.Where, On = x.On, Name = x.On, Kind = x.Kind == BeamSupportKind.Wall ? RoofTargetKind.Wall : x.Kind == BeamSupportKind.Column ? RoofTargetKind.Column : RoofTargetKind.Beam });
             }
@@ -237,7 +274,29 @@ namespace BuildingModel.Statics
                         else if (l.AtApex.Count > 0) Add(m, new RoofSupport { At = m.Length, Where = l.B, Kind = RoofTargetKind.Apex, On = $"apex ({l.B.X:0.##}, {l.B.Y:0.##})", Name = "the apex" });
                     }
                     else if (l.Kind == CreaseKind.Valley && l.TopOnFace != null)
-                        Add(m, new RoofSupport { At = m.Length, Where = l.B, Kind = RoofTargetKind.Member, Name = "the rafters of " + l.TopOnFace.Name, Shares = Lever(l.TopOnFace, l.B, m) });
+                    {
+                        // overframed (owner 2026-11-14): laid on the roof framed through under the wing, on each of its rafters
+                        // it crosses (their runs going on past it); cut in: its top on that roof's rafters either side
+                        // (a dormer's valley too, over the trimmer and the rafters running on past it): its ends not held so on
+                        // that roof's rafters either side there
+                        int main = l.TopOnFace.Plane.Section;
+                        foreach (var r in f.Rafters.Where(r => r.Face.Plane.Section == main && byRafter.ContainsKey(r)))
+                        {
+                            if (!Cross(l.A, l.B, r.Start, r.End, out double t)) continue;
+                            var at = new Point2(l.A.X + (l.B.X - l.A.X) * t, l.A.Y + (l.B.Y - l.A.Y) * t);
+                            if (RoofCrease.Dist(at, r.Start) < 1e-3 || RoofCrease.Dist(at, r.End) < 1e-3) continue;   // a rafter ending on it: not under it
+                            var under = byRafter[r];
+                            Add(m, new RoofSupport { At = t * m.Length, Where = at, Kind = RoofTargetKind.Member, On = under.Id, Name = $"{under.Kind} {under.Id} under it" });
+                        }
+                        if (!m.Supports.Any(s => s.At >= m.Length - Bearing))
+                            Add(m, new RoofSupport { At = m.Length, Where = l.B, Kind = RoofTargetKind.Member, Name = "the rafters of " + l.TopOnFace.Name, Shares = Lever(l.TopOnFace, l.B, m) });
+                        var mainFace = l.Crease.F1.Plane.Section == main ? l.Crease.F1 : l.Crease.F2.Plane.Section == main ? l.Crease.F2 : null;
+                        if (mainFace != null && !m.Supports.Any(s => s.At <= Bearing))
+                        {
+                            var shares = Lever(mainFace, l.A, m);
+                            if (shares.Count > 0) Add(m, new RoofSupport { At = 0, Where = l.A, Kind = RoofTargetKind.Member, Name = "the rafters of " + mainFace.Name, Shares = shares });
+                        }
+                    }
                     else if (l.Kind == CreaseKind.Header)
                     {
                         Add(m, new RoofSupport { At = 0, Where = l.A, Kind = RoofTargetKind.Member, Name = "the trimmer", Shares = Lever(l.EndsOnFace, l.A, m) });
@@ -313,6 +372,37 @@ namespace BuildingModel.Statics
                 }
             }
             foreach (var m in st.Members) m.Supports = m.Supports.OrderBy(x => x.At).ToList();
+            // a member on a wall for part of its length and spanning off it to other supports: the wall holds it at the
+            // stretch's end next to each span (a rafter bearing on a wall's top, no fixed end there), the rest of the stretch a
+            // tail on it; a foot apart all along would make it a continuous beam over short spans, levering on the wall
+            foreach (var m in st.Members.Where(x => x.Supports.Any(s => s.Spread > 0)))
+            {
+                var along = m.Supports.Where(s => s.Spread > 0).ToList();
+                double a = along.Min(s => s.At), c = along.Max(s => s.At);
+                var off = m.Supports.Where(s => s.Spread == 0 && s.Kind != RoofTargetKind.None && (s.At < a - Bearing || s.At > c + Bearing)).ToList();
+                if (off.Count == 0) continue;   // all along its wall
+                bool before = off.Any(s => s.At < a), after = off.Any(s => s.At > c);
+                foreach (var s in along)
+                    if ((before && Math.Abs(s.At - a) < 1e-9) || (after && Math.Abs(s.At - c) < 1e-9)) { s.Spread = 0; s.Name = s.On; }
+                    else m.Supports.Remove(s);
+            }
+            // a rafter's tail past its wall, its tip resting on a valley, hip or header of the roof beside it (a main rafter run
+            // on past its eave to a wing's valley): only bearing there, never holding it down, so the wall holds it, the tail a
+            // cantilever off it (held at its tip too, a long span over the wall would lever the tip down onto that member)
+            foreach (var m in st.Members.Where(x => x.Rafters.Count > 0))
+            {
+                var model = m.Supports.Where(s => s.Kind == RoofTargetKind.Wall || s.Kind == RoofTargetKind.Column || s.Kind == RoofTargetKind.Beam).ToList();
+                if (model.Count == 0) continue;
+                foreach (var s in m.Supports.Where(s => s.Kind == RoofTargetKind.Member && s.Shares == null && (s.At <= Bearing || s.At >= m.Length - Bearing)).ToList())
+                {
+                    var r = s.At <= Bearing ? m.Rafters[0] : m.Rafters[m.Rafters.Count - 1];
+                    var w = f.Sections[r.Face.Plane.Section].Walls;
+                    var p = s.At <= Bearing ? m.Start : m.End;
+                    bool past = p.X < w.X0 - 1e-6 || p.X > w.X1 + 1e-6 || p.Y < w.Y0 - 1e-6 || p.Y > w.Y1 + 1e-6;
+                    double oh = RoofFrame.OverhangOf(f.Sections[r.Face.Plane.Section], f.RoofOverhang);
+                    if (past && model.Any(x => Math.Abs(x.At - s.At) <= oh + 1e-6)) m.Supports.Remove(s);
+                }
+            }
             // a support shared by the lever: its share's members
             foreach (var m in st.Members)
                 foreach (var s in m.Supports.Where(x => x.Shares != null && x.Shares.Count == 0))
@@ -429,7 +519,9 @@ namespace BuildingModel.Statics
                     }).ToArray();
                     var active = m.Supports.Where(x => x.Kind != RoofTargetKind.None).ToList();
                     double[][] R = null;
-                    if (m.Rafters.Count == 2) R = PairReactions(m, active, loads, sets);
+                    // all along its wall: each support its stretch's load (the wall carries it where it is, no beam over it)
+                    if (m.OnWall && active.Count >= 2) R = Tributary(m.Length, active.Select(x => x.At).ToList(), loads);
+                    else if (m.Rafters.Count == 2) R = PairReactions(m, active, loads, sets);
                     else if (active.Count >= 2) R = BeamStatics.Reactions(m.Length, active.Select(x => x.At).ToList(), loads);
                     // one support (a stub at a hip's foot, a tail): all of it on that one
                     for (int i = 0; i < active.Count; i++)
@@ -462,7 +554,8 @@ namespace BuildingModel.Statics
                     Landings.Add(new RoofLanding
                     {
                         Kind = s.Kind, On = s.On, Where = s.Where, P = s.R.ToArray(), From = m.Id,
-                        Width = r == null ? 0 : WidthAt(r, u), AlongX = r?.AlongX ?? false,
+                        // along a wall: its stretch of the wall; else its strip's width across, centred on its line
+                        Width = s.Spread > 0 ? s.Spread : r == null ? 0 : WidthAt(r, u), AlongX = r?.AlongX ?? false,
                     });
                 }
         }
@@ -631,6 +724,30 @@ namespace BuildingModel.Statics
             t = (qx * sy - qy * sx) / den;
             double u = (qx * ry - qy * rx) / den;
             return t >= -1e-9 && t <= 1 + 1e-9 && u >= -1e-9 && u <= 1 + 1e-9;
+        }
+
+        /// <summary>Each support's share by set: the load from halfway to the one before it to halfway to the next (the ends: to the member's ends).</summary>
+        private static double[][] Tributary(double L, List<double> at, BeamLoads[] loads)
+        {
+            var R = new double[loads.Length][];
+            for (int k = 0; k < loads.Length; k++)
+            {
+                R[k] = new double[at.Count];
+                for (int i = 0; i < at.Count; i++)
+                {
+                    double x0 = i == 0 ? double.NegativeInfinity : (at[i - 1] + at[i]) / 2, x1 = i == at.Count - 1 ? double.PositiveInfinity : (at[i] + at[i + 1]) / 2;
+                    double sum = loads[k].Points.Where(p => p.At >= x0 && (p.At < x1 || double.IsPositiveInfinity(x1))).Sum(p => p.P);
+                    foreach (var (a, b, wa, wb) in loads[k].Lines())
+                    {
+                        double c0 = Math.Max(a, x0), c1 = Math.Min(b, x1);
+                        if (c1 - c0 <= 1e-12 || b - a <= 1e-12) continue;
+                        double w0 = wa + (wb - wa) * (c0 - a) / (b - a), w1 = wa + (wb - wa) * (c1 - a) / (b - a);
+                        sum += (c1 - c0) * (w0 + w1) / 2;
+                    }
+                    R[k][i] = sum;
+                }
+            }
+            return R;
         }
 
         private static double TotalOf(BeamLoads q) =>

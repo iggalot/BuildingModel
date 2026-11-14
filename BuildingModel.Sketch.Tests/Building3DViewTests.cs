@@ -24,7 +24,7 @@ namespace BuildingModel.Sketch.Tests
             var v = new Building3DView();
             v.Show(b);
             double top = v.ModelBounds.Y + v.ModelBounds.SizeY;
-            Assert.AreEqual(30, top, 1e-6);
+            Assert.AreEqual(30, top, 0.05); // the ridge line is drawn just over the roof
             Assert.AreEqual(30, b.RidgeHeight(), 1e-6);
         }
 
@@ -33,7 +33,7 @@ namespace BuildingModel.Sketch.Tests
         {
             var v = new Building3DView();
             v.Show(Make(RoofShape.Hip, 45));
-            Assert.AreEqual(30, v.ModelBounds.Y + v.ModelBounds.SizeY, 1e-6, "hip: same rise over the shorter side");
+            Assert.AreEqual(30, v.ModelBounds.Y + v.ModelBounds.SizeY, 0.05, "hip: same rise over the shorter side (its ridge line drawn just over it)");
             v.Show(Make(RoofShape.Flat, 0));
             Assert.AreEqual(20, v.ModelBounds.Y + v.ModelBounds.SizeY, 1e-6, "flat, no parapet: the top slab");
         }

@@ -63,7 +63,7 @@ namespace BuildingModel.Model
 
         /// <summary>
         /// Where two diaphragms of one level at different heights meet (a step): each pair, the line they share on plan, its
-        /// length. The shear across it goes through what is under it (the wall's top plates, blocking): not designed yet.
+        /// length. With walls under its length the two stay separate diaphragms (<see cref="StepOnWalls"/>, owner 2026-11-14).
         /// </summary>
         public static List<(Diaphragm a, Diaphragm c, Point2 from, Point2 to)> Steps(this Building b, Level level)
         {
@@ -85,6 +85,34 @@ namespace BuildingModel.Model
                         }
                 }
             return list;
+        }
+
+        /// <summary>
+        /// Whether walls under the level run the whole length of a step (<see cref="Steps"/>): the two diaphragms then stay
+        /// separate (owner 2026-11-14: no transfer across the step), the higher on the walls' top plates, the lower framed into
+        /// their side on a ledger (designed in the shear wall app). A step with no wall under it has nothing to carry it.
+        /// </summary>
+        public static bool StepOnWalls(this Building b, Level level, Point2 from, Point2 to)
+        {
+            if (b == null || level == null) return false;
+            double dx = to.X - from.X, dy = to.Y - from.Y, len = Math.Sqrt(dx * dx + dy * dy);
+            if (len < E) return false;
+            if (Math.Abs(dx) > E && Math.Abs(dy) > E) return false;   // an overlap, not a line
+            bool ew = Math.Abs(dx) >= Math.Abs(dy);
+            double across = ew ? from.Y : from.X, lo = Math.Min(ew ? from.X : from.Y, ew ? to.X : to.Y), hi = lo + len;
+            const double tol = 0.5;   // walls drawn a little off the line (as SWC's DiaphragmLines.LineTolerance)
+            var cover = b.WallsUnder(level)
+                .Where(w => ew ? Math.Abs(w.Start.Y - across) <= tol && Math.Abs(w.End.Y - across) <= tol
+                               : Math.Abs(w.Start.X - across) <= tol && Math.Abs(w.End.X - across) <= tol)
+                .Select(w => ew ? (a: Math.Min(w.Start.X, w.End.X), c: Math.Max(w.Start.X, w.End.X)) : (a: Math.Min(w.Start.Y, w.End.Y), c: Math.Max(w.Start.Y, w.End.Y)))
+                .OrderBy(s => s.a).ToList();
+            double reach = lo;
+            foreach (var (a, c) in cover)
+            {
+                if (a > reach + 0.01) break;
+                reach = Math.Max(reach, c);
+            }
+            return reach >= hi - 0.01;
         }
 
         /// <summary>Whether the level has diaphragms at more than one height (each then its own diaphragm in the lateral design).</summary>

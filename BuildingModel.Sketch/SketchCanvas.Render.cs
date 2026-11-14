@@ -1061,7 +1061,8 @@ namespace BuildingModel.Sketch
 
         /// <summary>
         /// Where two diaphragms of the level at different heights meet (<see cref="WallTops.Steps"/>; owner 2026-11-13: each its
-        /// own diaphragm): a dashed line, "step 9 / 8 ft: shear across it NOT DESIGNED".
+        /// own diaphragm): a dashed line, "step 9 / 8 ft: two diaphragms, the lower on a ledger" (owner 2026-11-14), or with no
+        /// wall under it "no wall under it, NOT DESIGNED".
         /// </summary>
         private void DrawSteps(DrawingContext ctx, Building b, Level level)
         {
@@ -1073,7 +1074,11 @@ namespace BuildingModel.Sketch
                 double ha = level.Elevation + a.Offset, hc = level.Elevation + c.Offset;
                 // above the line at its west or south end, clear of the walls' and diaphragms' labels under it
                 var start = s0.X + s0.Y <= s1.X + s1.Y ? s0 : s1;
-                Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: shear across it NOT DESIGNED", new Point(start.X + 6, start.Y - 17), B(Palette.Error), 10, true);
+                // on walls the two stay separate diaphragms, the lower on a ledger (owner 2026-11-14); with no wall under it, NOT DESIGNED
+                if (b.StepOnWalls(level, from, to))
+                    Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: two diaphragms, the lower on a ledger", new Point(start.X + 6, start.Y - 17), B(Palette.Warning), 10, true);
+                else
+                    Label(ctx, $"step {a.Id} {ha:0.##} / {c.Id} {hc:0.##} ft: no wall under it, NOT DESIGNED", new Point(start.X + 6, start.Y - 17), B(Palette.Error), 10, true);
             }
         }
 

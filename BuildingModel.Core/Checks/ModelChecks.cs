@@ -68,13 +68,16 @@ namespace BuildingModel.Checks
                     Add(Severity.Warning, "NoDiaphragm", $"{l.Name} has no diaphragm.", l.Id);
                     continue;
                 }
-                // diaphragms of one level at different heights (Diaphragm.Offset): where they meet, a step whose shear transfer
-                // is not designed (owner 2026-11-13: never leave it to someone to know it needs designing)
+                // diaphragms of one level at different heights (Diaphragm.Offset): where they meet on walls the two stay separate
+                // diaphragms, the lower one on a ledger on the walls' side (owner 2026-11-14: no transfer); where no wall runs
+                // the step's length nothing carries it (owner 2026-11-13: never leave it to someone to know it needs designing)
                 foreach (var (a, c, from, to) in b.Steps(l))
-                    Add(Severity.Warning, "DiaphragmStep",
-                        $"{l.Name}: diaphragms {a.Id} ({l.Elevation + a.Offset:0.##} ft) and {c.Id} ({l.Elevation + c.Offset:0.##} ft) meet at a step " +
-                        $"from ({from.X:0.##}, {from.Y:0.##}) to ({to.X:0.##}, {to.Y:0.##}): the shear across it is NOT DESIGNED " +
-                        "(ASCE 7-22 Table 12.3-1, horizontal irregularity type 4 if it is in the seismic system).", a.Id, c.Id);
+                    if (!b.StepOnWalls(l, from, to))
+                        Add(Severity.Warning, "DiaphragmStep",
+                            $"{l.Name}: diaphragms {a.Id} ({l.Elevation + a.Offset:0.##} ft) and {c.Id} ({l.Elevation + c.Offset:0.##} ft) meet at a step " +
+                            $"from ({from.X:0.##}, {from.Y:0.##}) to ({to.X:0.##}, {to.Y:0.##}) with no wall under its whole length: NOT DESIGNED. " +
+                            "Put a wall under the step (the higher diaphragm on its top plates, the lower on a ledger on its side) " +
+                            "(ASCE 7-22 Table 12.3-1, horizontal irregularity type 4 if it is in the seismic system).", a.Id, c.Id);
                 var net = b.NetDiaphragm(l);
                 double open = gross.Area - net.Area;
                 if (open > DiscontinuityRatio * gross.Area)

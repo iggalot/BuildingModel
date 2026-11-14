@@ -302,14 +302,25 @@ namespace BuildingModel.Tests
             Assert.AreEqual(-1, f.Sections[1].EaveRise, 1e-9);
             Assert.AreEqual(3, f.Sections[2].EaveRise, 1e-9, "the dormer over the main block's ceiling");
             Assert.AreEqual(18, f.Reach[1].Y0, 1e-6);
-            // the step: where the two ceilings meet, an issue
+            // the step: where the two ceilings meet, on the bearing wall between them: two separate diaphragms, no issue (owner
+            // 2026-11-14: the lower on a ledger on the wall's side, no transfer)
             var step = b.Steps(top).Single();
             Assert.AreEqual(28, step.from.Y, 1e-9);
             Assert.AreEqual(24, Math.Abs(step.to.X - step.from.X), 1e-9);
+            Assert.IsTrue(b.StepOnWalls(top, step.from, step.to));
+            Assert.IsFalse(ModelChecks.Run(b).Any(i => i.Code == "DiaphragmStep"));
+            // the wall cut short of the step's length: nothing under part of it, an issue NOT DESIGNED
+            north.End = new Point2(50, 28);
+            Assert.IsFalse(b.StepOnWalls(top, step.from, step.to));
             var issue = ModelChecks.Run(b).Single(i => i.Code == "DiaphragmStep");
             Assert.AreEqual(Severity.Warning, issue.Severity);
             StringAssert.Contains(issue.Message, "NOT DESIGNED");
+            StringAssert.Contains(issue.Message, "no wall under");
             CollectionAssert.AreEquivalent(new[] { main.Id, wingD.Id }, issue.Ids);
+            // two walls end to end along it cover it
+            b.AddWall(g, top, 50, 28, 56, 28);
+            Assert.IsTrue(b.StepOnWalls(top, step.from, step.to));
+            north.End = new Point2(56, 28);
         }
 
         /// <summary>

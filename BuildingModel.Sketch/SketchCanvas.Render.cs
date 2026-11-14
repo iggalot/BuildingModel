@@ -138,16 +138,21 @@ namespace BuildingModel.Sketch
 
             var b = Building;
             var level = ActiveLevel;
+            bool roofPlan = RoofPlan; // R: the roof framing over the top level's walls (they drawn as the walls under it)
             var below = b.Below(level);
-            if (ShowLevelBelow && below != null)
+            if (ShowLevelBelow && below != null && !roofPlan)
                 foreach (var w in b.WallsUnder(below)) Line(ctx, BelowPen, w.Start, w.End);
 
-            // diaphragms: the pieces filled, the net outline strong
-            foreach (var r in b.DiaphragmsOn(level).SelectMany(d => d.Pieces)) ctx.DrawRectangle(DiaphragmBrush, null, ScreenRect(r));
-            var cutting = b.OpeningsCutting(level);
-            foreach (var r in cutting.SelectMany(o => o.Pieces)) ctx.DrawRectangle(OpeningBrush, OpeningPen, ScreenRect(r));
-            foreach (var r in b.DiaphragmsOn(level).SelectMany(d => d.Pieces)) ctx.DrawRectangle(null, PiecePen, ScreenRect(r));
-            foreach (var s in b.NetDiaphragm(level).Outline()) Line(ctx, DiaphragmPen, s.A, s.B);
+            // diaphragms: the pieces filled, the net outline strong (R: the roof's eaves instead, with its framing)
+            var cutting = roofPlan ? new List<Opening>() : b.OpeningsCutting(level).ToList();
+            if (roofPlan) DrawRoofOutline(ctx, b);
+            else
+            {
+                foreach (var r in b.DiaphragmsOn(level).SelectMany(d => d.Pieces)) ctx.DrawRectangle(DiaphragmBrush, null, ScreenRect(r));
+                foreach (var r in cutting.SelectMany(o => o.Pieces)) ctx.DrawRectangle(OpeningBrush, OpeningPen, ScreenRect(r));
+                foreach (var r in b.DiaphragmsOn(level).SelectMany(d => d.Pieces)) ctx.DrawRectangle(null, PiecePen, ScreenRect(r));
+                foreach (var s in b.NetDiaphragm(level).Outline()) Line(ctx, DiaphragmPen, s.A, s.B);
+            }
 
             bool foundation = b.IsFoundationPlan(level);
             var walls = b.WallsShown(level).ToList();
@@ -162,17 +167,19 @@ namespace BuildingModel.Sketch
                     Line(ctx, CutWallCore, w.Start, w.End);
                 }
             }
+            else if (roofPlan)
+                foreach (var w in walls) Line(ctx, BelowPen, w.Start, w.End); // the walls the roof stands on
             else
             {
                 foreach (var w in b.WallsOver(level)) Line(ctx, AbovePen, w.Start, w.End);
                 foreach (var w in walls) Line(ctx, WallStyle?.Invoke(w) ?? WallPen, w.Start, w.End);
             }
-            if (ShowJoints) DrawJoints(ctx, b, walls);
-            if (ShowShearParts) DrawShearParts(ctx, b, walls);
+            if (ShowJoints && !roofPlan) DrawJoints(ctx, b, walls);
+            if (ShowShearParts && !roofPlan) DrawShearParts(ctx, b, walls);
 
             // the joists of each framing area (thin, as on a framing plan; red where one has fewer than two supports), the areas' edges
             Dictionary<string, Statics.FramingMember> roles = null;
-            if (ShowSpans && !foundation) roles = DrawFraming(ctx, b, level);
+            if (ShowSpans && !foundation) roles = DrawFraming(ctx, b, level, roofPlan);
 
             // beams in this level's framing (brown, dash-dot as on framing plans) and the columns under it (filled squares)
             foreach (var bm in b.BeamsOn(level))
@@ -202,14 +209,14 @@ namespace BuildingModel.Sketch
 
             if (ShowLabels)
             {
-                if (ShowWallLabels) foreach (var w in walls) WallLabel(ctx, w);
-                if (!ShowSpans) foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + OffsetTag(d) + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
+                if (ShowWallLabels && !roofPlan) foreach (var w in walls) WallLabel(ctx, w);
+                if (!ShowSpans && !roofPlan) foreach (var d in b.DiaphragmsOn(level)) { var r = d.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, d.Id + OffsetTag(d) + SpanTag(b, d), ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, false); }
                 foreach (var o in cutting) { var r = o.Pieces.FirstOrDefault(); if (!r.IsEmpty) Label(ctx, $"{o.Id} open {b.Level(o.BottomLevelId)?.Name}–{b.Level(o.TopLevelId)?.Name}", ToScreen(new Point2(r.X0, r.Y1)) + new Vector(4, 3), MutedBrush, 10, true); }
             }
-            if (ShowSpans) foreach (var d in b.DiaphragmsOn(level)) SpanMarkers(ctx, b, d, ShowLabels);
-            DrawSteps(ctx, b, level);
+            if (ShowSpans && !roofPlan) foreach (var d in b.DiaphragmsOn(level)) SpanMarkers(ctx, b, d, ShowLabels);
+            if (!roofPlan) DrawSteps(ctx, b, level);
             // the hold-downs after the members' labels, so theirs keep off them (the shared rule, as in every app)
-            if (ShowConnections) { DrawShearPairs(ctx, b, level); DrawConnections(ctx, b, level, foundation); }
+            if (ShowConnections && !roofPlan) { DrawShearPairs(ctx, b, level); DrawConnections(ctx, b, level, foundation); }
             foreach (var n in b.NotesOn(level)) DrawNote(ctx, n, selection.Contains(n.Id));
             DrawProposedWalls(ctx);
 
@@ -668,11 +675,8 @@ namespace BuildingModel.Sketch
         private double Dpi => VisualTreeHelper.GetDpi(this).PixelsPerDip;
 
         /// <summary>A sloped roof's diaphragm: its rafters run across the ridge, not by framing areas.</summary>
-        private static bool AcrossRidge(Building b, Diaphragm d)
-        {
-            var roof = b.RoofLevel();
-            return roof != null && d.LevelId == roof.Id && b.Roof != null && b.Roof.IsSloped;
-        }
+        private static bool AcrossRidge(Building b, Diaphragm d) =>
+            false; // owner 2026-11-13: the rafters are on the roof's own plan (R); the top level's diaphragm is its ceiling, framed as a floor
 
         /// <summary>" · spans W-E" after a diaphragm's ID; " · 3 framing areas" when it is turned in parts; the rafters of a sloped roof across the ridge.</summary>
         private static string SpanTag(Building b, Diaphragm d)
@@ -697,8 +701,19 @@ namespace BuildingModel.Sketch
         /// by <see cref="Statics.Joists"/>: thin lines, red where one has fewer than two supports; left out when too close
         /// together to see at this zoom, the red ones always). Returns the beams' roles (beam or girder) for their labels.
         /// </summary>
-        private Dictionary<string, Statics.FramingMember> DrawFraming(DrawingContext ctx, Building b, Level level)
+        private Dictionary<string, Statics.FramingMember> DrawFraming(DrawingContext ctx, Building b, Level level, bool roofPlan)
         {
+            // the top level under a sloped roof: its own plan has its ceiling joists, the roof's plan (R) the rafters (owner 2026-11-13)
+            bool sloped = Statics.Joists.IsRoof(b, level) && b.Roof != null && b.Roof.IsSloped;
+            if (sloped && !roofPlan)
+            {
+                var ceiling = Statics.Joists.CeilingOf(b, level);
+                bool tight = Statics.Joists.SpacingOf(b, level) * Zoom < 4;
+                foreach (var j in ceiling) if (!j.Stands) Line(ctx, JoistBadPen, j.Start, j.End); else if (!tight) Line(ctx, JoistPen, j.Start, j.End);
+                foreach (var d in b.DiaphragmsOn(level).Where(d => (d.Framing?.Count ?? 0) > 1))
+                    foreach (var a in d.Framing) ctx.DrawRectangle(null, AreaEdgePen, ScreenRect(a.Rect));
+                return Statics.FramingRoles.Of(b, level, ceiling);
+            }
             var joists = Statics.Joists.Of(b, level);
             bool dense = Statics.Joists.SpacingOf(b, level) * Zoom < 4;
             // a sectioned roof (owner 2026-11-12: hips, valleys, wings, dormers, purlins): its rafters, ridges, hips, valleys,
@@ -718,9 +733,41 @@ namespace BuildingModel.Sketch
             foreach (var j in joists)
                 if (!j.Stands) Line(ctx, JoistBadPen, j.Start, j.End);
                 else if (!dense) Line(ctx, JoistPen, j.Start, j.End);
-            foreach (var d in b.DiaphragmsOn(level).Where(d => (d.Framing?.Count ?? 0) > 1 && !AcrossRidge(b, d)))
-                foreach (var a in d.Framing) ctx.DrawRectangle(null, AreaEdgePen, ScreenRect(a.Rect));
+            if (!roofPlan)
+                foreach (var d in b.DiaphragmsOn(level).Where(d => (d.Framing?.Count ?? 0) > 1 && !AcrossRidge(b, d)))
+                    foreach (var a in d.Framing) ctx.DrawRectangle(null, AreaEdgePen, ScreenRect(a.Rect));
             return Statics.FramingRoles.Of(b, level, joists);
+        }
+
+        /// <summary>The roof's plan (R): its eaves' outline, each face's pieces as laid out (a plain gable or flat roof: its plan widened by the eaves).</summary>
+        private void DrawRoofOutline(DrawingContext ctx, Building b)
+        {
+            if (b.Roof == null) return;
+            if (b.Roof.IsSloped && Statics.RoofFrame.IsSectioned(b))
+            {
+                var frame = FrameOf(b);
+                if (frame != null && frame.NotLaidOut == null)
+                {
+                    foreach (var f in frame.Faces)
+                        foreach (var pc in f.Pieces)
+                        {
+                            var g = new StreamGeometry();
+                            using (var c = g.Open())
+                            {
+                                c.BeginFigure(ToScreen(pc.P[0]), true, true);
+                                foreach (var q in pc.P.Skip(1)) c.LineTo(ToScreen(q), true, false);
+                            }
+                            g.Freeze();
+                            ctx.DrawGeometry(DiaphragmBrush, null, g);
+                        }
+                    return;
+                }
+            }
+            var plan = b.RoofPlan();
+            if (plan.IsEmpty) return;
+            double o = b.Roof.IsSloped ? Math.Max(0, b.Roof.Overhang) : 0;
+            var r = new Rect2(plan.X0 - o, plan.Y0 - o, plan.X1 + o, plan.Y1 + o);
+            ctx.DrawRectangle(DiaphragmBrush, PiecePen, ScreenRect(r));
         }
 
         private static readonly Pen RidgePen = FrozenPen(Color.FromRgb(0xB2, 0x22, 0x22), 1.6);
@@ -1250,7 +1297,8 @@ namespace BuildingModel.Sketch
         {
             var l = ActiveLevel;
             double h = Building.StoryHeight(l);
-            string text = LevelCaption?.Invoke(l) ?? (l.Elevation == 0 ? $"{l.Name} · 0 ft · the foundation: what stands on it" : $"{l.Name} · {l.Elevation:0.##} ft · story under it {h:0.##} ft");
+            string text = RoofPlan ? $"Roof (R) · on the {l.Name} plates, {l.Elevation:0.##} ft · the roof's framing"
+                        : LevelCaption?.Invoke(l) ?? (l.Elevation == 0 ? $"{l.Name} · 0 ft · the foundation: what stands on it" : $"{l.Name} · {l.Elevation:0.##} ft · story under it {h:0.##} ft");
             if (text.Length == 0) return; // the host shows the level its own way
             var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                                        new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 12, Brushes.White, Dpi);

@@ -70,6 +70,16 @@ namespace BuildingModel.Sketch
         /// <summary>The level being drawn (the plan of the story under it).</summary>
         public Level ActiveLevel { get; private set; }
 
+        /// <summary>
+        /// The roof's plan is shown (<see cref="RoofQueries.RoofPlanId"/>, "R" on the level bar): <see cref="ActiveLevel"/> is
+        /// then the top level, whose plates the roof stands on; the plan shows the roof framing over its walls, not its
+        /// diaphragm and ceiling joists.
+        /// </summary>
+        public bool RoofPlan { get; private set; }
+
+        /// <summary>The level shown, as the level bar names it: <see cref="RoofQueries.RoofPlanId"/> for the roof's plan.</summary>
+        public string ActiveLevelKey => RoofPlan ? RoofQueries.RoofPlanId : ActiveLevel?.Id;
+
         /// <summary>After every edit, undo and redo (the model has changed; the host updates what it shows).</summary>
         public event EventHandler ModelChanged;
         public event EventHandler SelectionChanged;
@@ -92,7 +102,10 @@ namespace BuildingModel.Sketch
             History.Reset(Building);
             selection.Clear();
             ResetCommand();
-            ActiveLevel = Building.Level(activeLevelId) ?? Building.LevelsBottomUp.FirstOrDefault(l => l.Elevation > 0) ?? Building.Ground;
+            // the roof's plan kept across a reload (the host passes the level shown, or the top level's ID while R is shown)
+            var roofLevel = Building.RoofLevel();
+            RoofPlan = roofLevel != null && (activeLevelId == RoofQueries.RoofPlanId || (RoofPlan && activeLevelId == roofLevel.Id));
+            ActiveLevel = RoofPlan ? roofLevel : Building.Level(activeLevelId) ?? Building.LevelsBottomUp.FirstOrDefault(l => l.Elevation > 0) ?? Building.Ground;
             plans.Clear();
             plansWarned.Clear();
             if (converted.Count > 0) Say($"Plans converted from an older format: {converted.Count} level{(converted.Count == 1 ? "" : "s")}. Save to keep it.");
@@ -103,10 +116,13 @@ namespace BuildingModel.Sketch
 
         public void ShowLevel(string levelId)
         {
-            var l = Building.Level(levelId);
-            if (l == null || l == ActiveLevel) return;
+            bool roof = levelId == RoofQueries.RoofPlanId;
+            var l = roof ? Building.RoofLevel() : Building.Level(levelId);
+            if (l == null || (l == ActiveLevel && roof == RoofPlan)) return;
             ResetCommand();
+            if (roof && Tool != SketchTool.Select && Tool != SketchTool.Measure && Tool != SketchTool.Note) SetTool(SketchTool.Select); // R: nothing drawn on it
             ActiveLevel = l;
+            RoofPlan = roof;
             var visible = Building.VisibleIds(l);
             selection.RemoveWhere(id => !visible.Contains(id));
             ActiveLevelChanged?.Invoke(this, EventArgs.Empty);
@@ -491,6 +507,13 @@ namespace BuildingModel.Sketch
         public void SetTool(SketchTool tool)
         {
             if (!EnabledTools.Contains(tool)) return;
+            if (RoofPlan && (tool == SketchTool.Wall || tool == SketchTool.Diaphragm || tool == SketchTool.Opening || tool == SketchTool.Beam ||
+                             tool == SketchTool.Column || tool == SketchTool.Framing || tool == SketchTool.Cut || tool == SketchTool.Split))
+            {
+                // the roof's plan shows the framing the roof is laid out with (Roof… and Roof framing… set it)
+                Say($"R is the roof's plan: its framing comes from the roof (Roof…, Roof framing…). Draw walls, floors and beams on their own level ({ActiveLevel?.Name}).");
+                return;
+            }
             ResetCommand();
             Tool = tool;
             if (tool != SketchTool.Select && tool != SketchTool.Measure && !IsPlanTool(tool)) lastTool = tool;

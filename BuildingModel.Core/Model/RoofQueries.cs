@@ -10,6 +10,14 @@ namespace BuildingModel.Model
     /// </summary>
     public static class RoofQueries
     {
+        /// <summary>
+        /// The roof's plan, a level of its own on every level bar after the top one (owner 2026-11-13: "R should be a level
+        /// automatically, like G"): the roof framing (rafters, ridges, hips, valleys, headers, purlins, the dormers' walls and
+        /// beams) over the top plates; the top level keeps its diaphragm and ceiling joists. Not a stored elevation: the roof
+        /// stands on <see cref="RoofLevel"/>'s plates.
+        /// </summary>
+        public const string RoofPlanId = "R";
+
         /// <summary>The highest level above the ground: the roof's eave level. Null when there is only the ground.</summary>
         public static Level RoofLevel(this Building b) =>
             b.Levels.Where(l => l.Elevation > 0).OrderByDescending(l => l.Elevation).FirstOrDefault();

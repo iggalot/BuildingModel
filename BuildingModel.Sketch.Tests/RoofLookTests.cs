@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using BuildingModel.Geometry;
 using BuildingModel.Model;
+using System.Windows.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace BuildingModel.Sketch.Tests
@@ -95,6 +96,38 @@ namespace BuildingModel.Sketch.Tests
             var bmp = SketchTests.Render(v, "l-house-3d");
             int shades = new[] { "south", "west", "east", "north" }.Count(s => SketchTests.Count(bmp, Building3DView.RoofShade(s, 0), 40) > 50);
             Assert.IsTrue(shades >= 2, $"{shades} roof shades seen");
+        }
+
+        /// <summary>
+        /// The roof's own plan, R (owner 2026-11-13: "R should be a level automatically, like G"): its button after the top
+        /// level's; on it the ridges, hips and valleys; on Level 2 none of them (its ceiling joists and diaphragm only). Walls and
+        /// floors are not drawn on R; a reload keeps R shown.
+        /// </summary>
+        [STATestMethod]
+        public void TheRoofPlan_ALevelOfItsOwn()
+        {
+            var b = L(-1);
+            var top = b.RoofLevel();
+            var v = new SketchView();
+            v.Canvas.SetBuilding(b, top.Id);
+            SketchTests.Render(v, "rplan");
+            v.Canvas.ZoomExtents();
+            var ridge = Color.FromRgb(0xB2, 0x22, 0x22);
+            var hip = Color.FromRgb(0xE0, 0x7B, 0x00);
+            int onLevel2 = SketchTests.Count(SketchTests.Render(v, "rplan-level2"), ridge, 12) + SketchTests.Count(SketchTests.Render(v, "rplan-level2"), hip, 12);
+            v.Canvas.ShowLevel(RoofQueries.RoofPlanId);
+            Assert.IsTrue(v.Canvas.RoofPlan);
+            Assert.AreEqual(top.Id, v.Canvas.ActiveLevel.Id, "R stands on the top level's plates");
+            var onR = SketchTests.Render(v, "rplan-roof");
+            int onRoof = SketchTests.Count(onR, ridge, 12) + SketchTests.Count(onR, hip, 12);
+            Assert.IsTrue(onRoof > onLevel2 + 200, $"the ridges and hips on R ({onRoof} pixels), not on Level 2 ({onLevel2})");
+
+            v.Canvas.SetTool(SketchTool.Wall);
+            Assert.AreEqual(SketchTool.Select, v.Canvas.Tool, "no walls drawn on R");
+            v.Canvas.SetBuilding(b, top.Id);
+            Assert.IsTrue(v.Canvas.RoofPlan, "a reload keeps R");
+            v.Canvas.ShowLevel(top.Id);
+            Assert.IsFalse(v.Canvas.RoofPlan);
         }
 
         private static bool Near(List<Point2> poly, Point2 p)

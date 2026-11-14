@@ -249,10 +249,29 @@ namespace BuildingModel.Sketch
                 var t = Ui.Toggle("", l.Short, $"{l.Name}, {l.Elevation:0.##} ft", (s, e) => Canvas.ShowLevel(lv.Id)); // G 2 R, as in every app (owner 2026-11-11)
                 t.MinWidth = 28;
                 System.Windows.Automation.AutomationProperties.SetName(t, l.Name);
-                t.IsChecked = Canvas.ActiveLevel == l;
+                t.IsChecked = Canvas.ActiveLevel == l && !Canvas.RoofPlan;
                 levelBar.Children.Add(t);
             }
+            // the roof's plan, a level of its own after the top one (owner 2026-11-13: every enclosed building has G and R)
+            var top = b.RoofLevel();
+            if (top != null)
+            {
+                var r = Ui.Toggle("", RoofQueries.RoofPlanId, RoofPlanTip(b), (s, e) => Canvas.ShowLevel(RoofQueries.RoofPlanId));
+                r.MinWidth = 28;
+                System.Windows.Automation.AutomationProperties.SetName(r, "Roof");
+                r.IsChecked = Canvas.RoofPlan;
+                levelBar.Children.Add(r);
+            }
             UpdateButtons();
+        }
+
+        /// <summary>The R button's tooltip: the roof's framing, on the top level's plates (or that it has none yet).</summary>
+        public static string RoofPlanTip(Building b)
+        {
+            var top = b?.RoofLevel();
+            if (top == null) return "Roof";
+            return b.Roof == null ? $"Roof: none yet (Roof… sets it), on the {top.Name} plates, {top.Elevation:0.##} ft"
+                                  : $"Roof: its framing (rafters, ridges, hips, valleys, headers, purlins), on the {top.Name} plates, {top.Elevation:0.##} ft";
         }
 
         // ------------------------------------------------------------------ right-click

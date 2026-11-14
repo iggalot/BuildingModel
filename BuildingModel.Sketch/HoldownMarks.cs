@@ -37,7 +37,7 @@ namespace BuildingModel.Sketch
 
         // (in this order: a static field is set in the order written, the colours before the brushes made of them)
         /// <summary>The marker's colours: a hold-down chosen (dark); none strong enough, or none where it lifts (red).</summary>
-        public static readonly Color SizedColor = Color.FromRgb(0x1F, 0x29, 0x33), MissingColor = Color.FromRgb(0xA5, 0x0E, 0x1F);
+        public static readonly Color SizedColor = Color.FromRgb(0x1F, 0x29, 0x33), MissingColor = PlanStatus.Fail; // red: unsafe (the status language)
         public static readonly Brush LabelBack = Frozen(Color.FromArgb(0xE6, 0xFF, 0xFF, 0xFF));
         /// <summary>A label's ink: a hold-down chosen; none where one is needed (the red of the open marker).</summary>
         public static readonly Brush TextInk = Frozen(Color.FromRgb(0x52, 0x51, 0x4E)), MissingInk = Frozen(MissingColor);
@@ -173,8 +173,11 @@ namespace BuildingModel.Sketch
         /// <summary>
         /// The whole drawing: every marker first (each kept clear in <paramref name="taken"/>), then each label with its arrow,
         /// then the labels' text over all the arrows. <paramref name="text"/> makes a label's text in the host's font and size.
+        /// <paramref name="labelled"/>: whether a marker's label is drawn (the plan's Labels ▾); one not drawn goes to
+        /// <paramref name="hidden"/>, its marker still drawn.
         /// </summary>
-        public static void Draw(DrawingContext ctx, IList<HoldownMarker> markers, Func<HoldownMarker, FormattedText> text, Rect? outline, List<Rect> taken)
+        public static void Draw(DrawingContext ctx, IList<HoldownMarker> markers, Func<HoldownMarker, FormattedText> text, Rect? outline, List<Rect> taken,
+                                Func<HoldownMarker, bool> labelled = null, Action<HoldownMarker> hidden = null)
         {
             foreach (var m in markers)
             {
@@ -185,6 +188,7 @@ namespace BuildingModel.Sketch
             var held = new List<(Rect, FormattedText)>();
             foreach (var m in markers.Where(x => !string.IsNullOrEmpty(x.Text)))
             {
+                if (labelled != null && !labelled(m)) { hidden?.Invoke(m); continue; }
                 var ft = text(m);
                 var box = LabelBox(m.Icon, m.Inward, new Size(ft.Width + 4, ft.Height), outline, taken);
                 Arrow(ctx, box, m.Icon, m.Ink, m.Size);
@@ -192,6 +196,10 @@ namespace BuildingModel.Sketch
             }
             foreach (var (box, ft) in held) DrawLabel(ctx, box, ft);
         }
+
+        /// <summary>A marker label's rank (the plan's Labels ▾): Critical when nothing holds it (no hold-down found, nothing under it, drawn red), else a value.</summary>
+        public static LabelRank RankOf(HoldownMarker m) =>
+            m.Mark == HoldownMark.Missing || m.Mark == HoldownMark.FromAboveOntoNothing || (m.Ink is SolidColorBrush s && s.Color == MissingColor) ? LabelRank.Critical : LabelRank.Value;
 
         private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
         private static Pen Frozen(Brush b, double t) { var p = new Pen(b, t); p.Freeze(); return p; }

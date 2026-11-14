@@ -460,7 +460,8 @@ namespace BuildingModel.Sketch
             int had = taken.Count;
             double dip = Dpi;
             HoldownMarks.Draw(ctx, markers, m => new FormattedText(m.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 9.5 * LabelScale, m.Ink, dip),
-                              outline, taken);
+                              outline, taken,
+                              m => ShowsLabel(HoldownMarks.RankOf(m)), m => HideLabel(new Rect(m.Icon.X - 8, m.Icon.Y - 8, 16, 16), m.Text, m.Ink)); // hidden: its name when the pointer is on its marker
             memberLabels.AddRange(taken.Skip(had)); // a host's own labels keep off these too
         }
 
@@ -517,6 +518,8 @@ namespace BuildingModel.Sketch
                     var away = n * Math.Sign(off);
                     Point c = s0 + (s1 - s0) * (onWall ? 0.3 : 0.7) + away * (5 + Math.Abs(away.X) * ft.Width / 2 + Math.Abs(away.Y) * ft.Height / 2);
                     var box = new Rect(c.X - ft.Width / 2 - 2, c.Y - ft.Height / 2 - 1, ft.Width + 4, ft.Height + 2);
+                    // a value (Normal up); a picked diaphragm's free body was asked for, so always
+                    if (!ShowsLabel(one != null ? LabelRank.Live : LabelRank.Value)) { HideLabel(box, text, ink); continue; }
                     ctx.DrawRectangle(HoldownMarks.LabelBack, null, box);
                     ctx.DrawText(ft, new Point(box.X + 2, box.Y + 1));
                     memberLabels.Add(box);

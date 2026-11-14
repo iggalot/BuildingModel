@@ -155,6 +155,7 @@ namespace BuildingModel.Sketch.Tests
                 ShearOnTop = new System.Collections.Generic.Dictionary<string, double> { ["A"] = 5000, ["B"] = -3000 } } } });
             var v = new SketchView();
             v.Canvas.SetBuilding(b, l2.Id);
+            v.Canvas.Labels = LabelDensity.Normal; // the pairs' forces are values: shown from Normal up (Critical hides them)
             v.Canvas.ZoomExtents();
             var both = Render(v, "sketch-shear-pairs-level2");
             int n2 = Count(both, SketchCanvas.Palette.Shear, 20);
@@ -208,6 +209,7 @@ namespace BuildingModel.Sketch.Tests
             b.AddColumn(b.Ground, l2, 30, 30);
             var v = new SketchView();
             v.Canvas.SetBuilding(b, b.Ground.Id);
+            v.Canvas.Labels = LabelDensity.Normal; // the hold-down's connector is a value: shown from Normal up
             v.Canvas.ZoomExtents();
             var bmp = Render(v, "sketch-ground");
             Assert.IsTrue(Count(bmp, SketchCanvas.Palette.Ink, 12) > 400, "the first story's walls drawn cut (dark band)");

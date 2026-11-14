@@ -524,8 +524,11 @@ namespace BuildingModel.Tests
             Assert.IsNotNull(west.OnWall, all);
             Assert.IsFalse(f.DormerBeams.Any(bm => bm.Wall == west), all);
             var east = f.DormerPanels.Single(w => w.Side == "east");
-            Assert.IsNull(east.OnWall, all);
-            Assert.AreEqual(1, f.DormerBeams.Count(bm => bm.Wall == east && bm.Kind == "cheek beam"), all);
+            // its foot on the eave wall, the rest on the slope: its beam from there (bearing on the eave wall) to the ridge
+            StringAssert.Contains(east.OnWall, "(part)", all);
+            var eb = f.DormerBeams.Single(bm => bm.Wall == east && bm.Kind == "cheek beam");
+            Assert.AreEqual(0, Math.Min(eb.A.Y, eb.B.Y), 0.26, $"{eb.A} {eb.B} {all}");
+            Assert.AreEqual(10, Math.Max(eb.A.Y, eb.B.Y), 1e-6, $"{eb.A} {eb.B} {all}");
         }
     }
 }

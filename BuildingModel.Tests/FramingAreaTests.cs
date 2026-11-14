@@ -85,6 +85,26 @@ namespace BuildingModel.Tests
         }
 
         /// <summary>
+        /// Owner 2026-11-13: a gabled second story pushed back from the end wall below ("that situation will need beams under the
+        /// gable portion if there's not a wall that is directly below"). Its gable end at y = 4, 4 ft back from the south wall,
+        /// along the W-E joists; a wall below under its first 8 ft: only 8 to 20 ft needs the beam. Its side wall at x = 20
+        /// runs across the joists and stands on them: no error.
+        /// </summary>
+        [TestMethod]
+        public void GabledStoryPushedBack_ItsGableEndAlongTheJoists_ABeamWhereNoWallIsBelow()
+        {
+            var b = Floor(out var l2, out var d);
+            var rf = b.AddLevel("Roof", 20);
+            b.AddDiaphragm(rf, new Rect2(0, 4, 20, 20));
+            b.AddWall(l2, rf, 0, 4, 20, 4);
+            b.AddWall(l2, rf, 20, 4, 20, 20);
+            b.AddWall(b.Ground, l2, 0, 4, 8, 4);
+            var e = Errors(b, "WallNeedsBeam");
+            Assert.AreEqual(1, e.Length, string.Join(" | ", e.Select(x => x.Message)));
+            StringAssert.Contains(e[0].Message, "8 to 20 ft");
+        }
+
+        /// <summary>
         /// Owner 2026-11-12: a bearing wall along the joists needs a beam under it. The W-E floor (16" joists: a roof above it),
         /// a wall standing on it at y = 10 along the joists: the model's error, naming 0 to 40 ft. A wall across them (x = 20)
         /// stands on the joists it crosses: no error. The beam drawn under the first (the end walls hold it): no error, and the

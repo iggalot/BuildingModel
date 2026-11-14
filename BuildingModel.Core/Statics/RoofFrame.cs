@@ -119,7 +119,7 @@ namespace BuildingModel.Statics
         /// <summary>"cheek", "front" (or "wall" with no roof under it).</summary>
         public string Kind;
         public List<(Point2 p, double bottom, double top)> Samples = new List<(Point2, double, double)>();
-        /// <summary>The wall below it stands on all along ("wall W3"; no beam under it), or null: on the roof, a beam under it.</summary>
+        /// <summary>The walls below it stands on ("wall W3"; "(part)" when only part way: a beam under each stretch with nothing under it), or null: all on the roof.</summary>
         public string OnWall;
         public Point2 A => Samples.Count > 0 ? Samples[0].p : default(Point2);
         public Point2 B => Samples.Count > 0 ? Samples[Samples.Count - 1].p : default(Point2);
@@ -567,71 +567,96 @@ namespace BuildingModel.Statics
                     var below = Faces.Where(fc => fc.Plane.Section != i && fc.Pieces.Any(pc => Inside(pc, mid, 1e-6))).OrderByDescending(fc => fc.Plane.Z(mid)).FirstOrDefault();
                     wall.Kind = below == null ? "wall" : (below.Plane.AlongX == (Math.Abs(b.Y - a.Y) < E)) ? "cheek" : "front";
                     DormerPanels.Add(wall);
-                    // standing on a wall below all along (owner 2026-11-13: "if there's actually a wall already below them, you don't
-                    // need to add a beam"): it bears on that wall, no beam
-                    wall.OnWall = OnWallBelow(sections, i, wall);
-                    if (below == null || wall.OnWall != null) continue;
+                    // where it stands on a wall below (owner 2026-11-13: "if there's actually a wall already below them, you don't need
+                    // to add a beam ... only the stretch with nothing under it gets the beam"): it bears on that wall there
+                    bool lx = Math.Abs(b.Y - a.Y) < E;   // the wall's line W-E: along it is x
+                    double U(Point2 p) => lx ? p.X : p.Y;
+                    var tall = wall.Samples.Where(z => z.top > z.bottom + 1e-3).Select(z => (u: U(z.p), on: WallBelowAt(sections, i, z.p))).OrderBy(z => z.u).ToList();
+                    var names = tall.Where(z => z.on != null).Select(z => z.on).Distinct().ToList();
+                    // the stretches with nothing under it: (from, to, a wall ends it there before, after)
+                    var bare = new List<(double s, double e, bool wallBefore, bool wallAfter)>();
+                    for (int k = 0; k < tall.Count; k++)
+                    {
+                        if (tall[k].on != null) continue;
+                        int m = k;
+                        while (m + 1 < tall.Count && tall[m + 1].on == null) m++;
+                        bool before = k > 0, after = m + 1 < tall.Count;
+                        bare.Add((before ? tall[k - 1].u : tall[k].u, after ? tall[m + 1].u : tall[m].u, before, after));
+                        k = m;
+                    }
+                    if (names.Count > 0) wall.OnWall = string.Join(", ", names) + (bare.Count > 0 ? " (part)" : "");
+                    if (below == null || bare.Count == 0) continue;
+                    // each stretch's beam, from the wall below that ends it (it bears there) or else on along the framing to its
+                    // supports: a cheek's the trimmer's run, eave wall to ridge; a front's the header's, trimmer to trimmer
+                    double line = lx ? a.Y : a.X;
+                    Point2 At(double u) => lx ? new Point2(u, line) : new Point2(line, u);
+                    double r0, r1; RoofCrease hd = null;
                     if (wall.Kind == "cheek")
                     {
-                        // along the rafters: on the trimmer's line, from the section's wall up as far as the rafters there run
                         bool x = below.Plane.AlongX;
-                        double line = x ? a.Y : a.X;
                         var on = Rafters.Where(r => r.Face == below && r.AlongX == x && Math.Abs(r.Line - line) < 1e-6).ToList();
                         var bw = sections[below.Plane.Section].Walls;
                         double lo = x ? bw.X0 : bw.Y0, hi = x ? bw.X1 : bw.Y1;
-                        double u0 = on.Count > 0 ? on.Min(r => x ? r.Start.X : r.Start.Y) : Math.Min(x ? a.X : a.Y, x ? b.X : b.Y);
-                        double u1 = on.Count > 0 ? on.Max(r => x ? r.End.X : r.End.Y) : Math.Max(x ? a.X : a.Y, x ? b.X : b.Y);
-                        u0 = Math.Max(u0, lo); u1 = Math.Min(u1, hi);
-                        if (u1 - u0 < 0.5) continue;
-                        var s0 = x ? new Point2(u0, line) : new Point2(line, u0);
-                        var s1 = x ? new Point2(u1, line) : new Point2(line, u1);
-                        DormerBeams.Add(new DormerBeam { Id = $"DB{++nb}", Kind = "cheek beam", Wall = wall, A = s0, B = s1, ZA = SurfaceBelow(sections, i, s0), ZB = SurfaceBelow(sections, i, s1) });
+                        r0 = Math.Max(lo, on.Count > 0 ? on.Min(r => x ? r.Start.X : r.Start.Y) : Math.Min(U(a), U(b)));
+                        r1 = Math.Min(hi, on.Count > 0 ? on.Max(r => x ? r.End.X : r.End.Y) : Math.Max(U(a), U(b)));
                     }
                     else
                     {
-                        // across the rafters: the header on that line, from trimmer to trimmer
-                        var hd = Creases.FirstOrDefault(c => c.Kind == CreaseKind.Header && c.DistanceTo(mid) < 1e-3);
-                        if (hd != null)
-                            DormerBeams.Add(new DormerBeam { Id = $"DB{++nb}", Kind = "header", Wall = wall, Header = hd, A = hd.A, B = hd.B, ZA = hd.ZA, ZB = hd.ZB });
+                        hd = Creases.FirstOrDefault(c => c.Kind == CreaseKind.Header && c.DistanceTo(mid) < 1e-3);
+                        if (hd == null) continue;
+                        r0 = Math.Min(U(hd.A), U(hd.B)); r1 = Math.Max(U(hd.A), U(hd.B));
+                    }
+                    foreach (var (s, e, wb, wa) in bare)
+                    {
+                        double u0 = wb ? s : Math.Min(s, r0), u1 = wa ? e : Math.Max(e, r1);
+                        if (u1 - u0 < 0.5) continue;
+                        Point2 s0 = At(u0), s1 = At(u1);
+                        double z0 = hd != null ? hd.ZA + (hd.ZB - hd.ZA) * Frac(hd, s0) : SurfaceBelow(sections, i, s0);
+                        double z1 = hd != null ? hd.ZA + (hd.ZB - hd.ZA) * Frac(hd, s1) : SurfaceBelow(sections, i, s1);
+                        bool whole = !wb && !wa;
+                        DormerBeams.Add(new DormerBeam
+                        {
+                            Id = $"DB{++nb}", Kind = wall.Kind == "cheek" ? "cheek beam" : "header", Wall = wall,
+                            Header = whole ? hd : null, A = s0, B = s1, ZA = z0, ZB = z1,
+                        });
                     }
                 }
             }
         }
 
         /// <summary>
-        /// The wall a dormer wall stands on all along, or null (it stands on the roof below: a beam under it). It touches a wall
-        /// below where its line is on an outside wall line of the section under it (that section's eave wall, its bottom there
-        /// at the plate, or its gable end wall, up to the rake), and, in a building, on one of the walls under the roof level
-        /// (a wall inside stops at the plates, under the rafters: the dormer wall does not touch it).
+        /// The wall a dormer wall stands on at a point, or null (it stands on the roof below there). It touches a wall below
+        /// where it is on an outside wall line of the section under it (that section's eave wall, its bottom there at the
+        /// plate, or its gable end wall, up to the rake), and, in a building, on one of the walls under the roof level (a wall
+        /// inside stops at the plates, under the rafters: the dormer wall does not touch it).
         /// </summary>
-        private string OnWallBelow(List<RoofSection> sections, int dormer, DormerWall wall)
+        private string WallBelowAt(List<RoofSection> sections, int dormer, Point2 p)
         {
             const double near = 0.26;
-            string on = null;
-            // the samples with height (the ends' points of none are where it meets the roof)
-            foreach (var s in wall.Samples.Where(z => z.top > z.bottom + 1e-3))
+            int j = -1; double best = double.NegativeInfinity;
+            for (int k = 0; k < sections.Count; k++)
             {
-                var p = s.p;
-                int j = -1; double best = double.NegativeInfinity;
-                for (int k = 0; k < sections.Count; k++)
-                {
-                    if (k == dormer || Reach.Count <= k) continue;
-                    var r = Reach[k];
-                    if (!(r.X0 - E <= p.X && p.X <= r.X1 + E && r.Y0 - E <= p.Y && p.Y <= r.Y1 + E)) continue;
-                    double z = SurfaceOf(this, k, p.X, p.Y);
-                    if (z > best) { best = z; j = k; }
-                }
-                if (j < 0) return null;
-                var w = sections[j].Walls;
-                bool onEdge = (Math.Abs(p.X - w.X0) <= near || Math.Abs(p.X - w.X1) <= near) && p.Y >= w.Y0 - near && p.Y <= w.Y1 + near
-                           || (Math.Abs(p.Y - w.Y0) <= near || Math.Abs(p.Y - w.Y1) <= near) && p.X >= w.X0 - near && p.X <= w.X1 + near;
-                if (!onEdge) return null;
-                if (wallsBelow == null) { on = on ?? $"{sections[j].Name ?? "the roof below"}'s wall"; continue; }
-                var under = wallsBelow.FirstOrDefault(x => Snapper.DistanceToSegment(p, new Segment2(x.Start, x.End)) <= near);
-                if (under == null) return null;
-                on = on ?? $"wall {under.Id}";
+                if (k == dormer || Reach.Count <= k) continue;
+                var r = Reach[k];
+                if (!(r.X0 - E <= p.X && p.X <= r.X1 + E && r.Y0 - E <= p.Y && p.Y <= r.Y1 + E)) continue;
+                double z = SurfaceOf(this, k, p.X, p.Y);
+                if (z > best) { best = z; j = k; }
             }
-            return on;
+            if (j < 0) return null;
+            var w = sections[j].Walls;
+            bool onEdge = (Math.Abs(p.X - w.X0) <= near || Math.Abs(p.X - w.X1) <= near) && p.Y >= w.Y0 - near && p.Y <= w.Y1 + near
+                       || (Math.Abs(p.Y - w.Y0) <= near || Math.Abs(p.Y - w.Y1) <= near) && p.X >= w.X0 - near && p.X <= w.X1 + near;
+            if (!onEdge) return null;
+            if (wallsBelow == null) return $"{sections[j].Name ?? "the roof below"}'s wall";
+            var under = wallsBelow.FirstOrDefault(x => Snapper.DistanceToSegment(p, new Segment2(x.Start, x.End)) <= near);
+            return under == null ? null : $"wall {under.Id}";
+        }
+
+        /// <summary>Where a point is along a crease, 0 at A to 1 at B (on plan).</summary>
+        private static double Frac(RoofCrease c, Point2 p)
+        {
+            double l = RoofCrease.Dist(c.A, c.B);
+            return l < 1e-9 ? 0 : RoofCrease.Dist(c.A, p) / l;
         }
 
         /// <summary>The walls under the roof level (a building's; null: sections only, their outside wall lines taken as walls).</summary>

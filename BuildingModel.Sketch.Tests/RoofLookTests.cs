@@ -171,6 +171,22 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual($"wall {south.Id}", front.OnWall, all2);
             Assert.IsFalse(f2.DormerBeams.Any(dm => dm.Wall == front), all2);
             Assert.AreEqual(2, f2.DormerBeams.Count(dm => dm.Kind == "cheek beam"), all2);
+
+            // the south wall with a 2 ft gap under the front (16 to 18): only that stretch gets a beam, bearing on the walls'
+            // ends each side (owner 2026-11-13: "only the stretch with nothing under it gets the beam")
+            var b3 = L();
+            var top3 = b3.RoofLevel();
+            b3.Walls.Remove(WallAt(b3, 0, 0, 56, 0));
+            b3.AddWall(b3.Ground, top3, 0, 0, 16, 0);
+            b3.AddWall(b3.Ground, top3, 18, 0, 56, 0);
+            b3.Roof.Sections.Add(new RoofSection { Name = "dormer", Walls = new Rect2(12, 0, 20, 7), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 3 });
+            var f3 = BuildingModel.Statics.RoofFrame.Of(b3);
+            string all3 = string.Join("; ", f3.DormerPanels) + " | " + string.Join("; ", f3.DormerBeams);
+            var front3 = f3.DormerPanels.Single(dw => dw.Side == "south");
+            StringAssert.Contains(front3.OnWall, "(part)", all3);
+            var gap = f3.DormerBeams.Single(dm => dm.Wall == front3);
+            Assert.AreEqual(16, Math.Min(gap.A.X, gap.B.X), 0.26, all3);
+            Assert.AreEqual(18, Math.Max(gap.A.X, gap.B.X), 0.26, all3);
         }
 
         private static bool Near(List<Point2> poly, Point2 p)

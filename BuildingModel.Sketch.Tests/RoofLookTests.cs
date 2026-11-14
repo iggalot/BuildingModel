@@ -130,6 +130,37 @@ namespace BuildingModel.Sketch.Tests
             Assert.IsFalse(v.Canvas.RoofPlan);
         }
 
+        /// <summary>
+        /// A dormer on the main block's south slope (12 to 20 by 1 to 8): its cheeks and front drawn in 3D up to its roof, and
+        /// on R with the beams under them, NOT DESIGNED (SNAPSHOT_DIR saves both).
+        /// </summary>
+        [STATestMethod]
+        public void TheDormer_ItsWalls_In3DAndOnR()
+        {
+            var b = L();
+            b.Roof.Sections.Add(new RoofSection { Name = "dormer", Walls = new Rect2(12, 1, 20, 8), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 3 });
+            var frame = BuildingModel.Statics.RoofFrame.Of(b);
+            Assert.IsNull(frame.NotLaidOut, frame.NotLaidOut);
+            string all = string.Join("; ", frame.DormerPanels) + " | " + string.Join("; ", frame.DormerBeams);
+            Assert.AreEqual(3, frame.DormerPanels.Count, all);
+            Assert.AreEqual(3, frame.DormerBeams.Count, all);
+            foreach (var dw in frame.DormerPanels)
+            {
+                var mesh = Building3DView.DormerWallMesh(dw, b.EaveHeight());
+                Assert.IsNotNull(mesh, dw.ToString());
+                Assert.IsTrue(mesh.TriangleIndices.Count >= 3, dw.ToString());
+            }
+            var v3 = new Building3DView();
+            v3.Show(b);
+            SketchTests.Render(v3, "dormer-3d");
+
+            var v = new SketchView();
+            v.Canvas.SetBuilding(b, b.RoofLevel().Id);
+            v.Canvas.ShowLevel(RoofQueries.RoofPlanId);
+            v.Canvas.ZoomExtents();
+            SketchTests.Render(v, "dormer-r");
+        }
+
         private static bool Near(List<Point2> poly, Point2 p)
         {
             for (int i = 0; i < poly.Count; i++)

@@ -544,6 +544,13 @@ namespace BuildingModel.Sketch
                         var ribbon = Ribbon(new Point3D(c.A.X, eave + za + 0.04, -c.A.Y), new Point3D(c.B.X, eave + zb + 0.04, -c.B.Y), 0.3);
                         if (ribbon != null) group.Children.Add(new GeometryModel3D(ribbon, creaseMat) { BackMaterial = creaseMat });
                     }
+                    // the dormers' cheeks and fronts (owner 2026-11-13: walls of their own, standing on the roof below), as the walls
+                    var wallMat = Material(Color.FromArgb(0xD0, 0xB8, 0xBD, 0xC6));
+                    foreach (var dw in frame.DormerPanels)
+                    {
+                        var mesh = DormerWallMesh(dw, eave);
+                        if (mesh != null) group.Children.Add(new GeometryModel3D(mesh, wallMat) { BackMaterial = wallMat });
+                    }
                     return;
                 }
             }
@@ -576,6 +583,30 @@ namespace BuildingModel.Sketch
             Face(alongX ? "north" : "east", P(u1, v1, ze), P(u0, v1, ze), P(ua, vc, zr), P(ub, vc, zr));   // the other
             Face(alongX ? "west" : "south", P(u0, v1, ze), P(u0, v0, ze), P(ua, vc, zr));                  // the ends: a hip's slopes, a gable's triangles
             Face(alongX ? "east" : "north", P(u1, v0, ze), P(u1, v1, ze), P(ub, vc, zr));
+        }
+
+        /// <summary>
+        /// A dormer wall in 3D: a strip along its line from the roof below up to its own roof, sample by sample (the eave
+        /// height <paramref name="eave"/> under it all); null when it has no height.
+        /// </summary>
+        public static MeshGeometry3D DormerWallMesh(BuildingModel.Statics.DormerWall dw, double eave)
+        {
+            if (dw?.Samples == null || dw.Samples.Count < 2 || dw.Height <= 1e-3) return null;
+            var mesh = new MeshGeometry3D();
+            foreach (var s in dw.Samples)
+            {
+                mesh.Positions.Add(new Point3D(s.p.X, eave + s.bottom, -s.p.Y));
+                mesh.Positions.Add(new Point3D(s.p.X, eave + s.top, -s.p.Y));
+            }
+            for (int k = 0; k + 1 < dw.Samples.Count; k++)
+            {
+                int a = 2 * k, c = 2 * k + 2;
+                if (dw.Samples[k].top - dw.Samples[k].bottom < 1e-6 && dw.Samples[k + 1].top - dw.Samples[k + 1].bottom < 1e-6) continue;
+                mesh.TriangleIndices.Add(a); mesh.TriangleIndices.Add(c); mesh.TriangleIndices.Add(c + 1);
+                mesh.TriangleIndices.Add(a); mesh.TriangleIndices.Add(c + 1); mesh.TriangleIndices.Add(a + 1);
+            }
+            mesh.Freeze();
+            return mesh;
         }
 
         /// <summary>While <see cref="Show"/> builds: <see cref="Ghost"/> (one view builds at a time, on the UI thread).</summary>

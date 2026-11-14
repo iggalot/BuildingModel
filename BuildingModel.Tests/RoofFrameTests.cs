@@ -462,5 +462,45 @@ namespace BuildingModel.Tests
             Assert.AreEqual("main, south face", walls[0].below.Name);
             Assert.AreEqual(RafterEnd.Ridge, cheek.AtEnd);
         }
+
+        /// <summary>
+        /// The same dormer's walls (owner 2026-11-13: "two sidewalls, and the window wall that connects them. All need beams or
+        /// supports"): its front at y = 2 standing on the main roof at 1 ft, its gable up to the ridge at 4 ft (1 ft at its ends,
+        /// 3 at the middle: 8 + 8 = 16 sq ft); its cheeks at x = 14 and 22 from 1 ft high at the front to nothing where the main
+        /// roof reaches its eave at y = 4 (1 sq ft each); no back wall (its ridge dies into the main roof). Under each cheek a
+        /// beam on the trimmer's line, eave to ridge; under the front the header.
+        /// </summary>
+        [TestMethod]
+        public void Dormer_ItsWallsAndWhatHoldsThemUp()
+        {
+            var f = Frame(0,
+                new RoofSection { Name = "main", Walls = new Rect2(0, 0, 40, 20), Shape = RoofShape.Gable, Ridge = RidgeAxis.WestEast },
+                new RoofSection { Name = "dormer", Walls = new Rect2(14, 2, 22, 9), Shape = RoofShape.Gable, Ridge = RidgeAxis.SouthNorth, EaveRise = 2 });
+            string all = string.Join("; ", f.DormerPanels) + " | " + string.Join("; ", f.DormerBeams);
+            Assert.AreEqual(3, f.DormerPanels.Count, all);
+            var front = f.DormerPanels.Single(w => w.Kind == "front");
+            Assert.AreEqual("south", front.Side);
+            Assert.AreEqual(16, front.Area, 0.1, all);
+            Assert.AreEqual(3, front.Height, 0.01, all);
+            Assert.AreEqual(8, front.Length, 0.01, all);
+            foreach (var side in new[] { "west", "east" })
+            {
+                var cheek = f.DormerPanels.Single(w => w.Side == side);
+                Assert.AreEqual("cheek", cheek.Kind, all);
+                Assert.AreEqual(1, cheek.Area, 0.1, all);
+                Assert.AreEqual(1, cheek.Height, 0.01, all);
+                Assert.AreEqual(4, cheek.Samples.Max(s => s.p.Y), 0.3, "to where the main roof meets its eave");
+                var beam = f.DormerBeams.Single(bm => bm.Wall == cheek);
+                Assert.AreEqual("cheek beam", beam.Kind);
+                Assert.AreEqual(side == "west" ? 14 : 22, beam.A.X, 1e-9);
+                Assert.AreEqual(0, beam.A.Y, 1e-6);
+                Assert.AreEqual(10, beam.B.Y, 1e-6);
+                Assert.AreEqual(5, beam.ZB - beam.ZA, 1e-6, "on the main roof's slope");
+            }
+            var header = f.DormerBeams.Single(bm => bm.Wall == front);
+            Assert.AreEqual("header", header.Kind);
+            Assert.AreEqual(8, header.Length, 1e-9);
+            Assert.AreEqual(2, header.A.Y, 1e-9);
+        }
     }
 }

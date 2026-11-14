@@ -727,6 +727,31 @@ namespace BuildingModel.Sketch
                     foreach (var c in frame.Creases)
                         Line(ctx, c.Kind == Statics.CreaseKind.Ridge ? RidgePen : c.Kind == Statics.CreaseKind.Hip ? HipPen : c.Kind == Statics.CreaseKind.Valley ? ValleyPen : HeaderPen, c.A, c.B);
                     foreach (var l in frame.Lines.Where(l => l.Kind == Statics.CreaseKind.Header)) Line(ctx, HeaderPen, l.A, l.B);
+                    if (roofPlan)
+                    {
+                        // the dormers' walls (cheeks and fronts, on the roof below) and the beams under them, sized later (owner 2026-11-13)
+                        // each piece its id; one line per dormer under its front naming them all
+                        foreach (var dm in frame.DormerBeams)
+                        {
+                            Line(ctx, BeamPen, dm.A, dm.B);
+                            Label(ctx, dm.Id, ToScreen(new Point2((dm.A.X + dm.B.X) / 2, (dm.A.Y + dm.B.Y) / 2)) + (dm.Header != null ? new Vector(4, 3) : new Vector(-26, -6)), B(Palette.Error), 9);
+                        }
+                        foreach (var dw in frame.DormerPanels)
+                        {
+                            Line(ctx, WallPen, dw.A, dw.B);
+                            Label(ctx, dw.Id, ToScreen(new Point2((dw.A.X + dw.B.X) / 2, (dw.A.Y + dw.B.Y) / 2)) + new Vector(4, -14), B(Palette.Wall), 9);
+                        }
+                        foreach (var g in frame.DormerPanels.GroupBy(dw => dw.Section))
+                        {
+                            var walls = (b.Roof.Sections ?? new List<RoofSection>()).ElementAtOrDefault(g.Key)?.Walls;
+                            if (walls == null) continue;
+                            var beams = frame.DormerBeams.Where(dm => g.Contains(dm.Wall)).ToList();
+                            string text = $"dormer: {string.Join(", ", g.Select(dw => $"{dw.Id} {dw.Kind}"))}" +
+                                          (beams.Count > 0 ? $" · {string.Join(", ", beams.Select(dm => $"{dm.Id} {dm.Kind}"))} NOT DESIGNED" : "");
+                            var at = ToScreen(new Point2(walls.Value.X0, walls.Value.Y0));
+                            Label(ctx, text, at + new Vector(0, 18), B(Palette.Error), 10);
+                        }
+                    }
                 }
                 foreach (var p in b.Roof.Purlins ?? new List<RoofPurlin>()) Line(ctx, PurlinPen, p.Start, p.End);
             }

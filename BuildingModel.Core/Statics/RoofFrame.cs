@@ -104,6 +104,62 @@ namespace BuildingModel.Statics
         public override string ToString() => $"{Face.Name} {Kind} {(AlongX ? "y" : "x")} = {Line:0.##}, {Length:0.##} ft";
     }
 
+    /// <summary>
+    /// One wall of a dormer (owner 2026-11-13): a cheek (along the rafters of the roof below: a triangle on its slope) or its
+    /// front (across them: its gable over a strip), standing on the roof below. Not a shear wall. Its shape along its line,
+    /// sample by sample: the roof below and its own roof over it (ft above the roof level's plates).
+    /// </summary>
+    public sealed class DormerWall
+    {
+        public string Id;
+        public int Section;
+        /// <summary>"south", "north", "west", "east": which of its section's wall lines.</summary>
+        public string Side;
+        /// <summary>"cheek", "front" (or "wall" with no roof under it).</summary>
+        public string Kind;
+        public List<(Point2 p, double bottom, double top)> Samples = new List<(Point2, double, double)>();
+        public Point2 A => Samples.Count > 0 ? Samples[0].p : default(Point2);
+        public Point2 B => Samples.Count > 0 ? Samples[Samples.Count - 1].p : default(Point2);
+        /// <summary>Its length on plan (ft).</summary>
+        public double Length => RoofCrease.Dist(A, B);
+        /// <summary>Its tallest (ft).</summary>
+        public double Height => Samples.Count == 0 ? 0 : Samples.Max(s => s.top - s.bottom);
+        /// <summary>Its area in elevation (sq ft): the height along its line, by the trapezoid rule.</summary>
+        public double Area
+        {
+            get
+            {
+                double s = 0;
+                for (int k = 1; k < Samples.Count; k++)
+                    s += RoofCrease.Dist(Samples[k - 1].p, Samples[k].p) * ((Samples[k - 1].top - Samples[k - 1].bottom) + (Samples[k].top - Samples[k].bottom)) / 2;
+                return s;
+            }
+        }
+        public override string ToString() => $"dormer {Kind} {Id}: {Length:0.##} ft long, {Height:0.##} ft high, {Area:0.#} sq ft";
+    }
+
+    /// <summary>
+    /// What holds a dormer wall up (owner 2026-11-13: "a beam object under every dormer wall ... parallel to the rafters next to
+    /// it"): under a cheek a beam on the trimmer's line, sloping with the roof below; under the front the header. On plan A to
+    /// B, its top at ZA and ZB (ft above the roof level's plates). NOT DESIGNED (sized later).
+    /// </summary>
+    public sealed class DormerBeam
+    {
+        public string Id;
+        /// <summary>"cheek beam" or "header".</summary>
+        public string Kind;
+        public DormerWall Wall;
+        /// <summary>The header it is (a front's).</summary>
+        public RoofCrease Header;
+        public Point2 A, B;
+        public double ZA, ZB;
+        /// <summary>On plan (ft).</summary>
+        public double Length => RoofCrease.Dist(A, B);
+        /// <summary>Along its slope (ft).</summary>
+        public double SlopedLength => Math.Sqrt(Length * Length + (ZB - ZA) * (ZB - ZA));
+        public override string ToString() => $"{Kind} {Id} under {Wall?.Id}: {SlopedLength:0.##} ft, NOT DESIGNED";
+    }
+
     /// <summary>A hip or valley rafter: along its crease on plan, from its low end A to its high end B.</summary>
     public sealed class RoofLine
     {
@@ -141,6 +197,10 @@ namespace BuildingModel.Statics
         public List<RoofCrease> Creases = new List<RoofCrease>();
         public List<RoofRafter> Rafters = new List<RoofRafter>();
         public List<RoofLine> Lines = new List<RoofLine>();
+        /// <summary>The dormers' walls: each one's cheeks and front, standing on the roof below (<see cref="LayDormers"/>).</summary>
+        public List<DormerWall> DormerPanels = new List<DormerWall>();
+        /// <summary>What holds each dormer wall up: a beam under each cheek along the rafters, the header under its front.</summary>
+        public List<DormerBeam> DormerBeams = new List<DormerBeam>();
         /// <summary>Why it cannot be laid out (null: it is).</summary>
         public string NotLaidOut;
         /// <summary>
@@ -458,7 +518,86 @@ namespace BuildingModel.Statics
 
             f.LayRafters(sections, spacing, roofOverhang);
             f.Headers(sections);
+            f.LayDormers(sections);
             return f;
+        }
+
+        /// <summary>
+        /// Each dormer's walls (owner 2026-11-13: not shear walls, but wall sections in the model, for the take-off; "two
+        /// sidewalls, and the window wall that connects them; all need beams or supports"): on each of its wall lines but a
+        /// gable end that runs on into the roof (<see cref="OpenEnds"/>), from the roof below up to its own roof, where that is
+        /// higher (a cheek: a triangle on the slope; the front: its gable over a strip). Under each wall along the rafters of the
+        /// roof below, a beam on that line (the trimmer's), from that section's wall up the slope as far as the rafters there run;
+        /// under a wall across them, the header from trimmer to trimmer (<see cref="Headers"/>). Laid out only: NOT DESIGNED.
+        /// </summary>
+        private void LayDormers(List<RoofSection> sections)
+        {
+            int nw = 0, nb = 0;
+            for (int i = 0; i < sections.Count; i++)
+            {
+                if (!IsDormer(sections, i)) continue;
+                var w = sections[i].Walls;
+                foreach (var (side, a, b) in new[] { ("south", new Point2(w.X0, w.Y0), new Point2(w.X1, w.Y0)), ("north", new Point2(w.X0, w.Y1), new Point2(w.X1, w.Y1)),
+                                                     ("west", new Point2(w.X0, w.Y0), new Point2(w.X0, w.Y1)), ("east", new Point2(w.X1, w.Y0), new Point2(w.X1, w.Y1)) })
+                {
+                    if (OpenEnds.Count > i && OpenEnds[i].Contains(side)) continue;
+                    double len = RoofCrease.Dist(a, b);
+                    int n = Math.Max(2, (int)Math.Ceiling(len / 0.25));
+                    // along the line: the roof below and its own roof; the wall where its own is the higher, the ends trimmed to
+                    // one point of no height each side
+                    var all = new List<(Point2 p, double bottom, double top)>();
+                    for (int k = 0; k <= n; k++)
+                    {
+                        var p = new Point2(a.X + (b.X - a.X) * k / n, a.Y + (b.Y - a.Y) * k / n);
+                        double bottom = SurfaceBelow(sections, i, p), top = SurfaceOf(this, i, p.X, p.Y);
+                        all.Add((p, bottom, Math.Max(bottom, top)));
+                    }
+                    int first = all.FindIndex(s => s.top > s.bottom + 1e-3), last = all.FindLastIndex(s => s.top > s.bottom + 1e-3);
+                    if (first < 0) continue;
+                    var samples = all.GetRange(Math.Max(0, first - 1), Math.Min(all.Count - 1, last + 1) - Math.Max(0, first - 1) + 1);
+                    var wall = new DormerWall { Section = i, Side = side, Samples = samples };
+                    if (wall.Area < 0.25) continue;
+                    wall.Id = $"DW{++nw}";
+                    var mid = wall.Samples[wall.Samples.Count / 2].p;
+                    var below = Faces.Where(fc => fc.Plane.Section != i && fc.Pieces.Any(pc => Inside(pc, mid, 1e-6))).OrderByDescending(fc => fc.Plane.Z(mid)).FirstOrDefault();
+                    wall.Kind = below == null ? "wall" : (below.Plane.AlongX == (Math.Abs(b.Y - a.Y) < E)) ? "cheek" : "front";
+                    DormerPanels.Add(wall);
+                    if (below == null) continue;
+                    if (wall.Kind == "cheek")
+                    {
+                        // along the rafters: on the trimmer's line, from the section's wall up as far as the rafters there run
+                        bool x = below.Plane.AlongX;
+                        double line = x ? a.Y : a.X;
+                        var on = Rafters.Where(r => r.Face == below && r.AlongX == x && Math.Abs(r.Line - line) < 1e-6).ToList();
+                        var bw = sections[below.Plane.Section].Walls;
+                        double lo = x ? bw.X0 : bw.Y0, hi = x ? bw.X1 : bw.Y1;
+                        double u0 = on.Count > 0 ? on.Min(r => x ? r.Start.X : r.Start.Y) : Math.Min(x ? a.X : a.Y, x ? b.X : b.Y);
+                        double u1 = on.Count > 0 ? on.Max(r => x ? r.End.X : r.End.Y) : Math.Max(x ? a.X : a.Y, x ? b.X : b.Y);
+                        u0 = Math.Max(u0, lo); u1 = Math.Min(u1, hi);
+                        if (u1 - u0 < 0.5) continue;
+                        var s0 = x ? new Point2(u0, line) : new Point2(line, u0);
+                        var s1 = x ? new Point2(u1, line) : new Point2(line, u1);
+                        DormerBeams.Add(new DormerBeam { Id = $"DB{++nb}", Kind = "cheek beam", Wall = wall, A = s0, B = s1, ZA = SurfaceBelow(sections, i, s0), ZB = SurfaceBelow(sections, i, s1) });
+                    }
+                    else
+                    {
+                        // across the rafters: the header on that line, from trimmer to trimmer
+                        var hd = Creases.FirstOrDefault(c => c.Kind == CreaseKind.Header && c.DistanceTo(mid) < 1e-3);
+                        if (hd != null)
+                            DormerBeams.Add(new DormerBeam { Id = $"DB{++nb}", Kind = "header", Wall = wall, Header = hd, A = hd.A, B = hd.B, ZA = hd.ZA, ZB = hd.ZB });
+                    }
+                }
+            }
+        }
+
+        /// <summary>The roof under a dormer at a point: the highest of the other sections' surfaces whose reach is over it.</summary>
+        private double SurfaceBelow(List<RoofSection> sections, int dormer, Point2 p)
+        {
+            double z = double.NegativeInfinity;
+            for (int j = 0; j < sections.Count; j++)
+                if (j != dormer && Reach[j].X0 - E <= p.X && p.X <= Reach[j].X1 + E && Reach[j].Y0 - E <= p.Y && p.Y <= Reach[j].Y1 + E)
+                    z = Math.Max(z, SurfaceOf(this, j, p.X, p.Y));
+            return double.IsInfinity(z) ? 0 : z;
         }
 
         private static bool Inside(Convex c, Point2 p, double grow) => c.Edges().All(h => h.a * p.X + h.b * p.Y + h.c >= -grow);

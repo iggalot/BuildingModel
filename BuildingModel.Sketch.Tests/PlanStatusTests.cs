@@ -113,5 +113,27 @@ namespace BuildingModel.Sketch.Tests
             Assert.IsTrue(coloured.red > plain.red + 200, $"the failing wall drawn red ({plain.red} → {coloured.red})");
             Assert.IsTrue(coloured.amber > plain.amber + 200, $"the close wall drawn amber ({plain.amber} → {coloured.amber})");
         }
+
+        /// <summary>Problems only (UI audit A2): the failing wall stays red, the close one goes plain.</summary>
+        [STATestMethod]
+        public void Render_ProblemsOnly_LeavesTheCloseOnePlain()
+        {
+            var b = SketchTests.Sample(out var l2, out _);
+            string first = b.Walls[0].Id, second = b.Walls[1].Id;
+            (int red, int amber) Draw(StatusFilter f)
+            {
+                var v = new SketchView();
+                v.Canvas.SetBuilding(SketchTests.Sample(out var lv, out _), lv.Id);
+                v.Canvas.HealthOf = id => id == first ? MemberHealth.Of(1.4, "shear") : id == second ? MemberHealth.Of(0.95, "shear") : null;
+                v.Canvas.ShowStates = f;
+                v.Canvas.ZoomExtents();
+                var bmp = SketchTests.Render(v, "health-" + f);
+                return (SketchTests.Count(bmp, PlanStatus.Fail, 12), SketchTests.Count(bmp, PlanStatus.Close, 12));
+            }
+            var all = Draw(StatusFilter.All);
+            var problems = Draw(StatusFilter.Problems);
+            Assert.IsTrue(problems.red > all.red - 50, $"the failure still red ({all.red} → {problems.red})");
+            Assert.IsTrue(problems.amber < all.amber - 200, $"the close one plain ({all.amber} → {problems.amber})");
+        }
     }
 }

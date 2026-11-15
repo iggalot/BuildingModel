@@ -59,7 +59,7 @@ namespace BuildingModel.App
     /// The Building Model app: draw the building once (levels, diaphragms, openings, walls, notes), see its issues as you
     /// go, look at it in 3D, check what the wind calculator will get, and take back the changes another app proposes.
     /// </summary>
-    public sealed class MainWindow : Window
+    public sealed partial class MainWindow : Window
     {
         public const string FileFilter = "Building model (*.bldg.json)|*.bldg.json|JSON (*.json)|*.json|All files (*.*)|*.*";
 
@@ -88,7 +88,8 @@ namespace BuildingModel.App
         private Building theirs;
 
         /// <summary>The data keys the Building Model writes (the plan images); every other app's data is kept as the file has it.</summary>
-        private static bool OwnsData(string key) => key.StartsWith("Sketch.", StringComparison.Ordinal) || key == PlanImage.OldShearWallKey;
+        private static bool OwnsData(string key) => key.StartsWith("Sketch.", StringComparison.Ordinal) || key == PlanImage.OldShearWallKey
+            || key == SavedViews.Key(SuiteApps.Building); // its saved views (UI audit A2)
 
         /// <summary>Takes this app's lock on the project; false (and says so) when another Building Model has it open.</summary>
         private bool HoldProject(string file)
@@ -154,6 +155,7 @@ namespace BuildingModel.App
             FontSize = 12;
             Background = Brushes.White;
             properties = new ObjectProperties(Sketch);
+            view.HostTools.Children.Add(CreateViewBar()); // View: the modes, the layers, the filter, saved views (UI audit A1, A2)
             issueList = new IssueList(Sketch);
             issuesButton.Sketch = Sketch;
             issuesButton.Picking += (s, i) => ShowPlan(true); // from the 3D view: the plan first

@@ -101,6 +101,22 @@ namespace BuildingModel.Sketch
     /// show while drawing; <see cref="Critical"/>: the members' marks and what fails, is close or is not designed;
     /// <see cref="Normal"/>: and each one's governing values; <see cref="All"/>: everything.
     /// </summary>
+    /// <summary>The plan's status filter (owner 2026-11-14, UI audit A2): which members are drawn in their state.</summary>
+    public enum StatusFilter { All = 0, HidePassing = 1, Problems = 2 }
+
+    public static class StatusFilters
+    {
+        /// <summary>All: every state. Hide passing: fails, NOT DESIGNED and close. Problems: fails and NOT DESIGNED only.</summary>
+        public static bool Shows(StatusFilter f, Health h) =>
+            f == StatusFilter.All ? true : f == StatusFilter.HidePassing ? h != Health.Passes : h == Health.Fails || h == Health.NotDesigned;
+
+        public static string Name(StatusFilter f) => f == StatusFilter.All ? "All" : f == StatusFilter.HidePassing ? "Hide passing" : "Problems only";
+
+        public static string Help(StatusFilter f) => f == StatusFilter.All ? "Every checked member in its state"
+            : f == StatusFilter.HidePassing ? "Only what fails, is NOT DESIGNED or is close to the limit; the rest drawn plain"
+            : "Only what fails or is NOT DESIGNED; the rest drawn plain";
+    }
+
     public enum LabelDensity { Off = 0, Critical = 1, Normal = 2, All = 3 }
 
     /// <summary>What a label is, for <see cref="LabelDensity"/>.</summary>

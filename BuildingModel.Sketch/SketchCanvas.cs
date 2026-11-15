@@ -503,6 +503,12 @@ namespace BuildingModel.Sketch
         /// <summary>Draw the members in their state (<see cref="HealthOf"/>). On by default.</summary>
         public bool ShowHealth { get; set; } = true;
 
+        /// <summary>Which states are drawn in their colour and tagged (UI audit A2): all, all but passing, or only failing and NOT DESIGNED. The rest are drawn plain.</summary>
+        public StatusFilter ShowStates { get; set; } = StatusFilter.All;
+
+        /// <summary>Whether a member in this state is drawn in its colour under <see cref="ShowStates"/> (hosts ask it for their own overlays too).</summary>
+        public bool StatusShows(Health h) => StatusFilters.Shows(ShowStates, h);
+
         /// <summary>The labels not drawn this frame (their rank, or another label in the way): each shows when hovered.</summary>
         private readonly List<(Rect box, string text, Brush brush)> hiddenLabels = new List<(Rect, string, Brush)>();
         private string hoverLabel;

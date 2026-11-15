@@ -963,7 +963,7 @@ namespace BuildingModel.Sketch
         {
             if (!ShowHealth || HealthOf == null || id == null) return null;
             var h = HealthOf(id);
-            return h == null || h.State == Health.None ? null : PlanStatus.PenOf(h.State, PlanStatus.Attention(h.State) ? width + 1.5 : width);
+            return h == null || h.State == Health.None || !StatusShows(h.State) ? null : PlanStatus.PenOf(h.State, PlanStatus.Attention(h.State) ? width + 1.5 : width);
         }
 
         /// <summary>
@@ -974,7 +974,7 @@ namespace BuildingModel.Sketch
         {
             if (!ShowHealth || HealthOf == null || id == null) return;
             var h = HealthOf(id);
-            if (h == null || h.State == Health.None) return;
+            if (h == null || h.State == Health.None || !StatusShows(h.State)) return;
             var mid = ToScreen(new Point2((a.X + c.X) / 2, (a.Y + c.Y) / 2));
             string text = $"{id} {h.Tag}" + (PlanStatus.Attention(h.State) && !string.IsNullOrEmpty(h.What) ? $" {h.What}" : "");
             Label(ctx, text, mid + new Vector(6, -20), PlanStatus.BrushOf(h.State), 10, true, true, PlanStatus.Attention(h.State) ? LabelRank.Critical : LabelRank.Value);

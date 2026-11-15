@@ -401,6 +401,15 @@ namespace BuildingModel.Sketch
         public bool ShowConnections { get; set; } = true;
 
         /// <summary>
+        /// The hold-downs' names ("HDU8") written by their markers. Off: only a failing one's, the rest on the pointer (owner
+        /// 2026-11-14, UI audit D3: the shear wall app shows them in its Construction view). On by default.
+        /// </summary>
+        public bool ShowHoldownNames { get; set; } = true;
+
+        /// <summary>Whether a hold-down's name at <paramref name="rank"/> is written (the labels and <see cref="ShowHoldownNames"/>).</summary>
+        public bool ShowsHoldownName(LabelRank rank) => ShowsLabel(rank) && (ShowHoldownNames || rank == LabelRank.Critical);
+
+        /// <summary>
         /// Draw the internal forces (the owner's toggle): on (the default), both halves of every connection, each on its plan
         /// (the visual check that everything is accounted for). Off, the cleaner drawing for reports: the selected members are
         /// the body (none selected: the whole structure); a connection between two of them is inside it and not drawn, one at
@@ -461,7 +470,7 @@ namespace BuildingModel.Sketch
             double dip = Dpi;
             HoldownMarks.Draw(ctx, markers, m => new FormattedText(m.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 9.5 * LabelScale, m.Ink, dip),
                               outline, taken,
-                              m => ShowsLabel(HoldownMarks.RankOf(m)), m => HideLabel(new Rect(m.Icon.X - 8, m.Icon.Y - 8, 16, 16), m.Text, m.Ink)); // hidden: its name when the pointer is on its marker
+                              m => ShowsHoldownName(HoldownMarks.RankOf(m)), m => HideLabel(new Rect(m.Icon.X - 8, m.Icon.Y - 8, 16, 16), m.Text, m.Ink)); // hidden: its name when the pointer is on its marker
             memberLabels.AddRange(taken.Skip(had)); // a host's own labels keep off these too
         }
 

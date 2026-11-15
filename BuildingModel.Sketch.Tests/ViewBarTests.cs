@@ -23,6 +23,19 @@ namespace BuildingModel.Sketch.Tests
             Assert.IsTrue(StatusFilters.Shows(StatusFilter.Problems, Health.NotDesigned), "NOT DESIGNED is never filtered out");
         }
 
+        /// <summary>Hold-down names off (SWC outside Construction, UI audit D3): only a failing one's written; the labels still rule.</summary>
+        [STATestMethod]
+        public void HoldownNames_Off_OnlyTheCritical()
+        {
+            var c = new SketchCanvas { Labels = LabelDensity.Normal };
+            Assert.IsTrue(c.ShowsHoldownName(LabelRank.Value), "on by default (the other apps), at Normal labels");
+            c.ShowHoldownNames = false;
+            Assert.IsFalse(c.ShowsHoldownName(LabelRank.Value));
+            Assert.IsTrue(c.ShowsHoldownName(LabelRank.Critical));
+            c.Labels = LabelDensity.Off;
+            Assert.IsFalse(c.ShowsHoldownName(LabelRank.Critical), "labels off: none");
+        }
+
         [TestMethod]
         public void SavedViews_RoundTrip_InTheAppsOwnKey()
         {

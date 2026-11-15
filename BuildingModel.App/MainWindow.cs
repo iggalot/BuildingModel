@@ -154,6 +154,7 @@ namespace BuildingModel.App
             FontFamily = new FontFamily("Segoe UI");
             FontSize = 12;
             Background = Brushes.White;
+            HookRoofSizes(); // the roof framing dialog's Use buttons (UI audit D1)
             properties = new ObjectProperties(Sketch);
             view.HostTools.Children.Add(CreateViewBar()); // View: the modes, the layers, the filter, saved views (UI audit A1, A2)
             issueList = new IssueList(Sketch);
@@ -204,7 +205,7 @@ namespace BuildingModel.App
             editingItems.Add(Item(building, "_Roof…", null, () => view.EditRoof(), "Flat, gable or hip; the slope (4:12, 6:12...), ridge, parapet and eaves"));
             editingItems.Add(Item(building, "Model _defaults…", null, EditDefaults, "The framing (studs, lumber, rafters, floor joists, roof blocking) and what a new story, roof or quick building starts with: every app reads them"));
             building.Items.Add(new Separator());
-            Item(building, "What the analysis apps _read…", null, BuildingSummary, "L, B, stories, the roof and each level's share of each face, as the wind and shear wall apps read them");
+            Item(building, "What the analysis apps _read", null, BuildingSummary, "L, B, stories, the roof and each level's share of each face, as the wind and shear wall apps read them");
 
             var levels = Item(menu, "_Levels", null, null);
             editingItems.Add(Item(levels, "_Add a level on top…", null, AddLevel, "Asks the story height"));
@@ -244,10 +245,13 @@ namespace BuildingModel.App
             var propsBox = Section("Properties", properties);
             DockPanel.SetDock(propsBox, Dock.Top);
             side.Children.Add(propsBox);
-            var sumBox = Section("Building", summary);
-            DockPanel.SetDock(sumBox, Dock.Bottom);
-            side.Children.Add(sumBox);
-            side.Children.Add(new Border { Child = issueList, Padding = new Thickness(10, 8, 8, 8), BorderBrush = Ui.Line, BorderThickness = new Thickness(0, 1, 0, 0) });
+            // the building's totals and what the analysis apps read: a footer, folded (UI audit D1: the selection's card first)
+            var footer = BuildFooter();
+            DockPanel.SetDock(footer, Dock.Bottom);
+            side.Children.Add(footer);
+            // the issues are the badge's and the navigator's (F8); this list only while there are some, never a "No issues" line
+            issueBox = new Border { Child = issueList, Padding = new Thickness(10, 8, 8, 8), BorderBrush = Ui.Line, BorderThickness = new Thickness(0, 1, 0, 0), VerticalAlignment = VerticalAlignment.Top };
+            side.Children.Add(issueBox);
             var sideBorder = new Border { Child = side, BorderBrush = Ui.Line, BorderThickness = new Thickness(1, 0, 0, 0) };
 
             var center = new Grid();
@@ -300,6 +304,7 @@ namespace BuildingModel.App
             Sketch.HealthOf = id => health.TryGetValue(id, out var h) ? h : null;
             properties?.RefreshHead(); // its chip and why line from these checks (UI audit B1)
             issueList.Show(issues);
+            if (issueBox != null) issueBox.Visibility = issues.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             issuesButton.Show(issues);
             var fp = b.Footprint();
             var above = b.LevelsBottomUp.Where(l => l.Elevation > 0).ToList();
@@ -307,6 +312,9 @@ namespace BuildingModel.App
                            $"\n{above.Count} level{(above.Count == 1 ? "" : "s")} above the ground" + (above.Count > 0 ? $", top at {above.Last().Elevation:0.##} ft" : "") +
                            $"\n{b.Walls.Count} walls, {b.Openings.Count} openings, {b.Notes.Count} notes." +
                            $"\nRevision {doc.Revision}{(dirty ? " (not saved)" : "")}";
+            if (footerHead != null)
+                footerHead.Text = fp.IsEmpty ? "No diaphragm yet" : $"{fp.Bounds.Width:0.#} × {fp.Bounds.Height:0.#} ft · {above.Count} level{(above.Count == 1 ? "" : "s")} · {b.Walls.Count} walls";
+            if (readsBox?.IsExpanded == true) readsText.Text = ReadsText();
             Title = $"{(string.IsNullOrEmpty(path) ? "New building" : Path.GetFileName(path).Replace(BuildingModel.Diagnostics.ProjectFolder.ModelExtension, ""))}{(dirty ? " *" : "")}{(viewOnly ? " (view only)" : "")} - Building Model";
             view3D.HighlightLevelId = Sketch.ActiveLevel?.Id;
             if (view3D.Visibility == Visibility.Visible) view3D.Show(b);
@@ -542,7 +550,7 @@ namespace BuildingModel.App
         /// What the analysis apps read from this model, worked out by the model alone: L, B, the stories, the roof and each
         /// level's share of each outside face. (The wind and shear wall apps read the file; this app runs neither.)
         /// </summary>
-        private void BuildingSummary()
+        private string ReadsText()
         {
             var b = Sketch.Building;
             string text;
@@ -567,7 +575,7 @@ namespace BuildingModel.App
             {
                 text = "The building cannot be summarised yet: " + ex.Message;
             }
-            MessageBox.Show(this, text, "What the analysis apps read from this model", MessageBoxButton.OK, MessageBoxImage.Information);
+            return text.TrimEnd();
         }
 
         // ------------------------------------------------------------------ another app's save

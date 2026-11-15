@@ -106,12 +106,14 @@ namespace BuildingModel.Sketch
             braceSize = new ComboBox { Width = 120 };
             foreach (var z in new[] { "(2x4)", "2x4", "2x6" }) braceSize.Items.Add(z);
             braceSize.SelectedIndex = roof.BraceSize == "2x6" ? 2 : roof.BraceSize == "2x4" ? 1 : 0;
-            left.Children.Add(Row("Hips", Line(hipSize, Label("  valleys"), valleySize)));
-            left.Children.Add(Row("Headers", Line(headerSize, Label("  ridge boards"), ridgeBoardSize)));
-            left.Children.Add(Row("Dormers", Line(Label("cheek beams"), cheekBeamSize)));
+            left.Children.Add(Row("Hips", Sized(hipSize, "hip")));
+            left.Children.Add(Row("Valleys", Sized(valleySize, "valley")));
+            left.Children.Add(Row("Headers", Sized(headerSize, "header")));
+            left.Children.Add(Row("Ridge boards", Sized(ridgeBoardSize, "ridgeboard")));
+            left.Children.Add(Row("Cheek beams", Sized(cheekBeamSize, "cheek")));
             left.Children.Add(Row("Purlins", Line(purlinSize, Label("  braces"), braceSize)));
             foreach (var c in new[] { hipSize, valleySize, headerSize, cheekBeamSize, ridgeBoardSize, purlinSize, braceSize }) c.SelectionChanged += (s, e) => Update();
-            left.Children.Add(Note("Not sized: NOT DESIGNED, the lightest that works named (the joist window)."));
+            left.Children.Add(Note("Not sized: NOT DESIGNED. \"Use …\" fills the lightest that carries the gravity loads; the wind is checked with it in the Load Manager (Joists)."));
 
             // the plan and what is wrong
             var right = new DockPanel();
@@ -294,6 +296,7 @@ namespace BuildingModel.Sketch
             issues.Inlines.Clear();
             foreach (var i in found)
                 issues.Inlines.Add(new System.Windows.Documents.Run((i.Severity == Severity.Error ? "✗ " : "▲ ") + i.Message + "\n") { Foreground = i.Severity == Severity.Error ? Ui.Error : Ui.Warning });
+            ShowChips(trial);
             Draw(trial);
             Changed?.Invoke(this, EventArgs.Empty);
         }
@@ -304,6 +307,7 @@ namespace BuildingModel.Sketch
         {
             plan.Children.Clear();
             Faces = Creases = Rafters = 0;
+            NotSizedDrawn = 0;
             var top = trial.RoofLevel();
             if (top == null || trial.Roof == null || !trial.Roof.IsSloped) { plan.Children.Add(new TextBlock { Text = "A flat roof: no framing to lay out here.", Margin = new Thickness(10) }); return; }
             // the plan's box: the sections' eaves and the walls under the roof
@@ -347,10 +351,18 @@ namespace BuildingModel.Sketch
             foreach (var c in frame.Creases)
             {
                 var br = c.Kind == CreaseKind.Ridge ? Brushes.Firebrick : c.Kind == CreaseKind.Hip ? Brushes.DarkOrange : c.Kind == CreaseKind.Valley ? Brushes.RoyalBlue : Brushes.Purple;
+                // a member with no size: NOT DESIGNED, red dashed as on every plan (UI audit D1)
+                bool unsized = c.Kind == CreaseKind.Hip ? string.IsNullOrEmpty(trial.Roof.HipSize) : c.Kind == CreaseKind.Valley ? string.IsNullOrEmpty(trial.Roof.ValleySize) : false;
+                if (unsized) { Seg(c.A, c.B, new SolidColorBrush(PlanStatus.Fail), 2.5, new DoubleCollection { 4, 2 }); NotSizedDrawn++; Creases++; continue; }
                 Seg(c.A, c.B, br, 2);
                 Creases++;
             }
-            foreach (var l in frame.Lines.Where(l => l.Kind == CreaseKind.Header)) { Seg(l.A, l.B, Brushes.Purple, 2.5); Creases++; }
+            foreach (var l in frame.Lines.Where(l => l.Kind == CreaseKind.Header))
+            {
+                if (string.IsNullOrEmpty(trial.Roof.HeaderSize)) { Seg(l.A, l.B, new SolidColorBrush(PlanStatus.Fail), 2.5, new DoubleCollection { 4, 2 }); NotSizedDrawn++; }
+                else Seg(l.A, l.B, Brushes.Purple, 2.5);
+                Creases++;
+            }
             var st = RoofStatics.Of(trial, top, frame);
             foreach (var m in st.Members.Where(x => x.Kind == "purlin"))
             {
@@ -365,6 +377,59 @@ namespace BuildingModel.Sketch
                 }
             }
         }
+
+        // ------------------------------------------------------------ the sizes' chips (UI audit D1)
+        /// <summary>
+        /// The lightest size of each roof member kind ("hip", "valley", "header", "ridgeboard", "cheek") that carries the
+        /// gravity loads, the worst member of the kind: the host's (the Building Model sets it from WoodFraming's roof check);
+        /// null, or no entry: no Use button. A kind none works for is left out.
+        /// </summary>
+        public static Func<Building, IReadOnlyDictionary<string, string>> LightestSizes { get; set; }
+
+        /// <summary>For tests: the members drawn as not sized on the plan.</summary>
+        public int NotSizedDrawn { get; private set; }
+
+        private readonly Dictionary<string, (ComboBox box, TextBlock chip, Button use)> chips = new Dictionary<string, (ComboBox, TextBlock, Button)>();
+
+        /// <summary>The size box, a red ⊘ NOT DESIGNED chip while it is not sized, and a one-click Use with the lightest that works.</summary>
+        private FrameworkElement Sized(ComboBox c, string kind)
+        {
+            var chip = new TextBlock { Text = "⊘ NOT DESIGNED", Foreground = new SolidColorBrush(PlanStatus.Fail), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 4, 0) };
+            var use = new Button { Padding = new Thickness(6, 1, 6, 1), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed, Focusable = false };
+            use.Click += (s, e) => { if (use.Tag is string z) c.SelectedItem = z; };
+            chips[kind] = (c, chip, use);
+            return Line(c, chip, use);
+        }
+
+        /// <summary>The chips as the sizes are now; the lightest from the host, on the roof as framed here.</summary>
+        private void ShowChips(Building trial)
+        {
+            IReadOnlyDictionary<string, string> lightest = null;
+            if (LightestSizes != null && chips.Values.Any(x => x.box.SelectedIndex <= 0))
+            {
+                try { lightest = LightestSizes(trial); }
+                catch (Exception ex) when (!(ex is OutOfMemoryException)) { BuildingModel.Diagnostics.Log.Warning("Roof", "The roof members' lightest sizes could not be found", ex); }
+            }
+            foreach (var kv in chips)
+            {
+                var (box, chip, use) = kv.Value;
+                bool none = box.SelectedIndex <= 0;
+                chip.Visibility = none ? Visibility.Visible : Visibility.Collapsed;
+                string z = null;
+                if (none && lightest != null) lightest.TryGetValue(kv.Key, out z);
+                use.Tag = z;
+                use.Content = z == null ? null : "Use " + z;
+                use.ToolTip = z == null ? null : $"{z}: the lightest that carries the gravity loads on every one of them (the Load Manager's Joists window checks it with the wind too)";
+                use.Visibility = z != null ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        /// <summary>For tests: clicks the kind's Use button.</summary>
+        public void ClickUse(string kind) { if (chips.TryGetValue(kind, out var x) && x.use.Tag is string z) x.box.SelectedItem = z; }
+
+        /// <summary>For tests: the chip's text (null: sized) and its Use size (null: none).</summary>
+        public (string chip, string use) ChipOf(string kind) =>
+            chips.TryGetValue(kind, out var x) ? (x.chip.Visibility == Visibility.Visible ? x.chip.Text : null, x.use.Tag as string) : (null, null);
 
         // ------------------------------------------------------------ small pieces
         /// <summary>For tests: types into a field as a person would ("x0", "y0", "x1", "y1", "pitch", "rise", "eaves", "name"; "p.x0", ... for the purlin).</summary>

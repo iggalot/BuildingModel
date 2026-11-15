@@ -72,6 +72,32 @@ namespace BuildingModel.Sketch.Tests
             Assert.AreEqual("2-2x10", p.Roof.HipSize);
         }
 
+        /// <summary>
+        /// Not sized (UI audit D1): a red ⊘ NOT DESIGNED chip by the box, the valleys drawn red dashed, and Use with the
+        /// host's lightest size, which fills the box in one click; sized, the chip goes and the valleys are drawn as valleys.
+        /// </summary>
+        [STATestMethod]
+        public void NotSized_ChipAndUse_OneClickFills()
+        {
+            var was = RoofFramingPanel.LightestSizes;
+            try
+            {
+                RoofFramingPanel.LightestSizes = b => new System.Collections.Generic.Dictionary<string, string> { ["valley"] = "2x10" };
+                var p = new RoofFramingPanel(Box());
+                p.ClickAddSection();
+                p.Type("x0", "10"); p.Type("y0", "-16"); p.Type("x1", "26"); p.Type("y1", "10");
+                p.SetRidge(RidgeAxis.SouthNorth);
+                Assert.AreEqual(("⊘ NOT DESIGNED", "2x10"), p.ChipOf("valley"));
+                Assert.AreEqual(("⊘ NOT DESIGNED", (string)null), p.ChipOf("hip"), "no size from the host: the chip only");
+                Assert.AreEqual(2, p.NotSizedDrawn, "both valleys red dashed");
+                p.ClickUse("valley");
+                Assert.AreEqual("2x10", p.Roof.ValleySize);
+                Assert.AreEqual(((string)null, (string)null), p.ChipOf("valley"));
+                Assert.AreEqual(0, p.NotSizedDrawn);
+            }
+            finally { RoofFramingPanel.LightestSizes = was; }
+        }
+
         /// <summary>A section with no area cannot be framed: an error, OK off.</summary>
         [STATestMethod]
         public void ASectionWithNoArea_IsAnError()

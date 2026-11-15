@@ -32,6 +32,7 @@ namespace BuildingModel.Sketch
         private readonly TextBlock subtitle = new TextBlock { Foreground = Ui.Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6), FontSize = 11.5 };
         private readonly UniformGrid numbers = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 0, 4) };
         private readonly TextBlock why = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 4), FontSize = 12 };
+        private readonly StackPanel figure = new StackPanel { Margin = new Thickness(0, 2, 0, 4) };
         private readonly WrapPanel fixes = new WrapPanel { Margin = new Thickness(0, 2, 0, 4) };
         private readonly WrapPanel deeper = new WrapPanel { Margin = new Thickness(0, 2, 0, 4) };
         private readonly StackPanel sections = new StackPanel();
@@ -47,6 +48,7 @@ namespace BuildingModel.Sketch
             Children.Add(subtitle);
             Children.Add(numbers);
             Children.Add(why);
+            Children.Add(figure);
             Children.Add(fixes);
             Children.Add(deeper);
             Children.Add(sections);
@@ -178,6 +180,18 @@ namespace BuildingModel.Sketch
             return this;
         }
 
+        /// <summary>A picture that reads in one glance (a load diagram), under the why line: the numbers behind it go in a section.</summary>
+        public MemberCard Figure(UIElement e)
+        {
+            if (e == null) return this;
+            figure.Children.Add(e);
+            Tidy();
+            return this;
+        }
+
+        /// <summary>For tests: the figures shown.</summary>
+        public int FigureCount => figure.Children.Count;
+
         /// <summary>A fix: a button that does the usual fix (one undo step: the host's). Null <paramref name="click"/>: none.</summary>
         public MemberCard Fix(string text, string tip, Action click)
         {
@@ -247,6 +261,7 @@ namespace BuildingModel.Sketch
             numbers.Visibility = numbers.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             numbers.Columns = Math.Max(1, Math.Min(3, numbers.Children.Count));
             why.Visibility = why.Inlines.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            figure.Visibility = figure.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             fixes.Visibility = fixes.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             deeper.Visibility = deeper.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             sections.Visibility = sections.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;

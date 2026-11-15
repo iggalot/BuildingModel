@@ -108,5 +108,20 @@ namespace BuildingModel.Sketch.Tests
             Assert.IsTrue(SketchTests.Count(bmp, PlanStatus.Fail, 30) > 100, "the failing chip, numbers and why in red");
             Assert.IsTrue(SketchTests.Count(bmp, PlanStatus.Close, 40) > 0 || SketchTests.Count(bmp, ((System.Windows.Media.SolidColorBrush)Ui.Warning).Color, 30) > 10, "the close hold-down in amber");
         }
+
+        /// <summary>A figure (a load diagram) sits under the why line, before the fixes and the sections (UI audit D2).</summary>
+        [STATestMethod]
+        public void Figure_UnderTheWhyLine()
+        {
+            var c = new MemberCard();
+            c.Section("More");
+            c.Figure(new System.Windows.Controls.Border());
+            c.Why("why");
+            Assert.AreEqual(1, c.FigureCount);
+            var kids = c.Children.OfType<System.Windows.FrameworkElement>().ToList();
+            int why = kids.FindIndex(k => k is System.Windows.Controls.TextBlock t && t.Inlines.Count > 0);
+            int fig = kids.FindIndex(k => k is System.Windows.Controls.StackPanel p && p.Children.OfType<System.Windows.Controls.Border>().Any());
+            Assert.IsTrue(why >= 0 && fig == why + 1, $"why at {why}, figure at {fig}");
+        }
     }
 }

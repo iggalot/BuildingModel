@@ -296,6 +296,7 @@ namespace BuildingModel.App
             // the members an error names drawn red with a tag (owner 2026-11-14: red for what is unsafe or NOT DESIGNED only)
             var health = PlanStatus.FromIssues(issues);
             Sketch.HealthOf = id => health.TryGetValue(id, out var h) ? h : null;
+            properties?.RefreshHead(); // its chip and why line from these checks (UI audit B1)
             issueList.Show(issues);
             issuesButton.Show(issues);
             var fp = b.Footprint();

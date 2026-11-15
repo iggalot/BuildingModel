@@ -39,10 +39,17 @@ namespace BuildingModel.Sketch
         {
             if (filling) return;
             Children.Clear();
+            notes.Clear();
+            try { FillCard(); }
+            finally { AddNotes(); }
+        }
+
+        private void FillCard()
+        {
             var ids = sketch.Selection.ToList();
             if (ids.Count > 1)
             {
-                Title($"{ids.Count} selected");
+                Title($"{ids.Count} selected", "objects");
                 var areas = ids.Select(id => B.Find(id) as FramingArea).ToList();
                 if (areas.All(a => a != null)) AreasProps(areas);
                 return;
@@ -64,7 +71,7 @@ namespace BuildingModel.Sketch
                     Hint("It cuts every level strictly between: a lobby from the ground to level 3 cuts level 2.");
                     break;
                 case Beam bm:
-                    Title($"Beam {bm.Id}");
+                    Title(bm.Id, "beam", bm.Id);
                     Number("Start x", bm.Start.X, v => bm.Start = new Point2(v, bm.Start.Y));
                     Number("Start y", bm.Start.Y, v => bm.Start = new Point2(bm.Start.X, v));
                     Number("End x", bm.End.X, v => bm.End = new Point2(v, bm.End.Y));
@@ -75,7 +82,7 @@ namespace BuildingModel.Sketch
                     FramingProps(bm);
                     break;
                 case Column col:
-                    Title($"Column {col.Id}");
+                    Title(col.Id, "column", col.Id);
                     Number("x", col.At.X, v => col.At = new Point2(v, col.At.Y));
                     Number("y", col.At.Y, v => col.At = new Point2(col.At.X, v));
                     var auto = new CheckBox { Content = "Base: stands on what is under it", IsChecked = !col.BaseFixed, Margin = new Thickness(0, 2, 0, 4),
@@ -92,7 +99,7 @@ namespace BuildingModel.Sketch
                          ". It carries what lands on it down to its base.");
                     break;
                 case Note n:
-                    Title("Note " + n.Id);
+                    Title(n.Id, "note");
                     var t = new TextBox { Text = n.Text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 60, Margin = new Thickness(0, 4, 0, 0) };
                     t.LostFocus += (s, e) => { if (t.Text != n.Text) sketch.Edit($"Note {n.Id} changed.", b => n.Text = t.Text); };
                     Children.Add(t);
@@ -103,7 +110,7 @@ namespace BuildingModel.Sketch
 
         private void WallProps(Wall w)
         {
-            Title($"Wall {w.Id}");
+            Title(w.Id, "wall", w.Id);
             if (OpenWall != null)
             {
                 var open = new Button { Content = "Framing and 3D…", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(0, 2, 0, 6),
@@ -174,7 +181,7 @@ namespace BuildingModel.Sketch
 
         private void RectProps(ModelObject o, List<Rect2> pieces)
         {
-            Title($"{(o is Opening ? "Opening" : "Diaphragm")} {o.Id}");
+            Title(o.Id, o is Opening ? "opening" : "diaphragm", o.Id);
             if (pieces.Count == 0) return;
             var r = pieces[0];
             Number("West x", r.X0, v => pieces[0] = new Rect2(v, pieces[0].Y0, pieces[0].X1, pieces[0].Y1));
@@ -303,7 +310,7 @@ namespace BuildingModel.Sketch
         private void AreaProps(FramingArea a)
         {
             var (d, _) = FramingAreas.Find(B, a.Id);
-            Title($"Framing area {a.Id}" + (d != null ? $" ({d.Id})" : ""));
+            Title(a.Id, "framing area" + (d != null ? $" of {d.Id}" : ""), a.Id);
             var c = new ComboBox { Padding = new Thickness(3, 1, 3, 1) };
             foreach (var (s, text) in new[] { (SpanDirection.WestEast, "W-E (bearing on N-S walls)"), (SpanDirection.SouthNorth, "S-N (bearing on W-E walls)") })
                 c.Items.Add(new ComboBoxItem { Content = text, Tag = s, IsSelected = a.Span == s });
@@ -321,6 +328,7 @@ namespace BuildingModel.Sketch
             Hint($"{a.Rect.Width:0.##} × {a.Rect.Height:0.##} ft, from ({a.Rect.X0:0.##}, {a.Rect.Y0:0.##}). {joists.Count} {(Statics.Joists.IsRoof(B, lv) ? "rafters" : "joists")} at {Statics.Joists.SpacingOf(B, lv) * 12:0.#} in., " +
                  (joists.Count == 0 ? "" : $"{joists.Min(j => j.Length):0.##} to {joists.Max(j => j.Length):0.##} ft long") +
                  (bad > 0 ? $"; {bad} with fewer than two supports (red)." : "; every one on two supports or more."));
+            if (bad > 0) Children.Add(new TextBlock { Text = $"✗ {bad} {(Statics.Joists.IsRoof(B, lv) ? "rafters" : "joists")} with fewer than two supports", Foreground = Ui.Error, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) }); // unsafe: never folded away
             if (d != null && d.Framing.Count > 1)
             {
                 var join = new Button { Content = "Join the areas running the same way", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(0, 6, 0, 0),
@@ -386,7 +394,7 @@ namespace BuildingModel.Sketch
         private void LevelProps(Level l)
         {
             if (l == null) return;
-            Title(l.Name);
+            Title(l.Name, "level");
             Text("Name", l.Name, v => l.Name = v);
             if (l.Elevation == 0) { Hint("The ground (elevation 0), the foundation plan: it shows the walls and columns standing on it, to select and edit. They are drawn on the level they carry."); return; }
             Number("Elevation", l.Elevation, v => l.Elevation = v);
@@ -398,11 +406,73 @@ namespace BuildingModel.Sketch
 
         // ------------------------------------------------------------------ rows
 
-        private void Title(string text) =>
-            Children.Add(new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, FontSize = 13, Margin = new Thickness(0, 0, 0, 4) });
+        /// <summary>
+        /// The card's head (UI audit B1, <see cref="MemberCard"/>): its mark, what it is, its status chip from the plan's
+        /// health (<see cref="SketchCanvas.HealthOf"/>), and the first issue about it as the why line.
+        /// </summary>
+        private void Title(string mark, string what, string id = null)
+        {
+            head = (mark, what, id);
+            var card = new MemberCard { Margin = new Thickness(0, 0, 0, 2) };
+            FillHead(card);
+            Children.Add(card);
+        }
 
-        private void Hint(string text) =>
-            Children.Add(new TextBlock { Text = text, Foreground = Ui.Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0), FontSize = 11 });
+        private (string mark, string what, string id) head;
+
+        /// <summary>The head again from the plan's health and the issues now (the host's checks ran after the card was filled).</summary>
+        public void RefreshHead()
+        {
+            var card = Card;
+            if (card == null) return;
+            var fresh = new MemberCard { Margin = card.Margin };
+            FillHead(fresh);
+            int at = Children.IndexOf(card);
+            Children.RemoveAt(at);
+            Children.Insert(at, fresh);
+        }
+
+        /// <summary>The card's head shown now (for tests).</summary>
+        public MemberCard Card => Children.OfType<MemberCard>().FirstOrDefault();
+
+        private void FillHead(MemberCard card)
+        {
+            var (mark, what, id) = head;
+            var health = id == null ? null : sketch.HealthOf?.Invoke(id);
+            card.Head(mark, what, health);
+            var issues = id == null ? null : (IssuesOf ?? (x => sketch.Issues?.Where(i => i.Ids.Contains(x))))(id);
+            var issue = issues?.OrderBy(IssueList.Tier).FirstOrDefault();
+            if (issue != null)
+                card.Why(issue.Message, issue.Severity != BuildingModel.Checks.Severity.Error ? Health.Close : issue.NotDesigned ? Health.NotDesigned : Health.Fails);
+        }
+
+        /// <summary>The model's issues about one object (the host's: its checks); null: no why line.</summary>
+        public Func<string, IEnumerable<BuildingModel.Checks.ModelIssue>> IssuesOf { get; set; }
+
+        private readonly List<string> notes = new List<string>();
+        private static bool notesOpen;
+
+        /// <summary>An explanation: gathered in the Notes at the bottom, folded (UI audit: prose one click down).</summary>
+        private void Hint(string text) => notes.Add(text);
+
+        /// <summary>The notes, folded under the rows; opened or shut as the engineer left them.</summary>
+        private void AddNotes()
+        {
+            if (notes.Count == 0) return;
+            var body = new StackPanel();
+            foreach (var n in notes) body.Children.Add(MemberCard.Note(n));
+            var e = new Expander
+            {
+                Header = new TextBlock { Text = "Notes", FontWeight = FontWeights.SemiBold, Foreground = Ui.Muted }, Content = body, IsExpanded = notesOpen,
+                Margin = new Thickness(0, 8, 0, 0), ToolTip = "What these values mean and how the other apps use them",
+            };
+            e.Expanded += (s, a) => notesOpen = true;
+            e.Collapsed += (s, a) => notesOpen = false;
+            Children.Add(e);
+        }
+
+        /// <summary>The notes shown now (for tests).</summary>
+        public IReadOnlyList<string> Notes => notes;
 
         private Grid Row(string label, UIElement editor)
         {
